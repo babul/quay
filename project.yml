@@ -61,10 +61,25 @@ targets:
           - $(SRCROOT)/Frameworks
         OTHER_LDFLAGS:
           - $(inherited)
+          - -lc++
+          - -liconv
+        CLANG_CXX_LIBRARY: libc++
     dependencies:
       - target: QuayAskpass
         copy:
           destination: executables
+      - framework: Frameworks/GhosttyKit.xcframework
+        embed: false
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: QuartzCore.framework
+      - sdk: CoreText.framework
+      - sdk: CoreGraphics.framework
+      - sdk: AppKit.framework
+      - sdk: AudioToolbox.framework
+      - sdk: UserNotifications.framework
+      - sdk: OSLog.framework
+      - sdk: Carbon.framework
     scheme:
       testTargets:
         - QuayTests

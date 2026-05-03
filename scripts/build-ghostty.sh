@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# build-ghostty.sh — build libghostty from the vendored submodule and wrap as
-# Frameworks/GhosttyKit.xcframework.
+# build-ghostty.sh — build libghostty from the vendored submodule and stage
+# the resulting xcframework at Frameworks/GhosttyKit.xcframework.
 #
-# Idempotent: caches on the submodule's HEAD SHA + this script's own SHA.
-# Re-run after `git submodule update` or after editing this script.
+# Idempotent: caches on the submodule's HEAD SHA + this script's SHA. Re-run
+# after `git submodule update` or after editing this script.
 #
 # Output: $REPO_ROOT/Frameworks/GhosttyKit.xcframework
 
@@ -14,15 +14,33 @@ GHOSTTY_DIR="$REPO_ROOT/vendor/ghostty"
 OUT_DIR="$REPO_ROOT/Frameworks"
 XCFRAMEWORK="$OUT_DIR/GhosttyKit.xcframework"
 CACHE_FILE="$REPO_ROOT/.build-ghostty.cache"
-BUILD_DIR="$REPO_ROOT/build/ghostty"
 
 bold() { printf "\033[1m%s\033[0m\n" "$*"; }
 fail() { printf "\033[31merror:\033[0m %s\n" "$*" >&2; exit 1; }
 
-[[ -d "$GHOSTTY_DIR" ]] || fail "vendor/ghostty not found. Run: git submodule update --init"
-command -v zig >/dev/null || fail "zig not in PATH. Run: brew install zig"
+[[ -d "$GHOSTTY_DIR/.git" || -f "$GHOSTTY_DIR/.git" ]] || \
+    fail "vendor/ghostty not initialized. Run: git submodule update --init"
 
-# Cache key: ghostty submodule SHA + this script's SHA. If unchanged, skip build.
+# Pin to Zig 0.15 — Ghostty 1.3.x requires it explicitly (build.zig.zon
+# minimum_zig_version=0.15.2). The unversioned `zig` formula tracks 0.16+,
+# which fails at compile time, so always prefer the keg-only zig@0.15.
+if [[ -d "/opt/homebrew/opt/zig@0.15/bin" ]]; then
+    ZIG="/opt/homebrew/opt/zig@0.15/bin/zig"
+elif [[ -d "/usr/local/opt/zig@0.15/bin" ]]; then
+    ZIG="/usr/local/opt/zig@0.15/bin/zig"
+elif command -v zig >/dev/null 2>&1; then
+    ZIG="$(command -v zig)"
+    actual_ver=$("$ZIG" version)
+    case "$actual_ver" in
+        0.15.*) : ;;
+        *) fail "found zig $actual_ver, but Ghostty needs 0.15.x. Run: brew install zig@0.15" ;;
+    esac
+else
+    fail "zig not found. Run: brew install zig@0.15"
+fi
+
+# Cache key: submodule SHA + this script's SHA. If unchanged and the
+# xcframework exists, no-op.
 ghostty_sha=$(git -C "$GHOSTTY_DIR" rev-parse HEAD)
 script_sha=$(shasum "$0" | awk '{print $1}')
 cache_key="$ghostty_sha:$script_sha"
@@ -34,60 +52,48 @@ if [[ -f "$CACHE_FILE" && -d "$XCFRAMEWORK" ]]; then
     fi
 fi
 
-bold "==> Building libghostty (ghostty=${ghostty_sha:0:8})"
+bold "==> Building libghostty xcframework (zig=$("$ZIG" version), ghostty=${ghostty_sha:0:8})"
+echo "    This downloads dependencies on first run and can take 5-10 minutes."
 
-mkdir -p "$BUILD_DIR" "$OUT_DIR"
-rm -rf "$XCFRAMEWORK"
+mkdir -p "$OUT_DIR"
+rm -rf "$XCFRAMEWORK" "$GHOSTTY_DIR/zig-out" "$GHOSTTY_DIR/macos/GhosttyKit.xcframework"
 
-# Build per-arch static libs. Ghostty's build.zig exposes a `libghostty` step
-# (or `libghostty-static`). The exact step name evolves with the ghostty repo;
-# inspect `cd vendor/ghostty && zig build --help` if this fails.
-ARCHS=(aarch64 x86_64)
-LIBS=()
-for arch in "${ARCHS[@]}"; do
-    target="${arch}-macos"
-    bold "  --> $target"
-    (
-        cd "$GHOSTTY_DIR"
-        zig build \
-            -Doptimize=ReleaseFast \
-            -Dtarget="$target" \
-            -Demit-docs=false \
-            libghostty
-    )
-    out_lib="$GHOSTTY_DIR/zig-out/lib/libghostty.a"
-    [[ -f "$out_lib" ]] || fail "expected $out_lib after zig build"
+# Build options:
+#   -Demit-xcframework: produce the macOS xcframework.
+#   -Dxcframework-target=native: build for the host arch only. The "universal"
+#     option also bundles iOS + iOS-Simulator slices, which we don't need.
+#     Intel macOS support is best-effort (PRD §7) — Rosetta covers it.
+#   -Drenderer=metal + -Dfont-backend=coretext: macOS-native stack.
+#   -Dapp-runtime=none: produce the embeddable library, not the GTK app.
+#   Disable everything we don't need so the build stays fast.
+( cd "$GHOSTTY_DIR" && "$ZIG" build install \
+    -Doptimize=ReleaseFast \
+    -Demit-xcframework=true \
+    -Dxcframework-target=native \
+    -Drenderer=metal \
+    -Dfont-backend=coretext \
+    -Dapp-runtime=none \
+    -Demit-exe=false \
+    -Demit-test-exe=false \
+    -Demit-bench=false \
+    -Demit-helpgen=false \
+    -Demit-docs=false \
+    -Demit-terminfo=false \
+    -Demit-termcap=false \
+    -Demit-themes=false \
+    -Demit-macos-app=false )
 
-    arch_dir="$BUILD_DIR/$arch"
-    mkdir -p "$arch_dir/Headers"
-    cp "$out_lib" "$arch_dir/libghostty.a"
-    cp -R "$GHOSTTY_DIR/include/." "$arch_dir/Headers/"
-    LIBS+=("$arch_dir/libghostty.a")
-done
+# Ghostty's XCFrameworkStep writes to a static path relative to the
+# zig-build cwd: vendor/ghostty/macos/GhosttyKit.xcframework. The find
+# is a safety net for upstream relocations.
+SRC="$GHOSTTY_DIR/macos/GhosttyKit.xcframework"
+if [[ ! -d "$SRC" ]]; then
+    SRC=$(find "$GHOSTTY_DIR" -type d -name 'GhosttyKit.xcframework' -not -path '*/Frameworks/*' -print -quit)
+fi
+[[ -n "${SRC:-}" && -d "$SRC" ]] || fail "build succeeded but no GhosttyKit.xcframework was produced"
 
-# Lipo the slices for the universal arm64+x86_64 macOS slice of the xcframework.
-UNIVERSAL_LIB="$BUILD_DIR/macos-universal/libghostty.a"
-mkdir -p "$(dirname "$UNIVERSAL_LIB")"
-lipo -create "${LIBS[@]}" -output "$UNIVERSAL_LIB"
-mkdir -p "$BUILD_DIR/macos-universal/Headers"
-cp -R "$GHOSTTY_DIR/include/." "$BUILD_DIR/macos-universal/Headers/"
-
-bold "==> Wrapping as xcframework"
-xcodebuild -create-xcframework \
-    -library "$UNIVERSAL_LIB" \
-    -headers "$BUILD_DIR/macos-universal/Headers" \
-    -output "$XCFRAMEWORK"
-
-# Drop a module map so Swift can `import GhosttyKit` (instead of bridging header).
-# The bridging header path remains as a fallback for incremental adoption.
-MODMAP_DIR="$XCFRAMEWORK/macos-arm64_x86_64/Headers"
-cat > "$MODMAP_DIR/module.modulemap" <<'EOF'
-module GhosttyKit {
-    umbrella header "ghostty.h"
-    export *
-    module * { export * }
-}
-EOF
+bold "==> Staging $SRC -> $XCFRAMEWORK"
+cp -R "$SRC" "$XCFRAMEWORK"
 
 echo "$cache_key" > "$CACHE_FILE"
-bold "==> Built $XCFRAMEWORK"
+bold "==> Done."
