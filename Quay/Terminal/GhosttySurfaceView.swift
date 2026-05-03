@@ -130,33 +130,58 @@ final class GhosttySurfaceView: NSView {
     // MARK: Mouse
 
     override func mouseDown(with event: NSEvent) {
+        // Position must be sent before the button so libghostty knows where
+        // the click started — this is what the selection system anchors on.
+        sendMousePos(event)
         sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_LEFT)
         window?.makeFirstResponder(self)
     }
 
     override func mouseUp(with event: NSEvent) {
+        sendMousePos(event)
         sendMouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_LEFT)
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        sendMousePos(event)
         sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_RIGHT)
     }
 
     override func rightMouseUp(with event: NSEvent) {
+        sendMousePos(event)
         sendMouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_RIGHT)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        sendMousePos(event)
+        sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_MIDDLE)
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        sendMousePos(event)
+        sendMouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_MIDDLE)
     }
 
     override func mouseMoved(with event: NSEvent) { sendMousePos(event) }
     override func mouseDragged(with event: NSEvent) { sendMousePos(event) }
+    override func rightMouseDragged(with event: NSEvent) { sendMousePos(event) }
+    override func otherMouseDragged(with event: NSEvent) { sendMousePos(event) }
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-        ghostty_surface_mouse_scroll(
-            surface,
-            event.scrollingDeltaX,
-            event.scrollingDeltaY,
-            ghostty_input_scroll_mods_t(event.hasPreciseScrollingDeltas ? 1 : 0)
-        )
+        var x = event.scrollingDeltaX
+        var y = event.scrollingDeltaY
+        // For mice with discrete (non-precise) scroll wheels, NSEvent
+        // reports tiny deltas (often 1.0). libghostty expects the same
+        // pixel-equivalents Apple sends for trackpads, so scale up.
+        if !event.hasPreciseScrollingDeltas {
+            x *= 10
+            y *= 10
+        }
+        var mods: Int32 = 0
+        if event.hasPreciseScrollingDeltas { mods |= 1 }
+        if event.momentumPhase != [] { mods |= 2 }
+        ghostty_surface_mouse_scroll(surface, x, y, ghostty_input_scroll_mods_t(mods))
     }
 
     private func sendMouseButton(
