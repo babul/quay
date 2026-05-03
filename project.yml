@@ -1,0 +1,98 @@
+name: Quay
+
+options:
+  bundleIdPrefix: com.montopolis
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  defaultConfig: Debug
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    DEAD_CODE_STRIPPING: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+  configs:
+    Debug:
+      SWIFT_OPTIMIZATION_LEVEL: -Onone
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      ONLY_ACTIVE_ARCH: YES
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: -O
+
+configs:
+  Debug: debug
+  Release: release
+
+targets:
+  Quay:
+    type: application
+    platform: macOS
+    sources:
+      - path: Quay
+        excludes:
+          - "Quay-Bridging-Header.h"
+    resources:
+      - path: Quay/Resources
+        optional: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.montopolis.quay
+        PRODUCT_NAME: Quay
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright (c) 2026 The Montopolis Group, Ltd."
+        INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_OBJC_BRIDGING_HEADER: Quay/Quay-Bridging-Header.h
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Frameworks
+        OTHER_LDFLAGS:
+          - $(inherited)
+    dependencies:
+      - target: QuayAskpass
+        copy:
+          destination: executables
+    scheme:
+      testTargets:
+        - QuayTests
+      gatherCoverageData: true
+
+  QuayAskpass:
+    type: tool
+    platform: macOS
+    sources:
+      - path: QuayAskpass
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.montopolis.quay.askpass
+        PRODUCT_NAME: quay-askpass
+        SKIP_INSTALL: NO
+        INSTALL_PATH: $(LOCAL_APPS_DIR)
+        ENABLE_HARDENED_RUNTIME: YES
+
+  QuayTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: QuayTests
+    dependencies:
+      - target: Quay
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.montopolis.quay.tests
+        GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: $(TEST_HOST)
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Quay.app/Contents/MacOS/Quay
