@@ -26,6 +26,9 @@ final class GhosttyRuntime {
 
         var runtime = ghostty_runtime_config_s(
             userdata: nil,
+            // macOS has no X11-style primary selection. Treat both
+            // GHOSTTY_CLIPBOARD_STANDARD and GHOSTTY_CLIPBOARD_SELECTION
+            // as the system pasteboard.
             supports_selection_clipboard: false,
             wakeup_cb: GhosttyRuntime.wakeup,
             action_cb: GhosttyRuntime.action,
@@ -69,14 +72,30 @@ final class GhosttyRuntime {
         return false
     }
 
+    /// Read the system pasteboard for paste / OSC-52-read. libghostty
+    /// passes us a `state` token we hand back to
+    /// `ghostty_surface_complete_clipboard_request` so the request resumes
+    /// inside libghostty. Return `false` if there's no plain-text content,
+    /// which lets bound paste shortcuts fall through to the terminal.
     private static let readClipboard: @convention(c) (
         UnsafeMutableRawPointer?,
         ghostty_clipboard_e,
         UnsafeMutableRawPointer?
-    ) -> Bool = { _, _, _ in
-        return false
+    ) -> Bool = { userdata, _, state in
+        guard let userdata else { return false }
+        let view = Unmanaged<GhosttySurfaceView>.fromOpaque(userdata).takeUnretainedValue()
+        guard let surface = view.surface else { return false }
+        guard let str = NSPasteboard.general.string(forType: .string), !str.isEmpty else {
+            return false
+        }
+        str.withCString { ptr in
+            ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
+        }
+        return true
     }
 
+    /// Second-stage callback for OSC-52 paste confirmation. v0.1 doesn't
+    /// surface a confirmation UI — Step 7 of v0.3 will. For now, ignore.
     private static let confirmReadClipboard: @convention(c) (
         UnsafeMutableRawPointer?,
         UnsafePointer<CChar>?,
@@ -84,13 +103,33 @@ final class GhosttyRuntime {
         ghostty_clipboard_request_e
     ) -> Void = { _, _, _, _ in }
 
+    /// Write to the system pasteboard for copy / OSC-52-write.
+    /// libghostty hands us an array of (mime, data) pairs; we use the
+    /// `text/plain` entry. `confirm` is honored only for OSC 52 in v0.2;
+    /// today we always write through.
     private static let writeClipboard: @convention(c) (
         UnsafeMutableRawPointer?,
         ghostty_clipboard_e,
         UnsafePointer<ghostty_clipboard_content_s>?,
         Int,
         Bool
-    ) -> Void = { _, _, _, _, _ in }
+    ) -> Void = { _, _, content, len, _ in
+        guard let content, len > 0 else { return }
+        var plainText: String?
+        for i in 0..<len {
+            let item = content[i]
+            guard let mime = item.mime, let data = item.data else { continue }
+            let mimeStr = String(cString: mime)
+            if mimeStr == "text/plain" {
+                plainText = String(cString: data)
+                break
+            }
+        }
+        guard let text = plainText, !text.isEmpty else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
 
     private static let closeSurface: @convention(c) (
         UnsafeMutableRawPointer?,

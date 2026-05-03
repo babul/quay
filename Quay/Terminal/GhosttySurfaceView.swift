@@ -8,7 +8,10 @@ import GhosttyKit
 @MainActor
 final class GhosttySurfaceView: NSView {
     private let runtime: GhosttyRuntime
-    private var surface: ghostty_surface_t?
+    /// Exposed `internal` so libghostty's runtime callbacks (clipboard,
+    /// close, etc.) can recover the surface from a `GhosttySurfaceView`
+    /// fished out of userdata. Don't mutate from outside the view.
+    private(set) var surface: ghostty_surface_t?
     private let surfaceConfig: GhosttySurfaceConfig
 
     init(runtime: GhosttyRuntime, config: GhosttySurfaceConfig) {
