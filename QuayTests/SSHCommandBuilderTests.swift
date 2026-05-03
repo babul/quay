@@ -11,7 +11,7 @@ struct SSHCommandBuilderTests {
         let cmd = SSHCommandBuilder.build(
             SSHTarget(hostname: "example.com", port: nil, username: nil, auth: .sshAgent)
         )
-        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no example.com")
+        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no -v example.com")
         #expect(cmd.environment.isEmpty)
     }
 
@@ -20,7 +20,7 @@ struct SSHCommandBuilderTests {
         let cmd = SSHCommandBuilder.build(
             SSHTarget(hostname: "host.internal", port: 2222, username: "deploy", auth: .sshAgent)
         )
-        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no -p 2222 deploy@host.internal")
+        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no -v -p 2222 deploy@host.internal")
         #expect(cmd.environment.isEmpty)
     }
 
@@ -113,7 +113,7 @@ struct SSHCommandBuilderTests {
             SSHTarget(hostname: "ignored", port: nil, username: nil,
                       auth: .sshConfigAlias(alias: "prod-bastion"))
         )
-        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no prod-bastion")
+        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no -v prod-bastion")
     }
 
     @Test("alias with non-trivial chars is quoted")

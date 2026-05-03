@@ -70,6 +70,11 @@ enum SSHCommandBuilder {
         // the askpass helper rather than failing silently.
         argv.append(contentsOf: ["-o", "BatchMode=no"])
 
+        // TEMPORARY: -v so we can diagnose why known_hosts lookups
+        // differ between Quay-spawned ssh and the user's terminal.
+        // Remove once host-key prompts are resolved.
+        argv.append("-v")
+
         switch target.auth {
         case .sshAgent:
             argv.append(contentsOf: hostFlags(target))

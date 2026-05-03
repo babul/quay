@@ -187,6 +187,14 @@ private final class SessionBundle: @unchecked Sendable {
             throw StartError.incompleteProfile
         }
 
+        // TEMPORARY DEBUG: log the env Quay (and therefore the spawned ssh)
+        // see at session start. Remove with the matching -v flag in the
+        // SSH builder once known_hosts behaviour is sorted out.
+        let env = ProcessInfo.processInfo.environment
+        let keys = ["HOME", "USER", "SHELL", "PATH", "SSH_AUTH_SOCK", "TMPDIR"]
+        let summary = keys.map { "\($0)=\(env[$0] ?? "(unset)")" }.joined(separator: " | ")
+        NSLog("Quay session env: %@", summary)
+
         // Set up askpass plumbing only when the auth method needs it.
         var askpass: AskpassServer?
         var askpassEnv: SSHCommandBuilder.AskpassEnv?
