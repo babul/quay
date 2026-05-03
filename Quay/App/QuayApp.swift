@@ -19,8 +19,15 @@ struct QuayApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
+        .modelContainer(PersistenceContainer.shared)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandMenu("Find") {
+                Button("Search Connections") {
+                    NotificationCenter.default.post(name: .focusSearch, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command])
+            }
         }
     }
 }

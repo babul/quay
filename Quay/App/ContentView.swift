@@ -1,54 +1,76 @@
 import Foundation
 import GhosttyKit
+import SwiftData
 import SwiftUI
 
 struct ContentView: View {
-    private let ghosttyVersion: String = {
-        let info = ghostty_info()
-        guard let ptr = info.version else { return "(unknown)" }
-        let data = Data(bytes: ptr, count: Int(info.version_len))
-        return String(data: data, encoding: .utf8) ?? "(invalid utf-8)"
-    }()
+    @State private var selectedConnectionID: UUID?
 
     var body: some View {
         NavigationSplitView {
-            sidebar
+            SidebarView(selection: $selectedConnectionID)
         } detail: {
-            // Smoke test for Step 3: a libghostty surface running the user's
-            // shell. Replace with the connection-driven session view in Step 8.
-            GhosttyTerminalView(config: .localShell())
-                .frame(minWidth: 600, minHeight: 360)
+            detail
         }
     }
 
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            List {
-                Text("No connections yet")
-                    .foregroundStyle(.secondary)
+    @ViewBuilder
+    private var detail: some View {
+        if let id = selectedConnectionID,
+           let profile = lookup(id: id) {
+            // Step 8 will replace this with a real per-tab session view that
+            // resolves secrets, starts an AskpassServer, and runs ssh inside
+            // the libghostty surface. For Step 7 we just confirm selection
+            // wiring works by showing the profile details.
+            ConnectionDetailPlaceholder(profile: profile)
+        } else {
+            ContentUnavailableView {
+                Label("Pick a connection", systemImage: "terminal")
+            } description: {
+                Text("Or hit ⌘L to search.")
             }
-            Spacer()
-            Text("libghostty \(ghosttyVersion)")
-                .font(.caption2.monospaced())
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
         }
-        .frame(minWidth: 220)
-        .navigationTitle("Quay")
+    }
+
+    @Environment(\.modelContext) private var ctx
+    private func lookup(id: UUID) -> ConnectionProfile? {
+        let descriptor = FetchDescriptor<ConnectionProfile>(
+            predicate: #Predicate { $0.id == id }
+        )
+        return try? ctx.fetch(descriptor).first
     }
 }
 
-private extension GhosttySurfaceConfig {
-    /// Convenience for the smoke-test view: spawn the user's shell as a
-    /// login shell with no extra environment.
-    static func localShell() -> GhosttySurfaceConfig {
-        var c = GhosttySurfaceConfig()
-        c.command = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        return c
+private struct ConnectionDetailPlaceholder: View {
+    let profile: ConnectionProfile
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(profile.name).font(.title)
+            Group {
+                Text("hostname: \(profile.hostname)")
+                Text("port: \(profile.port.map(String.init) ?? "(default)")")
+                Text("user: \(profile.username ?? "(current)")")
+                Text("auth: \(profile.authMethod?.rawValue ?? "?")")
+                if let cmd = previewCommand {
+                    Divider()
+                    Text(cmd).font(.system(.caption, design: .monospaced))
+                }
+            }
+            .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var previewCommand: String? {
+        guard let target = profile.sshTarget else { return nil }
+        return SSHCommandBuilder.build(target).command
     }
 }
 
 #Preview {
     ContentView()
+        .modelContainer(for: [Folder.self, ConnectionProfile.self], inMemory: true)
 }
