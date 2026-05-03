@@ -207,11 +207,43 @@ private final class SessionBundle: @unchecked Sendable {
 
         let cmd = SSHCommandBuilder.build(target, askpass: askpassEnv)
         var surfaceConfig = GhosttySurfaceConfig()
-        surfaceConfig.command = cmd.command
-        surfaceConfig.environment = cmd.environment
+        // Run ssh through the user's login shell so it sees the same
+        // environment as their terminal: $HOME, $SSH_AUTH_SOCK, $PATH from
+        // .zprofile/.zshenv, etc. Quay.app inherits launchd's minimal env
+        // and that's what trips up known_hosts lookups + ssh-agent auth.
+        surfaceConfig.command = wrapInLoginShell(cmd.command, askpassEnv: cmd.environment)
+        // Askpass env is now embedded inside the wrap script's `env` prefix;
+        // leave libghostty's env_vars empty so the user's profile can't
+        // unset SSH_ASKPASS_* before exec.
+        surfaceConfig.environment = [:]
         surfaceConfig.waitAfterCommand = true
         surfaceConfig.scaleFactor = NSScreen.main.map { Double($0.backingScaleFactor) } ?? 2.0
         return SessionBundle(surfaceConfig: surfaceConfig, askpass: askpass)
+    }
+
+    /// Wrap `inner` so it runs as: `$SHELL -l -c '<askpass env> exec <inner>'`.
+    ///
+    /// Why login shell: macOS apps spawned by launchd have a minimal env.
+    /// Wrapping in `-l` sources the user's profile (`.zprofile`, `.zshenv`,
+    /// etc.), restoring `HOME` invariants, `SSH_AUTH_SOCK`, custom `PATH`,
+    /// and any other env the user's terminal sees. This is the same trick
+    /// Tabby uses to make ssh feel native.
+    ///
+    /// Askpass env vars are placed AFTER profile sourcing (via inline `env`)
+    /// so the user's profile can't accidentally unset `DISPLAY` or
+    /// `SSH_ASKPASS` before ssh runs.
+    private static func wrapInLoginShell(_ inner: String, askpassEnv: [String: String]) -> String {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let envPrefix = askpassEnv
+            .sorted(by: { $0.key < $1.key })
+            .map { "\($0.key)=\(shellSingleQuote($0.value))" }
+            .joined(separator: " ")
+        let inner = envPrefix.isEmpty ? "exec \(inner)" : "exec env \(envPrefix) \(inner)"
+        return "\(shell) -l -c \(shellSingleQuote(inner))"
+    }
+
+    private static func shellSingleQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     /// Returns the secret reference URI tied to the chosen auth method,
