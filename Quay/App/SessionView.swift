@@ -17,37 +17,126 @@ import SwiftUI
 struct SessionView: View {
     let profile: ConnectionProfile
 
+    @State private var phase: Phase = .idle
     @State private var bundle: SessionBundle?
-    @State private var startupError: String?
+    @State private var epoch: Int = 0
+
+    enum Phase: Equatable {
+        case idle              // never connected, or after manual disconnect
+        case starting
+        case running
+        case failed(String)
+    }
 
     var body: some View {
-        Group {
+        contentBody
+            .navigationTitle(profile.name)
+            .navigationSubtitle(displayHost)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    sessionActionButton
+                }
+            }
+            // SwiftUI's NavigationSplitView keeps the detail view alive as
+            // selection changes — onChange(profile) makes sure switching
+            // sidebar entries actually re-runs the connect flow.
+            .onChange(of: profile.id, initial: true) { _, _ in
+                connect()
+            }
+            .onDisappear {
+                disconnect()
+            }
+    }
+
+    @ViewBuilder
+    private var contentBody: some View {
+        switch phase {
+        case .idle:
+            ContentUnavailableView {
+                Label("Disconnected", systemImage: "powerplug.fill")
+            } description: {
+                Text("Hit Connect in the toolbar to start a session.")
+            } actions: {
+                Button("Connect") { connect() }
+                    .keyboardShortcut(.return, modifiers: [.command])
+            }
+        case .starting:
+            ProgressView("Connecting…")
+        case .running:
             if let bundle {
                 GhosttyTerminalView(config: bundle.surfaceConfig)
-                    .id(profile.id)
-                    .navigationTitle(profile.name)
-                    .navigationSubtitle(displayHost)
-            } else if let startupError {
-                ContentUnavailableView {
-                    Label("Can't open this connection", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(startupError)
-                }
+                    // The id ties to (profile, epoch) so reconnect actually
+                    // tears the NSView down and recreates the surface.
+                    .id("\(profile.id)-\(epoch)")
             } else {
-                ProgressView("Starting…")
+                ProgressView("Connecting…")
+            }
+        case .failed(let message):
+            ContentUnavailableView {
+                Label("Can't open this connection", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(message)
+            } actions: {
+                Button("Try Again") { connect() }
+                    .keyboardShortcut(.return, modifiers: [.command])
             }
         }
-        .onAppear {
-            do {
-                bundle = try SessionBundle.start(for: profile)
-            } catch {
-                startupError = "\(error)"
+    }
+
+    @ViewBuilder
+    private var sessionActionButton: some View {
+        switch phase {
+        case .idle:
+            Button {
+                connect()
+            } label: {
+                Label("Connect", systemImage: "powerplug.fill")
+            }
+        case .starting:
+            ProgressView()
+                .controlSize(.small)
+        case .running:
+            Menu {
+                Button("Reconnect", systemImage: "arrow.clockwise") { reconnect() }
+                Button("Disconnect", systemImage: "powerplug", role: .destructive) {
+                    disconnect()
+                    phase = .idle
+                }
+            } label: {
+                Label("Session", systemImage: "powerplug.fill")
+            }
+        case .failed:
+            Button {
+                connect()
+            } label: {
+                Label("Try Again", systemImage: "arrow.clockwise")
             }
         }
-        .onDisappear {
-            bundle?.shutdown()
+    }
+
+    private func connect() {
+        // Always start from a clean slate — even if a previous session is
+        // still alive (e.g. the user hit "Reconnect" while running).
+        disconnect()
+
+        phase = .starting
+        do {
+            bundle = try SessionBundle.start(for: profile)
+            epoch &+= 1
+            phase = .running
+        } catch {
             bundle = nil
+            phase = .failed("\(error)")
         }
+    }
+
+    private func reconnect() {
+        connect()
+    }
+
+    private func disconnect() {
+        bundle?.shutdown()
+        bundle = nil
     }
 
     private var displayHost: String {
