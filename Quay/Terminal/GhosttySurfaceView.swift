@@ -382,24 +382,26 @@ extension GhosttySurfaceView {
 
     @MainActor
     private func autoscrollTick() {
-        guard let state = autoscrollState, let surface else { return }
+        guard let state = autoscrollState else { return }
         let local = convert(state.lastEvent.locationInWindow, from: nil)
-        // AppKit's local.y measures from the *bottom* of the view. Convert to
-        // distance-outside-bounds in libghostty's top-left-origin terms.
-        let outsideAbove = max(0, local.y - bounds.height)
-        let outsideBelow = max(0, -local.y)
-        let outside = outsideAbove + outsideBelow
-        guard outside > 0 else { return }
-        // Scroll magnitude grows with how far the cursor is past the edge,
-        // capped so a fast flick doesn't scroll a thousand lines.
-        let amount = min(outside, 200)
-        // libghostty's scroll convention: positive y scrolls *up* (toward
-        // older content). We want to scroll the viewport in the direction
-        // the cursor is pulling.
-        let dy = outsideAbove > 0 ? amount : -amount
-        ghostty_surface_mouse_scroll(surface, 0, dy, 0)
+        // AppKit's local.y measures from the *bottom* of the view. The
+        // visible region is local.y in [0, bounds.height]; below the view
+        // gives local.y < 0, above the view (toward top of screen) gives
+        // local.y > bounds.height.
+        let belowBottom = max(0, -local.y)
+        let aboveTop = max(0, local.y - bounds.height)
+        guard belowBottom > 0 || aboveTop > 0 else { return }
+        // Lines per tick scales with how far past the edge the cursor is.
+        // ~16 px ≈ one terminal row; cap so a flick at full velocity doesn't
+        // teleport across the whole scrollback.
+        let pixels = max(belowBottom, aboveTop)
+        let lines = max(1, min(8, Int(pixels / 16)))
+        // scroll_page_lines:+N scrolls toward newer content (down/bottom);
+        // scroll_page_lines:-N scrolls toward older content (up/top).
+        let signedLines = belowBottom > 0 ? lines : -lines
+        _ = performBindingAction("scroll_page_lines:\(signedLines)")
         // Re-send the cursor position so libghostty extends the selection
-        // to the new top/bottom row exposed by the scroll.
+        // through the freshly-exposed rows.
         sendMousePos(state.lastEvent)
     }
 }
