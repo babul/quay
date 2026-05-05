@@ -129,6 +129,12 @@ private struct TerminalSurfaceHostsView: NSViewRepresentable {
         for sv in container.subviews {
             sv.isHidden = !(sv === selectedSurface)
         }
+
+        // Transfer first-responder after isHidden = false. AppKit silently
+        // ignores makeFirstResponder on a hidden view, so this must come last.
+        if let selectedSurface, !selectedSurface.isHidden {
+            container.window?.makeFirstResponder(selectedSurface)
+        }
     }
 }
 

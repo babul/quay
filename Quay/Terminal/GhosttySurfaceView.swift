@@ -113,7 +113,7 @@ final class GhosttySurfaceView: NSView {
         let occluded = !window.occlusionState.contains(.visible)
         guard occluded != lastOccluded else { return }
         lastOccluded = occluded
-        ghostty_surface_set_occlusion(surface, occluded)
+        ghostty_surface_set_occlusion(surface, !occluded)
     }
 
     /// Explicitly occlude or un-occlude this surface when the owning tab is
@@ -121,7 +121,7 @@ final class GhosttySurfaceView: NSView {
     func setTabOccluded(_ occluded: Bool) {
         guard let surface, occluded != lastOccluded else { return }
         lastOccluded = occluded
-        ghostty_surface_set_occlusion(surface, occluded)
+        ghostty_surface_set_occlusion(surface, !occluded)
     }
 
     override var acceptsFirstResponder: Bool { true }
