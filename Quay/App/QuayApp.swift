@@ -27,6 +27,12 @@ struct QuayApp: App {
         .modelContainer(PersistenceContainer.shared)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandMenu("View") {
+                Button("Toggle Sidebar") {
+                    NotificationCenter.default.post(name: .toggleSidebar, object: nil)
+                }
+                .keyboardShortcut("b", modifiers: [.command])
+            }
             CommandMenu("Find") {
                 Button("Search Connections") {
                     NotificationCenter.default.post(name: .focusSearch, object: nil)

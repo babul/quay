@@ -329,4 +329,6 @@ struct SidebarView: View {
 extension Notification.Name {
     /// Posted by the ⌘L menu command to focus the sidebar's search field.
     static let focusSearch = Notification.Name("com.montopolis.quay.focusSearch")
+    /// Posted by the ⌘B menu command to show or hide the sidebar.
+    static let toggleSidebar = Notification.Name("com.montopolis.quay.toggleSidebar")
 }

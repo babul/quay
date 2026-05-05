@@ -6,10 +6,11 @@ import SwiftUI
 struct ContentView: View {
     let store: StoreOf<AppFeature>
     @State private var selectedConnectionID: UUID?
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     private let tabManager = TerminalTabManager.shared
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(selection: $selectedConnectionID)
         } detail: {
             detail
@@ -20,6 +21,9 @@ struct ContentView: View {
         .onChange(of: selectedConnectionID) { _, id in
             guard let id, let profile = lookup(id: id) else { return }
             tabManager.openTab(for: profile)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
         }
     }
 
