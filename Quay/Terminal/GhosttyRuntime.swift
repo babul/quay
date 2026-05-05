@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import GhosttyKit
 import OSLog
@@ -14,6 +15,7 @@ final class GhosttyRuntime {
     static let shared = GhosttyRuntime()
 
     static let logger = Logger(subsystem: "com.montopolis.quay", category: "ghostty")
+    private static var didBootstrap = false
 
     let app: ghostty_app_t
     let config: ghostty_config_t
@@ -46,9 +48,12 @@ final class GhosttyRuntime {
     }
 
     private init() {
+        Self.bootstrapIfNeeded()
+
         guard let config = ghostty_config_new() else {
             fatalError("ghostty_config_new returned nil")
         }
+        Self.logger.debug("Created Ghostty config")
         ghostty_config_load_default_files(config)
         ghostty_config_finalize(config)
 
@@ -67,6 +72,7 @@ final class GhosttyRuntime {
             ghostty_config_free(config)
             fatalError("ghostty_app_new returned nil")
         }
+        Self.logger.debug("Created Ghostty app runtime")
 
         self.config = config
         self.app = app
@@ -74,6 +80,29 @@ final class GhosttyRuntime {
 
     func tick() {
         ghostty_app_tick(app)
+    }
+
+    private static func bootstrapIfNeeded() {
+        guard !didBootstrap else { return }
+        configureBundledResources()
+        logger.debug("Bootstrapping libghostty")
+        let rc = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
+        precondition(rc == GHOSTTY_SUCCESS, "ghostty_init failed (\(rc))")
+        didBootstrap = true
+        logger.debug("Bootstrapped libghostty")
+    }
+
+    private static func configureBundledResources() {
+        guard let resourcesURL = Bundle.main.resourceURL else { return }
+
+        let terminfoURL = resourcesURL.appending(path: "terminfo/78/xterm-ghostty")
+        let ghosttyURL = resourcesURL.appending(path: "ghostty")
+        guard FileManager.default.fileExists(atPath: terminfoURL.path),
+              FileManager.default.fileExists(atPath: ghosttyURL.path)
+        else { return }
+
+        setenv("GHOSTTY_RESOURCES_DIR", ghosttyURL.path, 1)
+        logger.debug("Configured Ghostty resources dir: \(ghosttyURL.path, privacy: .public)")
     }
 }
 

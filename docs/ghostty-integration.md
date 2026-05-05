@@ -38,6 +38,8 @@ zig build install \
 
 Output: `vendor/ghostty/macos/GhosttyKit.xcframework` (Ghostty's `XCFrameworkStep` writes to a static path, *not* through Zig's normal install mechanism) → copied to `Frameworks/GhosttyKit.xcframework`. The xcframework binary inside is named `libghostty-internal-fat.a` regardless of slice count.
 
+The script also stages the minimal runtime resources Quay needs into `Quay/Resources`: compiled terminfo plus Ghostty shell integration. At runtime, `GhosttyRuntime` points `GHOSTTY_RESOURCES_DIR` at the bundled `Contents/Resources/ghostty` directory before calling `ghostty_init`, which lets libghostty set `TERM=xterm-ghostty` and inject shell integration.
+
 ### Why `native` instead of `universal`
 
 `-Dxcframework-target=universal` bundles three slices: macOS universal, iOS, and iOS Simulator. Quay only ships macOS, so the iOS slices are wasted megabytes — and they require the Metal Toolchain installed for iOS shader compilation, which adds ~700MB to the Xcode footprint. `native` skips all of that and produces a single macOS slice for the host arch (arm64 on Apple Silicon).

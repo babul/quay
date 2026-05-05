@@ -14,9 +14,32 @@ GHOSTTY_DIR="$REPO_ROOT/vendor/ghostty"
 OUT_DIR="$REPO_ROOT/Frameworks"
 XCFRAMEWORK="$OUT_DIR/GhosttyKit.xcframework"
 CACHE_FILE="$REPO_ROOT/.build-ghostty.cache"
+QUAY_RESOURCES_DIR="$REPO_ROOT/Quay/Resources"
 
 bold() { printf "\033[1m%s\033[0m\n" "$*"; }
 fail() { printf "\033[31merror:\033[0m %s\n" "$*" >&2; exit 1; }
+
+stage_resources() {
+    local share_dir="$GHOSTTY_DIR/zig-out/share"
+    local terminfo_dir="$share_dir/terminfo"
+    local shell_integration_dir="$share_dir/ghostty/shell-integration"
+
+    [[ -f "$terminfo_dir/78/xterm-ghostty" ]] || \
+        fail "missing Ghostty terminfo at $terminfo_dir/78/xterm-ghostty"
+    [[ -d "$shell_integration_dir" ]] || \
+        fail "missing Ghostty shell integration at $shell_integration_dir"
+
+    bold "==> Staging Ghostty runtime resources -> $QUAY_RESOURCES_DIR"
+    mkdir -p "$QUAY_RESOURCES_DIR/ghostty"
+    rm -rf "$QUAY_RESOURCES_DIR/terminfo" "$QUAY_RESOURCES_DIR/ghostty/shell-integration"
+    cp -R "$terminfo_dir" "$QUAY_RESOURCES_DIR/terminfo"
+    cp -R "$shell_integration_dir" "$QUAY_RESOURCES_DIR/ghostty/shell-integration"
+}
+
+resources_staged() {
+    [[ -f "$QUAY_RESOURCES_DIR/terminfo/78/xterm-ghostty" && \
+       -f "$QUAY_RESOURCES_DIR/ghostty/shell-integration/zsh/.zshenv" ]]
+}
 
 [[ -d "$GHOSTTY_DIR/.git" || -f "$GHOSTTY_DIR/.git" ]] || \
     fail "vendor/ghostty not initialized. Run: git submodule update --init"
@@ -47,6 +70,9 @@ cache_key="$ghostty_sha:$script_sha"
 
 if [[ -f "$CACHE_FILE" && -d "$XCFRAMEWORK" ]]; then
     if [[ "$(cat "$CACHE_FILE")" == "$cache_key" ]]; then
+        if ! resources_staged; then
+            stage_resources
+        fi
         bold "==> GhosttyKit.xcframework up to date (cache hit, ghostty=${ghostty_sha:0:8})"
         exit 0
     fi
@@ -94,6 +120,7 @@ fi
 
 bold "==> Staging $SRC -> $XCFRAMEWORK"
 cp -R "$SRC" "$XCFRAMEWORK"
+stage_resources
 
 echo "$cache_key" > "$CACHE_FILE"
 bold "==> Done."

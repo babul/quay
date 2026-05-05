@@ -47,8 +47,20 @@ targets:
       - path: Quay
         excludes:
           - "Quay-Bridging-Header.h"
-    resources:
-      - path: Quay/Resources
+          - "Resources/**"
+      - path: Quay/Resources/Assets.xcassets
+        buildPhase: resources
+        optional: true
+      - path: Quay/Resources/default-ghostty.conf
+        buildPhase: resources
+        optional: true
+      - path: Quay/Resources/ghostty
+        buildPhase: resources
+        type: folder
+        optional: true
+      - path: Quay/Resources/terminfo
+        buildPhase: resources
+        type: folder
         optional: true
     settings:
       base:

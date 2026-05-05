@@ -57,6 +57,7 @@ final class GhosttySurfaceView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil, surface == nil else { return }
+        GhosttyRuntime.logger.debug("Creating Ghostty surface")
 
         // Bridge must exist before ghostty_surface_new so that userdata is
         // valid for the very first callback libghostty may fire during creation.
@@ -71,6 +72,8 @@ final class GhosttySurfaceView: NSView {
         }
         if surface == nil {
             GhosttyRuntime.logger.error("ghostty_surface_new returned nil")
+        } else {
+            GhosttyRuntime.logger.debug("Created Ghostty surface")
         }
 
         if let scale = window?.backingScaleFactor, let surface {

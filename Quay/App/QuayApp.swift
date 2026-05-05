@@ -1,19 +1,16 @@
 import AppKit
 import ComposableArchitecture
-import GhosttyKit
+import OSLog
 import SwiftUI
+
+private let quayAppLogger = Logger(subsystem: "com.montopolis.quay", category: "app")
 
 @main
 struct QuayApp: App {
     let store = Store(initialState: AppFeature.State()) { AppFeature() }
 
     init() {
-        // ghostty_init must be called once before any other libghostty entry
-        // points. We pass the real argc/argv so libghostty can detect CLI
-        // actions, although Quay doesn't use them — Ghostty's own +cli
-        // dispatch is harmless when no `+action` is present.
-        let rc = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
-        precondition(rc == GHOSTTY_SUCCESS, "ghostty_init failed (\(rc))")
+        quayAppLogger.debug("QuayApp initialized")
     }
 
     var body: some Scene {
@@ -73,6 +70,7 @@ private struct WindowConfigurator: NSViewRepresentable {
         func configureWindow() {
             guard !didConfigureWindow, let window else { return }
             didConfigureWindow = true
+            quayAppLogger.debug("Configuring main window")
             window.setFrameAutosaveName("Quay.MainWindow.Frame")
 
             let center = NotificationCenter.default
@@ -104,8 +102,8 @@ private struct WindowConfigurator: NSViewRepresentable {
 
         private func restoreSavedFrameAfterSwiftUIPlacement() {
             guard UserDefaults.standard.string(forKey: Self.savedFrameKey) != nil else { return }
+            quayAppLogger.debug("Restoring saved main window frame")
             isRestoringFrame = true
-            restoreSavedFrame()
 
             Task { @MainActor in
                 await Task.yield()
