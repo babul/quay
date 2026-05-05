@@ -95,8 +95,20 @@ extension GhosttyRuntime {
     // surface callbacks fire on the main thread.
 
     private static let wakeup: @convention(c) (UnsafeMutableRawPointer?) -> Void = { _ in
-        // libghostty wants the embedder to schedule an `app_tick()` on the
-        // main thread. Wired up in commit 6 (wakeup tick driver).
+        // Schedule a ghostty_app_tick on the main thread. Multiple rapid wakeup
+        // callbacks are coalesced via `tickPending` so we only queue one at a time.
+        GhosttyRuntime.scheduleTick()
+    }
+
+    private static var tickPending = false
+
+    private static func scheduleTick() {
+        guard !tickPending else { return }
+        tickPending = true
+        DispatchQueue.main.async {
+            tickPending = false
+            GhosttyRuntime.shared.tick()
+        }
     }
 
     private static let action: @convention(c) (
