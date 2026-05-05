@@ -20,6 +20,11 @@ final class GhosttySurfaceView: NSView {
     var autoscrollState: AutoscrollState?
     private var trackingArea: NSTrackingArea?
 
+    // Observers for screen and occlusion changes, cleared in deinit.
+    private var windowObservers: [NSObjectProtocol] = []
+    // Last occlusion state, to avoid redundant calls to set_occlusion.
+    private var lastOccluded: Bool = false
+
     // IME state — owned here; modified by GhosttySurfaceView+IME.
     var markedText = NSMutableAttributedString()
     var keyTextAccumulator: [String]?
@@ -38,9 +43,9 @@ final class GhosttySurfaceView: NSView {
     }
 
     isolated deinit {
-        if let surface {
-            ghostty_surface_free(surface)
-        }
+        for obs in windowObservers { NotificationCenter.default.removeObserver(obs) }
+        if let bridge { runtime.unregisterSurface(bridge) }
+        if let surface { ghostty_surface_free(surface) }
     }
 
     override func viewDidMoveToWindow() {
@@ -65,7 +70,42 @@ final class GhosttySurfaceView: NSView {
         if let scale = window?.backingScaleFactor, let surface {
             ghostty_surface_set_content_scale(surface, scale, scale)
         }
+        pushDisplayID()
         pushSize()
+
+        runtime.registerSurface(newBridge)
+        installWindowObservers()
+    }
+
+    private func installWindowObservers() {
+        guard let window else { return }
+        let center = NotificationCenter.default
+        windowObservers = [
+            center.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in self?.updateOcclusion() },
+            center.addObserver(
+                forName: NSWindow.didChangeScreenNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in self?.pushDisplayID() },
+        ]
+    }
+
+    private func pushDisplayID() {
+        guard let surface else { return }
+        let id = window?.screen?.displayID ?? 0
+        ghostty_surface_set_display_id(surface, id)
+    }
+
+    private func updateOcclusion() {
+        guard let surface, let window else { return }
+        let occluded = !window.occlusionState.contains(.visible)
+        guard occluded != lastOccluded else { return }
+        lastOccluded = occluded
+        ghostty_surface_set_occlusion(surface, occluded)
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -91,6 +131,7 @@ final class GhosttySurfaceView: NSView {
         super.viewDidChangeBackingProperties()
         guard let surface, let scale = window?.backingScaleFactor else { return }
         ghostty_surface_set_content_scale(surface, scale, scale)
+        pushDisplayID()
     }
 
     private func pushSize() {

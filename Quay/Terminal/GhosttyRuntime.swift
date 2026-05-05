@@ -18,6 +18,33 @@ final class GhosttyRuntime {
     let app: ghostty_app_t
     let config: ghostty_config_t
 
+    /// Weak set of live surface bridges — used to fan out config and theme
+    /// changes to every running surface without strong-reference cycles.
+    private var surfaceRefs = NSHashTable<GhosttySurfaceBridge>.weakObjects()
+
+    func registerSurface(_ bridge: GhosttySurfaceBridge) {
+        surfaceRefs.add(bridge)
+    }
+
+    func unregisterSurface(_ bridge: GhosttySurfaceBridge) {
+        surfaceRefs.remove(bridge)
+    }
+
+    /// Reload the shared config and push it to every live surface.
+    func reloadConfig() {
+        ghostty_config_load_default_files(config)
+        ghostty_config_finalize(config)
+        ghostty_app_update_config(app, config)
+        for bridge in surfaceRefs.allObjects {
+            guard let surface = bridge.view?.surface else { continue }
+            ghostty_surface_update_config(surface, config)
+        }
+        NotificationCenter.default.post(
+            name: .ghosttyRuntimeConfigDidChange,
+            object: self
+        )
+    }
+
     private init() {
         guard let config = ghostty_config_new() else {
             fatalError("ghostty_config_new returned nil")
@@ -48,6 +75,16 @@ final class GhosttyRuntime {
     func tick() {
         ghostty_app_tick(app)
     }
+}
+
+// MARK: - Notification names
+
+extension Notification.Name {
+    /// Posted by `GhosttyRuntime.reloadConfig()` after config + all surfaces are updated.
+    static let ghosttyRuntimeConfigDidChange = Notification.Name("com.montopolis.quay.ghosttyRuntimeConfigDidChange")
+}
+
+extension GhosttyRuntime {
 
     // MARK: Runtime callbacks
     //

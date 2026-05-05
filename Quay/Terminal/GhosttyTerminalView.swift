@@ -13,7 +13,8 @@ struct GhosttyTerminalView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: GhosttySurfaceView, context: Context) {
-        // v0.1: terminal config is fixed at creation time. Live config
-        // updates (font size, theme) land later via ghostty_surface_update_config.
+        // Config changes are broadcast via GhosttyRuntime.reloadConfig(), which
+        // calls ghostty_surface_update_config on every registered surface. No
+        // per-update work needed here.
     }
 }
