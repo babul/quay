@@ -21,6 +21,7 @@ final class TerminalTabItem: Identifiable {
         case idle
         case starting
         case running
+        case disconnected
         case failed(String)
     }
 
@@ -62,10 +63,10 @@ final class TerminalTabItem: Identifiable {
             view.onBridgeCreated = { [weak self] bridge in
                 guard let self else { return }
                 bridge.onCloseRequest = { [weak self] in
-                    self?.phase = .failed("Session ended")
+                    self?.markSessionEnded()
                 }
                 bridge.onChildExited = { [weak self] _ in
-                    self?.phase = .failed("Session ended")
+                    self?.markSessionEnded()
                     self?.onChildExited?()
                 }
             }
@@ -78,6 +79,17 @@ final class TerminalTabItem: Identifiable {
 
     func reconnect() {
         connect()
+    }
+
+    func disconnect() {
+        surfaceView?.disconnectProcess()
+        phase = .disconnected
+    }
+
+    private func markSessionEnded() {
+        if phase != .disconnected {
+            phase = .failed("Session ended")
+        }
     }
 
     /// Tear down the surface but keep the askpass server alive for the tab's duration.

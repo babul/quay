@@ -19,6 +19,8 @@ struct TerminalTabBar: View {
                         showColorBar: showTabColorBars,
                         isSelected: tab.id == tabManager.selectedTabID,
                         onSelect: { tabManager.select(tab) },
+                        onDisconnect: { tabManager.disconnectTab(tab) },
+                        onReconnect: { tabManager.reconnectTab(tab) },
                         onClose: { tabManager.closeTab(tab) }
                     )
                 }
@@ -37,6 +39,8 @@ private struct TabButton: View {
     var showColorBar: Bool
     var isSelected: Bool
     var onSelect: () -> Void
+    var onDisconnect: () -> Void
+    var onReconnect: () -> Void
     var onClose: () -> Void
 
     var body: some View {
@@ -66,6 +70,16 @@ private struct TabButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button(action: onDisconnect) {
+                Label("Disconnect", systemImage: "bolt.horizontal.circle")
+            }
+            .disabled(!canDisconnect)
+
+            Button(action: onReconnect) {
+                Label("Reconnect", systemImage: "arrow.clockwise.circle")
+            }
+        }
         .overlay(alignment: .top) {
             Rectangle()
                 .frame(height: isSelected ? 3 : 2)
@@ -82,13 +96,23 @@ private struct TabButton: View {
         isSelected ? tabAccent.opacity(0.14) : .clear
     }
 
+    private var canDisconnect: Bool {
+        switch phase {
+        case .running, .starting:
+            return true
+        case .idle, .disconnected, .failed:
+            return false
+        }
+    }
+
     @ViewBuilder
     private var phaseDot: some View {
         let color: Color = switch phase {
         case .idle:             .clear
         case .starting:         .yellow
         case .running:          .green
-        case .failed:           .red
+        case .disconnected,
+             .failed:           .red
         }
         Circle().fill(color).frame(width: 6, height: 6)
     }

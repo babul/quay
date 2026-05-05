@@ -14,6 +14,7 @@ struct TerminalClient: Sendable {
     enum Command: Sendable {
         case closeTab(UUID)
         case selectTab(UUID)
+        case disconnect(UUID)
         case reconnect(UUID)
     }
 
@@ -38,8 +39,10 @@ extension TerminalClient: DependencyKey {
                 case .selectTab(let id):
                     guard let tab = mgr.tabs.first(where: { $0.id == id }) else { return }
                     mgr.select(tab)
+                case .disconnect(let id):
+                    mgr.disconnectTab(id: id)
                 case .reconnect(let id):
-                    mgr.tabs.first(where: { $0.id == id })?.reconnect()
+                    mgr.reconnectTab(id: id)
                 }
             },
             events: { stream }

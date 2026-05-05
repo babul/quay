@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import GhosttyKit
 
 /// `NSView` that hosts a single `ghostty_surface_t`.
@@ -122,6 +123,13 @@ final class GhosttySurfaceView: NSView {
         guard let surface, occluded != lastOccluded else { return }
         lastOccluded = occluded
         ghostty_surface_set_occlusion(surface, !occluded)
+    }
+
+    func disconnectProcess() {
+        guard let surface, !ghostty_surface_process_exited(surface) else { return }
+        let pid = pid_t(ghostty_surface_foreground_pid(surface))
+        guard pid > 0 else { return }
+        _ = Darwin.kill(pid, SIGHUP)
     }
 
     override var acceptsFirstResponder: Bool { true }

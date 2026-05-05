@@ -65,10 +65,14 @@ struct ContentView: View {
     @ViewBuilder
     private func statusOverlay(for tab: TerminalTabItem) -> some View {
         switch tab.phase {
-        case .idle, .starting:
+        case .idle:
+            Color(nsColor: .windowBackgroundColor)
+        case .starting:
             Color(nsColor: .windowBackgroundColor)
                 .overlay { ProgressView("Connecting…") }
         case .running:
+            EmptyView()
+        case .disconnected:
             EmptyView()
         case .failed(let message):
             Color(nsColor: .windowBackgroundColor)
