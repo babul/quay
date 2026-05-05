@@ -51,7 +51,13 @@ private struct WindowConfigurator: NSViewRepresentable {
     }
 
     private final class ConfiguringView: NSView {
+        private static let savedFrameKey = "Quay.MainWindow.SavedFrame"
         private var didConfigureWindow = false
+        private var isRestoringFrame = false
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -62,6 +68,61 @@ private struct WindowConfigurator: NSViewRepresentable {
             guard !didConfigureWindow, let window else { return }
             didConfigureWindow = true
             window.setFrameAutosaveName("Quay.MainWindow.Frame")
+
+            let center = NotificationCenter.default
+            center.addObserver(
+                self,
+                selector: #selector(windowFrameDidChange),
+                name: NSWindow.didMoveNotification,
+                object: window
+            )
+            center.addObserver(
+                self,
+                selector: #selector(windowFrameDidChange),
+                name: NSWindow.didResizeNotification,
+                object: window
+            )
+            center.addObserver(
+                self,
+                selector: #selector(windowFrameDidChange),
+                name: NSWindow.willCloseNotification,
+                object: window
+            )
+
+            restoreSavedFrameAfterSwiftUIPlacement()
+        }
+
+        @objc private func windowFrameDidChange() {
+            saveFrame()
+        }
+
+        private func restoreSavedFrameAfterSwiftUIPlacement() {
+            guard UserDefaults.standard.string(forKey: Self.savedFrameKey) != nil else { return }
+            isRestoringFrame = true
+            restoreSavedFrame()
+
+            Task { @MainActor in
+                await Task.yield()
+                restoreSavedFrame()
+
+                try? await Task.sleep(for: .milliseconds(150))
+                restoreSavedFrame()
+
+                isRestoringFrame = false
+                saveFrame()
+            }
+        }
+
+        private func restoreSavedFrame() {
+            guard let window,
+                  let frame = UserDefaults.standard.string(forKey: Self.savedFrameKey)
+            else { return }
+            window.setFrame(from: frame)
+        }
+
+        private func saveFrame() {
+            guard !isRestoringFrame, let window else { return }
+            UserDefaults.standard.set(window.frameDescriptor, forKey: Self.savedFrameKey)
         }
     }
 }
