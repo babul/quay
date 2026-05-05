@@ -26,6 +26,8 @@ final class TerminalTabItem: Identifiable {
     }
 
     private(set) var phase: Phase = .idle
+    private(set) var displayedTitle: String
+    private(set) var displayedUsername: String?
 
     /// The long-lived surface view — `nil` only before the first connect.
     private(set) var surfaceView: GhosttySurfaceView?
@@ -41,6 +43,8 @@ final class TerminalTabItem: Identifiable {
     init(profile: ConnectionProfile) {
         self.id = UUID()
         self.profile = profile
+        self.displayedTitle = profile.name
+        self.displayedUsername = profile.username
     }
 
     // MARK: Lifecycle
@@ -64,6 +68,10 @@ final class TerminalTabItem: Identifiable {
                 guard let self else { return }
                 bridge.onCloseRequest = { [weak self] in
                     self?.markSessionEnded()
+                }
+                bridge.onTitleChange = { [weak self] title in
+                    guard let self else { return }
+                    self.updateDisplayedTitle(title)
                 }
                 bridge.onChildExited = { [weak self] _ in
                     self?.markSessionEnded()
@@ -108,10 +116,7 @@ final class TerminalTabItem: Identifiable {
     // MARK: Display
 
     var displayTitle: String {
-        if let bridge = surfaceView?.bridge, !bridge.state.title.isEmpty {
-            return bridge.state.title
-        }
-        return profile.name
+        displayedTitle
     }
 
     var displayHost: String {
@@ -120,8 +125,33 @@ final class TerminalTabItem: Identifiable {
         case .sshConfigAlias(let alias): return alias
         default: break
         }
-        let user = target.username.map { "\($0)@" } ?? ""
+        let user = displayedUsername.map { "\($0)@" } ?? ""
         let port = target.port.map { ":\($0)" } ?? ""
         return "\(user)\(target.hostname)\(port)"
+    }
+
+    private func updateDisplayedTitle(_ terminalTitle: String) {
+        guard !terminalTitle.isEmpty else {
+            displayedTitle = profile.name
+            displayedUsername = profile.username
+            return
+        }
+
+        let promptPrefix = terminalTitle.split(separator: ":", maxSplits: 1).first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let promptPrefix, !promptPrefix.isEmpty else {
+            displayedTitle = terminalTitle
+            return
+        }
+
+        if let atIndex = promptPrefix.firstIndex(of: "@") {
+            let username = String(promptPrefix[..<atIndex])
+            let host = String(promptPrefix[promptPrefix.index(after: atIndex)...])
+            displayedUsername = username.isEmpty ? profile.username : username
+            displayedTitle = host.isEmpty ? profile.name : host
+        } else {
+            displayedTitle = promptPrefix
+        }
     }
 }

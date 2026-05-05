@@ -56,7 +56,7 @@ private struct TabButton: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                .frame(maxWidth: 120, alignment: .leading)
+                .frame(minWidth: 56, maxWidth: 220, alignment: .leading)
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .imageScale(.small)
