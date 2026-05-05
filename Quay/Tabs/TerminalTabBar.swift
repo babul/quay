@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Horizontal tab strip reading directly from `TerminalTabManager`.
 /// No reducer round-trip — high-frequency updates (title changes, phase
@@ -23,7 +24,26 @@ struct TerminalTabBar: View {
                         onReconnect: { tabManager.reconnectTab(tab) },
                         onClose: { tabManager.closeTab(tab) }
                     )
+                    .onDrag {
+                        NSItemProvider(object: tab.id.uuidString as NSString)
+                    }
+                    .onDrop(
+                        of: [.plainText],
+                        delegate: TabDropDelegate(
+                            tabManager: tabManager,
+                            destinationID: tab.id
+                        )
+                    )
                 }
+                Color.clear
+                    .frame(width: 24)
+                    .onDrop(
+                        of: [.plainText],
+                        delegate: TabDropDelegate(
+                            tabManager: tabManager,
+                            destinationID: nil
+                        )
+                    )
             }
         }
         .background(.bar)
@@ -115,5 +135,44 @@ private struct TabButton: View {
              .failed:           .red
         }
         Circle().fill(color).frame(width: 6, height: 6)
+    }
+}
+
+private struct TabDropDelegate: DropDelegate {
+    let tabManager: TerminalTabManager
+    let destinationID: UUID?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [UTType.plainText.identifier])
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func dropEntered(info: DropInfo) {
+        moveDroppedTab(info: info)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        moveDroppedTab(info: info)
+    }
+
+    @discardableResult
+    private func moveDroppedTab(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [UTType.plainText.identifier]).first else {
+            return false
+        }
+
+        provider.loadObject(ofClass: NSString.self) { value, _ in
+            guard let rawID = value as? NSString,
+                  let id = UUID(uuidString: String(rawID))
+            else { return }
+
+            Task { @MainActor in
+                tabManager.moveTab(id: id, before: destinationID)
+            }
+        }
+        return true
     }
 }

@@ -71,4 +71,55 @@ struct TerminalTabManagerTests {
         #expect(second.id != first.id)
         #expect(manager.selectedTabID == second.id)
     }
+
+    @Test("Move tab before another tab reorders live tabs")
+    func moveTabBeforeAnotherTabReordersLiveTabs() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let first = manager.openNewTab(for: ConnectionProfile(name: "prod", hostname: "prod.example.com"))
+        let second = manager.openNewTab(for: ConnectionProfile(name: "stage", hostname: "stage.example.com"))
+        let third = manager.openNewTab(for: ConnectionProfile(name: "dev", hostname: "dev.example.com"))
+
+        manager.moveTab(id: third.id, before: second.id)
+
+        #expect(manager.tabs.map(\.id) == [first.id, third.id, second.id])
+    }
+
+    @Test("Move tab to end when destination is nil")
+    func moveTabToEndWhenDestinationIsNil() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let first = manager.openNewTab(for: ConnectionProfile(name: "prod", hostname: "prod.example.com"))
+        let second = manager.openNewTab(for: ConnectionProfile(name: "stage", hostname: "stage.example.com"))
+        let third = manager.openNewTab(for: ConnectionProfile(name: "dev", hostname: "dev.example.com"))
+
+        manager.moveTab(id: first.id, before: nil)
+
+        #expect(manager.tabs.map(\.id) == [second.id, third.id, first.id])
+    }
+
+    @Test("Moving tab onto itself is a no-op")
+    func movingTabOntoItselfIsNoOp() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let first = manager.openNewTab(for: ConnectionProfile(name: "prod", hostname: "prod.example.com"))
+        let second = manager.openNewTab(for: ConnectionProfile(name: "stage", hostname: "stage.example.com"))
+        let originalOrder = manager.tabs.map(\.id)
+
+        manager.moveTab(id: second.id, before: second.id)
+
+        #expect(manager.tabs.map(\.id) == originalOrder)
+        #expect(manager.tabs.map(\.id) == [first.id, second.id])
+    }
+
+    @Test("Selected tab remains selected after reorder")
+    func selectedTabRemainsSelectedAfterReorder() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let first = manager.openNewTab(for: ConnectionProfile(name: "prod", hostname: "prod.example.com"))
+        let second = manager.openNewTab(for: ConnectionProfile(name: "stage", hostname: "stage.example.com"))
+        let third = manager.openNewTab(for: ConnectionProfile(name: "dev", hostname: "dev.example.com"))
+        manager.select(second)
+
+        manager.moveTab(id: second.id, before: first.id)
+
+        #expect(manager.tabs.map(\.id) == [second.id, first.id, third.id])
+        #expect(manager.selectedTabID == second.id)
+    }
 }

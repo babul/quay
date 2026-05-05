@@ -55,6 +55,21 @@ final class TerminalTabManager {
         // after the selected surface is ordered frontmost.
     }
 
+    func moveTab(id: UUID, before destinationID: UUID?) {
+        guard id != destinationID else { return }
+        guard let sourceIndex = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let item = tabs.remove(at: sourceIndex)
+
+        guard let destinationID,
+              let destinationIndex = tabs.firstIndex(where: { $0.id == destinationID })
+        else {
+            tabs.append(item)
+            return
+        }
+
+        tabs.insert(item, at: destinationIndex)
+    }
+
     func closeTab(_ item: TerminalTabItem) {
         item.close()
         tabs.removeAll { $0.id == item.id }
