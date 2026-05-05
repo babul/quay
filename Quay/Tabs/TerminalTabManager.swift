@@ -40,7 +40,7 @@ final class TerminalTabManager {
 
     func select(_ item: TerminalTabItem) {
         if let prev = selectedTab, prev.id != item.id {
-            prev.surfaceView?.resignFirstResponder()
+            _ = prev.surfaceView?.resignFirstResponder()
             prev.surfaceView?.setTabOccluded(true)
         }
         selectedTabID = item.id

@@ -93,12 +93,12 @@ final class GhosttySurfaceView: NSView {
                 forName: NSWindow.didChangeOcclusionStateNotification,
                 object: window,
                 queue: .main
-            ) { [weak self] _ in self?.updateOcclusion() },
+            ) { [weak self] _ in MainActor.assumeIsolated { self?.updateOcclusion() } },
             center.addObserver(
                 forName: NSWindow.didChangeScreenNotification,
                 object: window,
                 queue: .main
-            ) { [weak self] _ in self?.pushDisplayID() },
+            ) { [weak self] _ in MainActor.assumeIsolated { self?.pushDisplayID() } },
         ]
     }
 
