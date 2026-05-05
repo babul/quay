@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 /// Thin wrapper over Keychain Services for Quay's two operations:
@@ -30,7 +31,9 @@ enum KeychainStore {
         ]
         // Ask the OS to display the Touch ID prompt (or the keychain
         // unlock dialog) inline if the item's ACL requires it.
-        query[kSecUseOperationPrompt as String] = "Quay needs the secret for \(service)/\(account)"
+        let authContext = LAContext()
+        authContext.localizedReason = "Quay needs the secret for \(service)/\(account)"
+        query[kSecUseAuthenticationContext as String] = authContext
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)

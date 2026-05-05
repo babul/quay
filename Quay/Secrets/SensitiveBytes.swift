@@ -16,7 +16,7 @@ final class SensitiveBytes: @unchecked Sendable {
 
     init(_ data: Data) {
         self.buffer = .allocate(byteCount: data.count, alignment: 1)
-        data.copyBytes(to: buffer.bindMemory(to: UInt8.self))
+        _ = data.copyBytes(to: buffer.bindMemory(to: UInt8.self))
     }
 
     deinit {
