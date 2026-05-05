@@ -92,6 +92,11 @@ final class GhosttySurfaceBridge {
             onProgressReport?(state.progress)
             return true
 
+        case GHOSTTY_ACTION_CELL_SIZE:
+            let cs = action.action.cell_size
+            state.cellSize = CGSize(width: CGFloat(cs.width), height: CGFloat(cs.height))
+            return true
+
         case GHOSTTY_ACTION_RING_BELL:
             NSSound.beep()
             return true

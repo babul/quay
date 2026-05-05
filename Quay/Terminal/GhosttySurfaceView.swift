@@ -20,6 +20,11 @@ final class GhosttySurfaceView: NSView {
     var autoscrollState: AutoscrollState?
     private var trackingArea: NSTrackingArea?
 
+    // IME state — owned here; modified by GhosttySurfaceView+IME.
+    var markedText = NSMutableAttributedString()
+    var keyTextAccumulator: [String]?
+    var lastPerformKeyEvent: TimeInterval?
+
     init(runtime: GhosttyRuntime, config: GhosttySurfaceConfig) {
         self.runtime = runtime
         self.surfaceConfig = config
@@ -98,41 +103,7 @@ final class GhosttySurfaceView: NSView {
         )
     }
 
-    // MARK: Keyboard
-
-    override func keyDown(with event: NSEvent) {
-        sendKey(event, action: GHOSTTY_ACTION_PRESS)
-        // ghostty_surface_text covers IME-free direct input. We send it
-        // alongside the key so plain ASCII characters reach the PTY before
-        // we layer in NSTextInputClient (deferred to v0.2).
-        if let chars = event.charactersIgnoringModifiers, !chars.isEmpty,
-           let surface {
-            chars.withCString { ptr in
-                ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
-            }
-        }
-    }
-
-    override func keyUp(with event: NSEvent) {
-        sendKey(event, action: GHOSTTY_ACTION_RELEASE)
-    }
-
-    override func flagsChanged(with event: NSEvent) {
-        sendKey(event, action: GHOSTTY_ACTION_PRESS)
-    }
-
-    private func sendKey(_ event: NSEvent, action: ghostty_input_action_e) {
-        guard let surface else { return }
-        var key = ghostty_input_key_s()
-        key.action = action
-        key.keycode = UInt32(event.keyCode)
-        key.mods = ghosttyMods(event.modifierFlags)
-        key.consumed_mods = key.mods
-        key.unshifted_codepoint = 0
-        key.composing = false
-        key.text = nil
-        _ = ghostty_surface_key(surface, key)
-    }
+    // Keyboard — see GhosttySurfaceView+IME.swift
 
     // MARK: Mouse
 
@@ -265,7 +236,6 @@ struct AutoscrollState {
     var lastEvent: NSEvent
 }
 
-@MainActor
 func ghosttyMods(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
     var mods: UInt32 = 0
     if flags.contains(.shift)    { mods |= GHOSTTY_MODS_SHIFT.rawValue }

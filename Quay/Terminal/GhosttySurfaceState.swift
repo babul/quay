@@ -30,4 +30,7 @@ final class GhosttySurfaceState {
     /// Set `true` when GHOSTTY_ACTION_SHOW_CHILD_EXITED fires.
     /// The owning tab item uses this to transition its `Phase` to `.failed`.
     var childExited: Bool = false
+
+    /// Cell size in points (needed for `firstRect(forCharacterRange:)` in the IME path).
+    var cellSize: CGSize = CGSize(width: 8, height: 16)
 }
