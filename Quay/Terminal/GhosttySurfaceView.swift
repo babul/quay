@@ -11,6 +11,11 @@ final class GhosttySurfaceView: NSView {
     private(set) var surface: ghostty_surface_t?
     private let surfaceConfig: GhosttySurfaceConfig
 
+    /// Action dispatcher and observable state. Nil until the surface is created
+    /// in `viewDidMoveToWindow`. Set before `ghostty_surface_new` so userdata
+    /// is valid for the first callback.
+    private(set) var bridge: GhosttySurfaceBridge?
+
     // Autoscroll state — owned here so extensions in sibling files can access it.
     var autoscrollState: AutoscrollState?
     private var trackingArea: NSTrackingArea?
@@ -37,8 +42,15 @@ final class GhosttySurfaceView: NSView {
         super.viewDidMoveToWindow()
         guard window != nil, surface == nil else { return }
 
+        // Bridge must exist before ghostty_surface_new so that userdata is
+        // valid for the very first callback libghostty may fire during creation.
+        let newBridge = GhosttySurfaceBridge()
+        newBridge.view = self
+        bridge = newBridge
+
         let nsViewPtr = Unmanaged.passUnretained(self).toOpaque()
-        surface = surfaceConfig.withCConfig(nsView: nsViewPtr) { cfg in
+        let bridgePtr = Unmanaged.passUnretained(newBridge).toOpaque()
+        surface = surfaceConfig.withCConfig(nsView: nsViewPtr, userdata: bridgePtr) { cfg in
             ghostty_surface_new(runtime.app, &cfg)
         }
         if surface == nil {

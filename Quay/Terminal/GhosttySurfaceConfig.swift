@@ -30,14 +30,15 @@ struct GhosttySurfaceConfig {
     /// must finish using `ghostty_surface_config_s` before this returns.
     func withCConfig<T>(
         nsView: UnsafeMutableRawPointer,
+        userdata: UnsafeMutableRawPointer,
         body: (inout ghostty_surface_config_s) -> T
     ) -> T {
         var cfg = ghostty_surface_config_new()
         cfg.platform_tag = GHOSTTY_PLATFORM_MACOS
         cfg.platform.macos.nsview = nsView
-        // Userdata round-trips through libghostty's runtime callbacks
-        // (clipboard, close, etc.) so they can recover the SurfaceView.
-        cfg.userdata = nsView
+        // userdata round-trips through libghostty's runtime callbacks
+        // (clipboard, close, action) so they can recover the surface bridge.
+        cfg.userdata = userdata
         cfg.scale_factor = scaleFactor
         cfg.font_size = fontSize
         cfg.wait_after_command = waitAfterCommand

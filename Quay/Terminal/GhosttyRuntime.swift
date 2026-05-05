@@ -5,9 +5,10 @@ import OSLog
 
 /// One-per-process wrapper around `ghostty_app_t` and the global config.
 ///
-/// The runtime callbacks libghostty requires are mostly no-ops in v0.1. As we
-/// add features (clipboard sharing, app actions, OSC title updates) they get
-/// implemented here, with `userdata` round-tripping through `Unmanaged`.
+/// libghostty's runtime callbacks are `nonisolated static @convention(c)` —
+/// they capture no Swift state. Each resolves a `GhosttySurfaceBridge` from
+/// `ghostty_surface_userdata` and dispatches via `MainActor.assumeIsolated`
+/// (safe because surface callbacks always arrive on the main thread in AppKit).
 @MainActor
 final class GhosttyRuntime {
     static let shared = GhosttyRuntime()
@@ -26,9 +27,6 @@ final class GhosttyRuntime {
 
         var runtime = ghostty_runtime_config_s(
             userdata: nil,
-            // macOS has no X11-style primary selection. Treat both
-            // GHOSTTY_CLIPBOARD_STANDARD and GHOSTTY_CLIPBOARD_SELECTION
-            // as the system pasteboard.
             supports_selection_clipboard: false,
             wakeup_cb: GhosttyRuntime.wakeup,
             action_cb: GhosttyRuntime.action,
@@ -51,51 +49,70 @@ final class GhosttyRuntime {
         ghostty_app_tick(app)
     }
 
-    // MARK: Runtime callbacks (mostly stubs in v0.1)
+    // MARK: Runtime callbacks
     //
-    // These run on libghostty's threads — they must be `@convention(c)` and
-    // therefore cannot capture state. To act on `self`, route through
-    // `userdata` (set in `ghostty_runtime_config_s.userdata`) via Unmanaged.
+    // All are `nonisolated static @convention(c)`. Surface-targeted callbacks
+    // receive the surface's userdata (a GhosttySurfaceBridge pointer) as their
+    // first argument. We restore the Swift object with `takeUnretainedValue`
+    // and hop to @MainActor via `MainActor.assumeIsolated` — AppKit guarantees
+    // surface callbacks fire on the main thread.
 
     private static let wakeup: @convention(c) (UnsafeMutableRawPointer?) -> Void = { _ in
         // libghostty wants the embedder to schedule an `app_tick()` on the
-        // main thread. v0.1 lets the SwiftUI run loop drive ticks instead.
+        // main thread. Wired up in commit 6 (wakeup tick driver).
     }
 
     private static let action: @convention(c) (
         ghostty_app_t?,
         ghostty_target_s,
         ghostty_action_s
-    ) -> Bool = { _, _, _ in
-        // App-level actions (close window, open URL, new tab, etc.).
-        // Wired up in v0.2.
-        return false
+    ) -> Bool = { _, target, action in
+        // Only surface-targeted actions can be routed to a bridge; app-level
+        // actions (quit, new window) are handled in commit 8 via AppFeature.
+        guard target.tag == GHOSTTY_TARGET_SURFACE,
+              let surfacePtr = target.target.surface,
+              let userdataPtr = ghostty_surface_userdata(surfacePtr)
+        else { return false }
+
+        // Convert to Sendable UInt to cross nonisolated → @MainActor boundary.
+        let bits = UInt(bitPattern: userdataPtr)
+        return MainActor.assumeIsolated {
+            guard let ptr = UnsafeMutableRawPointer(bitPattern: bits) else { return false }
+            let bridge = Unmanaged<GhosttySurfaceBridge>
+                .fromOpaque(ptr)
+                .takeUnretainedValue()
+            return bridge.handleAction(action)
+        }
     }
 
-    /// Read the system pasteboard for paste / OSC-52-read. libghostty
-    /// passes us a `state` token we hand back to
-    /// `ghostty_surface_complete_clipboard_request` so the request resumes
-    /// inside libghostty. Return `false` if there's no plain-text content,
-    /// which lets bound paste shortcuts fall through to the terminal.
+    /// Read the system pasteboard for paste / OSC-52 read.
+    /// `userdata` is the surface's `GhosttySurfaceBridge`.
     private static let readClipboard: @convention(c) (
         UnsafeMutableRawPointer?,
         ghostty_clipboard_e,
         UnsafeMutableRawPointer?
     ) -> Bool = { userdata, _, state in
         guard let userdata else { return false }
-        let view = Unmanaged<GhosttySurfaceView>.fromOpaque(userdata).takeUnretainedValue()
-        guard let surface = view.surface else { return false }
-        guard let str = NSPasteboard.general.string(forType: .string), !str.isEmpty else {
-            return false
+        let bits = UInt(bitPattern: userdata)
+        let stateBits = UInt(bitPattern: state)
+        return MainActor.assumeIsolated {
+            guard let ptr = UnsafeMutableRawPointer(bitPattern: bits) else { return false }
+            let bridge = Unmanaged<GhosttySurfaceBridge>
+                .fromOpaque(ptr)
+                .takeUnretainedValue()
+            guard let surface = bridge.view?.surface else { return false }
+            guard let str = NSPasteboard.general.string(forType: .string), !str.isEmpty else {
+                return false
+            }
+            let statePtr = UnsafeMutableRawPointer(bitPattern: stateBits)
+            str.withCString { cPtr in
+                ghostty_surface_complete_clipboard_request(surface, cPtr, statePtr, false)
+            }
+            return true
         }
-        str.withCString { ptr in
-            ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
-        }
-        return true
     }
 
-    /// Second-stage callback for OSC-52 paste confirmation. v0.1 doesn't
-    /// surface a confirmation UI — Step 7 of v0.3 will. For now, ignore.
+    /// OSC-52 paste confirmation. Confirmation UI deferred to v0.3.
     private static let confirmReadClipboard: @convention(c) (
         UnsafeMutableRawPointer?,
         UnsafePointer<CChar>?,
@@ -103,10 +120,7 @@ final class GhosttyRuntime {
         ghostty_clipboard_request_e
     ) -> Void = { _, _, _, _ in }
 
-    /// Write to the system pasteboard for copy / OSC-52-write.
-    /// libghostty hands us an array of (mime, data) pairs; we use the
-    /// `text/plain` entry. `confirm` is honored only for OSC 52 in v0.2;
-    /// today we always write through.
+    /// Write to the system pasteboard for copy / OSC-52 write.
     private static let writeClipboard: @convention(c) (
         UnsafeMutableRawPointer?,
         ghostty_clipboard_e,
@@ -115,24 +129,35 @@ final class GhosttyRuntime {
         Bool
     ) -> Void = { _, _, content, len, _ in
         guard let content, len > 0 else { return }
-        var plainText: String?
         for i in 0..<len {
             let item = content[i]
             guard let mime = item.mime, let data = item.data else { continue }
-            let mimeStr = String(cString: mime)
-            if mimeStr == "text/plain" {
-                plainText = String(cString: data)
-                break
+            if String(cString: mime) == "text/plain" {
+                let text = String(cString: data)
+                guard !text.isEmpty else { return }
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(text, forType: .string)
+                return
             }
         }
-        guard let text = plainText, !text.isEmpty else { return }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
     }
 
+    /// libghostty is asking us to close the surface (child exited or libghostty
+    /// decided the session is done). Forward to the bridge's `onCloseRequest`.
+    /// `userdata` is the surface's `GhosttySurfaceBridge`.
     private static let closeSurface: @convention(c) (
         UnsafeMutableRawPointer?,
         Bool
-    ) -> Void = { _, _ in }
+    ) -> Void = { userdata, _ in
+        guard let userdata else { return }
+        let bits = UInt(bitPattern: userdata)
+        MainActor.assumeIsolated {
+            guard let ptr = UnsafeMutableRawPointer(bitPattern: bits) else { return }
+            let bridge = Unmanaged<GhosttySurfaceBridge>
+                .fromOpaque(ptr)
+                .takeUnretainedValue()
+            bridge.onCloseRequest?()
+        }
+    }
 }
