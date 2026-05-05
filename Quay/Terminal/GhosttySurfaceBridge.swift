@@ -15,7 +15,7 @@ import UserNotifications
 /// closures set by the owning tab item.
 @MainActor
 final class GhosttySurfaceBridge {
-    private static let logger = Logger(subsystem: "com.montopolis.quay", category: "bridge")
+    private nonisolated static let logger = Logger(subsystem: "com.montopolis.quay", category: "bridge")
 
     /// Observable state read by SwiftUI overlays and the tab bar.
     let state: GhosttySurfaceState

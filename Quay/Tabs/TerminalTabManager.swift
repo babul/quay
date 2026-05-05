@@ -39,15 +39,11 @@ final class TerminalTabManager {
     }
 
     func select(_ item: TerminalTabItem) {
-        if let prev = selectedTab, prev.id != item.id {
-            _ = prev.surfaceView?.resignFirstResponder()
-            prev.surfaceView?.setTabOccluded(true)
-        }
+        guard selectedTabID != item.id else { return }
         selectedTabID = item.id
-        item.surfaceView?.setTabOccluded(false)
-        // makeFirstResponder is deferred to TerminalSurfaceHostsView.updateNSView,
-        // which runs after isHidden = false. AppKit silently ignores makeFirstResponder
-        // on a hidden view.
+
+        // makeFirstResponder is deferred to TerminalSurfaceHostsView.updateNSView
+        // after the selected surface is ordered frontmost.
     }
 
     func closeTab(_ item: TerminalTabItem) {

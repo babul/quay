@@ -72,7 +72,7 @@ extension GhosttySurfaceView {
 
     override func keyUp(with event: NSEvent) {
         guard let surface else { return }
-        var key_ev = event.ghosttyKeyEvent(GHOSTTY_ACTION_RELEASE)
+        let key_ev = event.ghosttyKeyEvent(GHOSTTY_ACTION_RELEASE)
         _ = ghostty_surface_key(surface, key_ev)
     }
 
@@ -82,7 +82,7 @@ extension GhosttySurfaceView {
         guard let surface else { return }
         let action: ghostty_input_action_e = ghosttyMods(event.modifierFlags).rawValue != 0
             ? GHOSTTY_ACTION_PRESS : GHOSTTY_ACTION_RELEASE
-        var key_ev = event.ghosttyKeyEvent(action)
+        let key_ev = event.ghosttyKeyEvent(action)
         _ = ghostty_surface_key(surface, key_ev)
     }
 

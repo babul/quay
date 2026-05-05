@@ -99,10 +99,9 @@ struct ContentView: View {
 }
 
 /// Manages all live `GhosttySurfaceView` instances as direct NSView subviews
-/// of a single container. SwiftUI's `opacity(0)` on macOS can remove NSViews
-/// from the hierarchy, causing libghostty to lose its render target and killing
-/// background sessions. Using `isHidden` keeps every view in the window so
-/// sessions stay alive regardless of which tab is selected.
+/// of a single container. The selected surface is ordered frontmost instead of
+/// hiding non-selected Metal-backed views, avoiding synchronous renderer churn
+/// during tab switching while keeping background sessions attached.
 private struct TerminalSurfaceHostsView: NSViewRepresentable {
     let tabs: [TerminalTabItem]
     let selectedTabID: UUID?
@@ -132,16 +131,23 @@ private struct TerminalSurfaceHostsView: NSViewRepresentable {
             sv.removeFromSuperview()
         }
 
-        // Toggle visibility — never remove, so libghostty keeps its render target.
         let selectedSurface = tabs.first(where: { $0.id == selectedTabID })?.surfaceView
         for sv in container.subviews {
-            sv.isHidden = !(sv === selectedSurface)
+            sv.isHidden = false
         }
 
-        // Transfer first-responder after isHidden = false. AppKit silently
-        // ignores makeFirstResponder on a hidden view, so this must come last.
-        if let selectedSurface, !selectedSurface.isHidden {
-            container.window?.makeFirstResponder(selectedSurface)
+        if let selectedSurface {
+            container.addSubview(selectedSurface, positioned: .above, relativeTo: nil)
+        }
+
+        // Transfer first-responder after AppKit has settled the subview order
+        // changes for this update pass.
+        if let selectedSurface, container.window?.firstResponder !== selectedSurface {
+            DispatchQueue.main.async { [weak selectedSurface] in
+                guard let selectedSurface,
+                      selectedSurface.window?.firstResponder !== selectedSurface else { return }
+                selectedSurface.window?.makeFirstResponder(selectedSurface)
+            }
         }
     }
 }

@@ -117,14 +117,6 @@ final class GhosttySurfaceView: NSView {
         ghostty_surface_set_occlusion(surface, !occluded)
     }
 
-    /// Explicitly occlude or un-occlude this surface when the owning tab is
-    /// hidden or shown. Suppresses Metal rendering for non-selected tabs.
-    func setTabOccluded(_ occluded: Bool) {
-        guard let surface, occluded != lastOccluded else { return }
-        lastOccluded = occluded
-        ghostty_surface_set_occlusion(surface, !occluded)
-    }
-
     func disconnectProcess() {
         guard let surface, !ghostty_surface_process_exited(surface) else { return }
         let pid = pid_t(ghostty_surface_foreground_pid(surface))
