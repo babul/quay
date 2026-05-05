@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img">
+  <title>Quay</title>
+  <desc>App icon for Quay, an SSH connection manager for macOS.</desc>
+
+  <defs>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4d4a8"/>
+      <stop offset="100%" stop-color="#e89968"/>
+    </linearGradient>
+    <linearGradient id="seaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e4a6b"/>
+      <stop offset="100%" stop-color="#0f2a3f"/>
+    </linearGradient>
+    <linearGradient id="quayGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7a7e85"/>
+      <stop offset="100%" stop-color="#4a4e55"/>
+    </linearGradient>
+    <linearGradient id="bollardGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1a1a1a"/>
+      <stop offset="40%" stop-color="#4a4a4a"/>
+      <stop offset="60%" stop-color="#4a4a4a"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <pattern id="ropeTwist" patternUnits="userSpaceOnUse" width="32" height="26" patternTransform="rotate(115)">
+      <rect x="0" y="0" width="32" height="8" fill="#5a3818"/>
+      <rect x="0" y="8" width="32" height="6.5" fill="#a87838"/>
+      <rect x="0" y="14.5" width="32" height="6.5" fill="#d8a868"/>
+      <rect x="0" y="21" width="32" height="5" fill="#a87838"/>
+    </pattern>
+  </defs>
+
+  <!-- Full square artwork, no clip path -->
+  <rect x="0" y="0" width="1024" height="544" fill="url(#skyGrad)"/>
+  <rect x="0" y="544" width="1024" height="480" fill="url(#seaGrad)"/>
+  <ellipse cx="512" cy="544" rx="576" ry="19" fill="#f4d4a8" opacity="0.5"/>
+
+  <rect x="0" y="473" width="1024" height="109" fill="url(#quayGrad)"/>
+  <rect x="0" y="473" width="1024" height="6" fill="#9aa0a8"/>
+  <rect x="0" y="576" width="1024" height="13" fill="#000" opacity="0.45"/>
+  <line x1="320" y1="479" x2="320" y2="576" stroke="#2a2e35" stroke-width="2.5" opacity="0.6"/>
+  <line x1="640" y1="479" x2="640" y2="576" stroke="#2a2e35" stroke-width="2.5" opacity="0.6"/>
+
+  <rect x="205" y="224" width="102" height="262" fill="url(#bollardGrad)" rx="13"/>
+  <rect x="218" y="240" width="10" height="224" fill="#6a6a6a" opacity="0.6" rx="5"/>
+  <ellipse cx="256" cy="486" rx="64" ry="10" fill="#000" opacity="0.5"/>
+
+  <path d="M 211 250 Q 256 230 301 250 Q 307 256 301 262 Q 256 243 211 262 Q 205 256 211 250 Z" fill="url(#ropeTwist)" stroke="#4a2818" stroke-width="1.6"/>
+
+  <ellipse cx="256" cy="224" rx="70" ry="19" fill="#5a5a5a"/>
+  <ellipse cx="256" cy="211" rx="64" ry="16" fill="#2a2a2a"/>
+  <ellipse cx="256" cy="208" rx="58" ry="13" fill="#1a1a1a"/>
+  <ellipse cx="250" cy="205" rx="26" ry="5" fill="#4a4a4a" opacity="0.6"/>
+
+  <path d="M 211 262 Q 218 288 256 294 Q 294 294 307 275 Q 301 288 282 294 Q 250 301 230 294 Q 211 282 205 269 Z" fill="url(#ropeTwist)" stroke="#4a2818" stroke-width="1.6"/>
+
+  <path d="M 202 282 Q 195 314 202 346 Q 208 346 215 314 Q 215 294 208 282 Z" fill="url(#ropeTwist)" stroke="#4a2818" stroke-width="1.6"/>
+  <line x1="205" y1="346" x2="202" y2="358" stroke="#5a3818" stroke-width="3" stroke-linecap="round"/>
+  <line x1="211" y1="346" x2="214" y2="358" stroke="#5a3818" stroke-width="3" stroke-linecap="round"/>
+
+  <path d="M 301 275 Q 448 422 614 569 L 634 563 Q 467 422 320 269 Z" fill="#000" opacity="0.25" transform="translate(6, 10)"/>
+  <path d="M 301 269 Q 448 422 614 563 L 634 557 Q 467 416 320 262 Z" fill="url(#ropeTwist)" stroke="#4a2818" stroke-width="1.6"/>
+  <path d="M 314 262 Q 454 416 618 559" stroke="#f4d8a0" stroke-width="3.8" fill="none" stroke-linecap="round" opacity="0.55"/>
+
+  <path d="M 582 704 L 672 634 L 1004 634 L 1004 813 L 672 832 L 582 774 Z" fill="#1a1a1a"/>
+  <path d="M 582 704 L 672 634 L 1004 634 L 1004 672 L 672 678 L 582 717 Z" fill="#3a3a3a"/>
+  <line x1="1004" y1="634" x2="1004" y2="813" stroke="#0a0a0a" stroke-width="4.8"/>
+  <path d="M 582 704 L 608 739 L 582 774 Z" fill="#2a2a2a"/>
+  <line x1="595" y1="749" x2="1004" y2="749" stroke="#3a3a3a" stroke-width="2.5" opacity="0.6"/>
+  <line x1="621" y1="698" x2="1004" y2="698" stroke="#a87838" stroke-width="3.8" opacity="0.7"/>
+
+  <rect x="595" y="691" width="29" height="22" fill="#3a3a3a" rx="3"/>
+  <ellipse cx="610" cy="691" rx="14" ry="5.5" fill="#5a5a5a"/>
+
+  <rect x="691" y="512" width="243" height="122" fill="#1a1a1a"/>
+  <rect x="691" y="512" width="243" height="10" fill="#2a2a2a"/>
+  <rect x="691" y="621" width="243" height="13" fill="#0a0a0a"/>
+  <rect x="707" y="538" width="35" height="35" fill="#f4d4a8" opacity="0.95"/>
+  <rect x="755" y="538" width="35" height="35" fill="#f4d4a8" opacity="0.95"/>
+  <rect x="803" y="538" width="35" height="35" fill="#f4d4a8" opacity="0.95"/>
+  <rect x="851" y="538" width="35" height="35" fill="#f4d4a8" opacity="0.95"/>
+  <rect x="899" y="538" width="26" height="35" fill="#f4d4a8" opacity="0.95"/>
+  <circle cx="726" cy="602" r="9" fill="#f4d4a8" opacity="0.85"/>
+  <circle cx="781" cy="602" r="9" fill="#f4d4a8" opacity="0.85"/>
+  <circle cx="835" cy="602" r="9" fill="#f4d4a8" opacity="0.85"/>
+  <circle cx="890" cy="602" r="9" fill="#f4d4a8" opacity="0.85"/>
+  <rect x="685" y="499" width="256" height="16" fill="#2a2a2a"/>
+  <rect x="806" y="397" width="11" height="103" fill="#1a1a1a"/>
+  <line x1="781" y1="422" x2="838" y2="422" stroke="#1a1a1a" stroke-width="6"/>
+  <path d="M 813 403 L 856 419 L 813 435 Z" fill="#1a1a1a"/>
+  <circle cx="811" cy="397" r="6" fill="#f4d4a8"/>
+  <rect x="954" y="454" width="29" height="45" fill="#2a2a2a"/>
+  <rect x="954" y="454" width="29" height="6" fill="#a87838"/>
+
+  <path d="M 582 813 L 1004 813 L 985 864 L 602 864 Z" fill="#0a1a2a" opacity="0.55"/>
+  <ellipse cx="813" cy="832" rx="115" ry="6.5" fill="#f4d4a8" opacity="0.3"/>
+
+  <ellipse cx="614" cy="698" rx="14.5" ry="9" fill="#7a4818"/>
+  <circle cx="614" cy="698" r="4.8" fill="#3a1808"/>
+
+  <g stroke="#5a8aa8" stroke-width="3.8" stroke-linecap="round">
+    <line x1="64" y1="634" x2="320" y2="634" opacity="0.5"/>
+    <line x1="384" y1="678" x2="544" y2="678" opacity="0.5"/>
+    <line x1="64" y1="730" x2="256" y2="730" opacity="0.45"/>
+    <line x1="320" y1="768" x2="512" y2="768" opacity="0.45"/>
+    <line x1="64" y1="832" x2="384" y2="832" opacity="0.4"/>
+    <line x1="64" y1="915" x2="448" y2="915" opacity="0.4"/>
+  </g>
+</svg>
