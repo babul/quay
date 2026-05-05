@@ -4,7 +4,7 @@ A native macOS connection manager for SSH, built on [Ghostty](https://ghostty.or
 
 The thesis: [Tabby](https://tabby.sh) has the best connection-manager UX in the OSS terminal space, but Electron-slow. Ghostty has the best terminal but no connection manager. Quay bridges the two.
 
-> **Status:** v0.1 in development. The architecture is end-to-end wired — sidebar → SwiftData profile store → Keychain reference resolution → SSH_ASKPASS bridge → libghostty surface running `/usr/bin/ssh`. Polish (multi-tab, splits, ssh.config import, 1Password) lands in subsequent milestones. See [`.claude/plans/`](.claude/plans/) for the active plan.
+> **Status:** v0.1 in development. Multi-tab SSH sessions are wired end-to-end: sidebar → SwiftData profile store → Keychain reference resolution → SSH_ASKPASS bridge → libghostty surface running `/usr/bin/ssh`. Splits, ssh.config import, and 1Password land in subsequent milestones.
 
 ## Requirements
 
@@ -62,12 +62,13 @@ Currently 27 tests across 6 suites:
 
 ```
 Quay/             App target sources
-  App/            QuayApp, ContentView, SessionView
+  App/            QuayApp, ContentView, AppFeature (TCA), TerminalClient
   Models/         SwiftData @Model classes
   Persistence/    ModelContainer setup
   Sidebar/        SidebarView + FuzzySearch
   ProfileEditor/  ConnectionEditor
-  Terminal/       GhosttyRuntime + GhosttyTerminalView (libghostty surface)
+  Tabs/           TerminalTabManager, TerminalTabItem, TerminalTabBar, SessionBootstrap
+  Terminal/       GhosttyRuntime, GhosttySurfaceView + extensions, GhosttySurfaceBridge
   PTY/            SSHCommandBuilder
   Secrets/        SecretReference, KeychainStore, AskpassServer, …
 QuayAskpass/      SSH_ASKPASS helper CLI (bundled inside the .app)
@@ -82,6 +83,10 @@ docs/             ghostty-integration.md, secrets-architecture.md
 
 - [`docs/ghostty-integration.md`](docs/ghostty-integration.md) — how libghostty is built, pinned, and embedded; how to bump the pin.
 - [`docs/secrets-architecture.md`](docs/secrets-architecture.md) — the askpass IPC, the URI scheme, the zeroing contract, and the threat model.
+
+## Acknowledgements
+
+The libghostty surface architecture (per-surface `@Observable` bridge, `NSTextInputClient` IME, wakeup tick driver, occlusion handling) was drawn from [supacode](https://github.com/supabitapp/supacode), which showed how to embed libghostty naturally in a SwiftUI + Composable Architecture app.
 
 ## License
 
