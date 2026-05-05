@@ -5,9 +5,9 @@ import SwiftUI
 
 /// The connection-tree sidebar.
 ///
-/// v0.1 is intentionally simple: flat list of connections grouped by their
-/// parent folder, with a search field at the top (⌘L). Real drag-to-reorder
-/// + recursive folder nesting + context menus are v0.3 polish.
+/// v0.1 is intentionally simple: flat groups of connections with a search
+/// field at the top (⌘L). Real drag-to-reorder + recursive folder nesting are
+/// v0.3 polish.
 struct SidebarView: View {
     @Environment(\.modelContext) private var ctx
 
@@ -21,6 +21,9 @@ struct SidebarView: View {
 
     @State private var query: String = ""
     @State private var editorTarget: EditorTarget?
+    @State private var renameTarget: Folder?
+    @State private var renameText: String = ""
+    @State private var collapsedFolderIDs = SidebarCollapseState.load()
     @FocusState private var searchFocused: Bool
 
     enum EditorTarget: Identifiable {
@@ -52,6 +55,19 @@ struct SidebarView: View {
             }
             .frame(minWidth: 480, minHeight: 420)
         }
+        .alert("Rename Group", isPresented: renameIsPresented) {
+            TextField("Group name", text: $renameText)
+            Button("Rename") { renameFolder() }
+                .disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) { clearRenameState() }
+        }
+        .onAppear { bootstrapFolders() }
+        .onChange(of: folders.map(\.id)) { _, ids in
+            SidebarCollapseState.prune(
+                &collapsedFolderIDs,
+                keeping: Set(ids)
+            )
+        }
     }
 
     private var identityHeader: some View {
@@ -80,6 +96,10 @@ struct SidebarView: View {
         FuzzySearch.rank(allConnections, query: query) { profile in
             [profile.name, profile.hostname]
         }
+    }
+
+    private var topLevelFolders: [Folder] {
+        folders.filter { $0.parent == nil }
     }
 
     private var searchField: some View {
@@ -128,38 +148,70 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var groupedByFolder: some View {
-        let grouped: [(Folder?, [ConnectionProfile])] = {
+        let grouped: [(Folder, [ConnectionProfile])] = {
             // Group connections by folder, preserving folder sort order.
             var byFolder: [UUID: [ConnectionProfile]] = [:]
-            var unfiled: [ConnectionProfile] = []
             for c in allConnections {
                 if let f = c.parent {
                     byFolder[f.id, default: []].append(c)
-                } else {
-                    unfiled.append(c)
                 }
             }
-            var out: [(Folder?, [ConnectionProfile])] = []
-            for f in folders {
-                if let cs = byFolder[f.id], !cs.isEmpty {
-                    out.append((f, cs))
+            var out: [(Folder, [ConnectionProfile])] = []
+            for f in topLevelFolders {
+                let items = byFolder[f.id] ?? []
+                if shouldHideFolder(f, connectionCount: items.count) {
+                    continue
                 }
+                out.append((f, items))
             }
-            if !unfiled.isEmpty { out.append((nil, unfiled)) }
             return out
         }()
 
         if grouped.isEmpty {
-            Text("No connections yet")
+            Text("No groups yet")
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 8)
         } else {
-            ForEach(grouped, id: \.0?.id) { folder, items in
-                Section(folder?.name ?? "Other") {
+            ForEach(grouped, id: \.0.id) { folder, items in
+                DisclosureGroup(isExpanded: folderIsExpandedBinding(folder)) {
                     ForEach(items, id: \.id) { connectionRow($0) }
+                } label: {
+                    folderLabel(folder, count: items.count)
+                        .contextMenu { folderContextMenu(folder) }
                 }
             }
         }
+    }
+
+    private func shouldHideFolder(_ folder: Folder, connectionCount: Int) -> Bool {
+        folder.name == FolderStore.defaultFolderName && connectionCount == 0
+    }
+
+    private func folderLabel(_ folder: Folder, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "folder")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            Text(folder.name)
+                .lineLimit(1)
+            Spacer()
+            if count > 0 {
+                Text("\(count)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func folderContextMenu(_ folder: Folder) -> some View {
+        Button("Rename…") { beginRenaming(folder) }
+        Button("Delete", role: .destructive) {
+            deleteFolder(folder)
+        }
+        .disabled(folder.name == FolderStore.defaultFolderName
+            || !folder.connections.isEmpty
+            || !folder.children.isEmpty)
     }
 
     private func connectionRow(_ profile: ConnectionProfile) -> some View {
@@ -201,8 +253,72 @@ struct SidebarView: View {
     }
 
     private func newFolder() {
-        let nextIdx = (folders.map(\.sortIndex).max() ?? -1) + 1
-        ctx.insert(Folder(name: "New Folder", sortIndex: nextIdx))
+        let existingNames = Set(topLevelFolders.map(\.name))
+        let folder = Folder(
+            name: FolderStore.uniqueFolderName(
+                baseName: "New Folder",
+                existingNames: existingNames
+            ),
+            sortIndex: FolderStore.nextFolderSortIndex(from: topLevelFolders)
+        )
+        ctx.insert(folder)
+        try? ctx.save()
+        beginRenaming(folder)
+    }
+
+    private func folderIsExpandedBinding(_ folder: Folder) -> Binding<Bool> {
+        Binding {
+            !collapsedFolderIDs.contains(folder.id)
+        } set: { isExpanded in
+            SidebarCollapseState.setFolder(
+                folder.id,
+                expanded: isExpanded,
+                in: &collapsedFolderIDs
+            )
+        }
+    }
+
+    private var renameIsPresented: Binding<Bool> {
+        Binding {
+            renameTarget != nil
+        } set: { isPresented in
+            if !isPresented {
+                clearRenameState()
+            }
+        }
+    }
+
+    private func beginRenaming(_ folder: Folder) {
+        renameTarget = folder
+        renameText = folder.name
+    }
+
+    private func renameFolder() {
+        let trimmed = renameText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        renameTarget?.name = trimmed
+        try? ctx.save()
+        clearRenameState()
+    }
+
+    private func clearRenameState() {
+        renameTarget = nil
+        renameText = ""
+    }
+
+    private func deleteFolder(_ folder: Folder) {
+        guard folder.name != FolderStore.defaultFolderName,
+              folder.connections.isEmpty,
+              folder.children.isEmpty
+        else { return }
+        collapsedFolderIDs.remove(folder.id)
+        SidebarCollapseState.save(collapsedFolderIDs)
+        ctx.delete(folder)
+        try? ctx.save()
+    }
+
+    private func bootstrapFolders() {
+        try? FolderStore.bootstrapDefaultFolder(in: ctx)
     }
 
     private var localHostname: String {

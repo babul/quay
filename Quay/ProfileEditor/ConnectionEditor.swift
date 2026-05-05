@@ -10,6 +10,9 @@ struct ConnectionEditor: View {
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
 
+    @Query(sort: [SortDescriptor(\Folder.sortIndex), SortDescriptor(\Folder.name)])
+    private var folders: [Folder]
+
     let target: SidebarView.EditorTarget
     let onClose: () -> Void
 
@@ -24,12 +27,14 @@ struct ConnectionEditor: View {
     @State private var colorTag: String?
     @State private var iconName: String?
     @State private var notes: String = ""
+    @State private var selectedFolderID: UUID?
     @State private var didLoad = false
 
     var body: some View {
         Form {
             Section("Identity") {
                 TextField("Display name", text: $name)
+                groupPicker
                 TextField("Hostname", text: $hostname)
                     .disabled(authMethod == .sshConfigAlias)
                 HStack {
@@ -89,6 +94,28 @@ struct ConnectionEditor: View {
             }
         }
         .onAppear { loadIfNeeded() }
+    }
+
+    private var topLevelFolders: [Folder] {
+        folders.filter { $0.parent == nil }
+    }
+
+    private var selectedFolder: Folder? {
+        if let selectedFolderID,
+           let folder = topLevelFolders.first(where: { $0.id == selectedFolderID }) {
+            return folder
+        }
+        return topLevelFolders.first(where: { $0.name == FolderStore.defaultFolderName })
+            ?? topLevelFolders.first
+    }
+
+    private var groupPicker: some View {
+        Picker("Group", selection: $selectedFolderID) {
+            ForEach(topLevelFolders, id: \.id) { folder in
+                Text(folder.name).tag(Optional(folder.id))
+            }
+        }
+        .onAppear { ensureDefaultFolderSelection() }
     }
 
     private var keyPathField: some View {
@@ -205,6 +232,10 @@ struct ConnectionEditor: View {
             colorTag = ConnectionColor.isKnown(p.colorTag) ? p.colorTag : nil
             iconName = p.iconName
             notes = p.notes ?? ""
+            selectedFolderID = p.parent?.id
+            ensureDefaultFolderSelection()
+        } else {
+            ensureDefaultFolderSelection()
         }
     }
 
@@ -214,6 +245,7 @@ struct ConnectionEditor: View {
         let secret = secretRef.isEmpty ? nil : secretRef
         let keyPath = privateKeyPath.isEmpty ? nil : privateKeyPath
         let alias = sshConfigAlias.isEmpty ? nil : sshConfigAlias
+        let folder = selectedFolder ?? (try? FolderStore.ensureDefaultFolder(in: ctx))
 
         switch target {
         case .create:
@@ -228,7 +260,9 @@ struct ConnectionEditor: View {
                 sshConfigAlias: alias,
                 colorTag: colorTag,
                 iconName: iconName,
-                notes: notes.isEmpty ? nil : notes
+                notes: notes.isEmpty ? nil : notes,
+                sortIndex: folder.map(FolderStore.nextConnectionSortIndex(in:)) ?? 0,
+                parent: folder
             )
             ctx.insert(profile)
 
@@ -244,6 +278,7 @@ struct ConnectionEditor: View {
             p.colorTag = colorTag
             p.iconName = iconName
             p.notes = notes.isEmpty ? nil : notes
+            p.parent = folder
         }
 
         try? ctx.save()
@@ -265,6 +300,17 @@ struct ConnectionEditor: View {
             .appending(path: ".ssh")
         if panel.runModal() == .OK, let url = panel.url {
             privateKeyPath = url.path
+        }
+    }
+
+    private func ensureDefaultFolderSelection() {
+        if selectedFolderID != nil { return }
+        if let defaultFolder = topLevelFolders.first(where: { $0.name == FolderStore.defaultFolderName }) {
+            selectedFolderID = defaultFolder.id
+            return
+        }
+        if let folder = try? FolderStore.ensureDefaultFolder(in: ctx) {
+            selectedFolderID = folder.id
         }
     }
 }

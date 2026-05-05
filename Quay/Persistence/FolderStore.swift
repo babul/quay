@@ -1,0 +1,70 @@
+import Foundation
+import SwiftData
+
+@MainActor
+enum FolderStore {
+    static let defaultFolderName = "Hosts"
+
+    static func topLevelFolders(in context: ModelContext) throws -> [Folder] {
+        let descriptor = FetchDescriptor<Folder>(
+            predicate: #Predicate { $0.parent == nil },
+            sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.name)]
+        )
+        return try context.fetch(descriptor)
+    }
+
+    @discardableResult
+    static func ensureDefaultFolder(in context: ModelContext) throws -> Folder {
+        let folders = try topLevelFolders(in: context)
+        if let existing = folders.first(where: { $0.name == defaultFolderName }) {
+            return existing
+        }
+
+        let folder = Folder(
+            name: defaultFolderName,
+            sortIndex: nextFolderSortIndex(from: folders)
+        )
+        context.insert(folder)
+        try context.save()
+        return folder
+    }
+
+    static func bootstrapDefaultFolder(in context: ModelContext) throws {
+        let folder = try ensureDefaultFolder(in: context)
+        try moveUngroupedConnections(to: folder, in: context)
+    }
+
+    static func moveUngroupedConnections(to folder: Folder, in context: ModelContext) throws {
+        let descriptor = FetchDescriptor<ConnectionProfile>(
+            predicate: #Predicate { $0.parent == nil },
+            sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.name)]
+        )
+        let connections = try context.fetch(descriptor)
+        guard !connections.isEmpty else { return }
+
+        let nextIndex = (folder.connections.map(\.sortIndex).max() ?? -1) + 1
+        for (offset, connection) in connections.enumerated() {
+            connection.parent = folder
+            connection.sortIndex = nextIndex + offset
+        }
+        try context.save()
+    }
+
+    static func nextFolderSortIndex(from folders: [Folder]) -> Int {
+        (folders.map(\.sortIndex).max() ?? -1) + 1
+    }
+
+    static func nextConnectionSortIndex(in folder: Folder) -> Int {
+        (folder.connections.map(\.sortIndex).max() ?? -1) + 1
+    }
+
+    static func uniqueFolderName(baseName: String, existingNames: Set<String>) -> String {
+        guard existingNames.contains(baseName) else { return baseName }
+
+        var index = 2
+        while existingNames.contains("\(baseName) \(index)") {
+            index += 1
+        }
+        return "\(baseName) \(index)"
+    }
+}

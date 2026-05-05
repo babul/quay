@@ -153,4 +153,48 @@ struct PersistenceTests {
         #expect(fetched.colorTag == "blue")
         #expect(fetched.iconName == "server.rack")
     }
+
+    @Test("default Hosts folder is created once")
+    func defaultHostsFolderCreatedOnce() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+
+        let first = try FolderStore.ensureDefaultFolder(in: ctx)
+        let second = try FolderStore.ensureDefaultFolder(in: ctx)
+
+        #expect(first.id == second.id)
+
+        let folders = try ctx.fetch(FetchDescriptor<Folder>())
+        #expect(folders.map(\.name) == [FolderStore.defaultFolderName])
+    }
+
+    @Test("bootstrap moves ungrouped connections into Hosts")
+    func bootstrapMovesUngroupedConnectionsIntoHosts() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let prod = Folder(name: "Prod")
+        let ungrouped = ConnectionProfile(name: "ungrouped", hostname: "h")
+        let assigned = ConnectionProfile(name: "assigned", hostname: "h", parent: prod)
+        ctx.insert(prod)
+        ctx.insert(ungrouped)
+        ctx.insert(assigned)
+        try ctx.save()
+
+        try FolderStore.bootstrapDefaultFolder(in: ctx)
+
+        let folders = try ctx.fetch(FetchDescriptor<Folder>())
+        let hosts = try #require(folders.first { $0.name == FolderStore.defaultFolderName })
+        #expect(ungrouped.parent?.id == hosts.id)
+        #expect(assigned.parent?.id == prod.id)
+    }
+
+    @Test("unique folder name increments suffix")
+    func uniqueFolderNameIncrementsSuffix() {
+        let names = Set(["New Folder", "New Folder 2", "Prod"])
+        let next = FolderStore.uniqueFolderName(
+            baseName: "New Folder",
+            existingNames: names
+        )
+        #expect(next == "New Folder 3")
+    }
 }
