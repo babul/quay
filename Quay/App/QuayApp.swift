@@ -34,6 +34,10 @@ struct QuayApp: App {
                 .keyboardShortcut("l", modifiers: [.command])
             }
         }
+
+        Settings {
+            AppSettingsView()
+        }
     }
 }
 

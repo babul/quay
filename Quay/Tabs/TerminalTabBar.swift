@@ -5,6 +5,7 @@ import SwiftUI
 /// transitions) propagate via @Observable without going through TCA.
 struct TerminalTabBar: View {
     var tabManager: TerminalTabManager
+    @AppStorage("appearance.showTabColorBars") private var showTabColorBars = true
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -14,6 +15,8 @@ struct TerminalTabBar: View {
                         title: tab.displayTitle,
                         subtitle: tab.displayHost,
                         phase: tab.phase,
+                        colorTag: tab.profile.colorTag,
+                        showColorBar: showTabColorBars,
                         isSelected: tab.id == tabManager.selectedTabID,
                         onSelect: { tabManager.select(tab) },
                         onClose: { tabManager.closeTab(tab) }
@@ -30,6 +33,8 @@ private struct TabButton: View {
     var title: String
     var subtitle: String
     var phase: TerminalTabItem.Phase
+    var colorTag: String?
+    var showColorBar: Bool
     var isSelected: Bool
     var onSelect: () -> Void
     var onClose: () -> Void
@@ -57,15 +62,24 @@ private struct TabButton: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(isSelected ? Color.accentColor.opacity(0.12) : .clear)
+            .background(tabBackground)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .bottom) {
-            if isSelected {
-                Rectangle().frame(height: 2).foregroundStyle(Color.accentColor)
-            }
+        .overlay(alignment: .top) {
+            Rectangle()
+                .frame(height: isSelected ? 3 : 2)
+                .foregroundStyle(tabAccent)
+                .opacity(showColorBar || isSelected ? 1 : 0)
         }
+    }
+
+    private var tabAccent: Color {
+        ConnectionColor.color(for: colorTag) ?? .accentColor
+    }
+
+    private var tabBackground: Color {
+        isSelected ? tabAccent.opacity(0.14) : .clear
     }
 
     @ViewBuilder
