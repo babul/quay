@@ -135,4 +135,22 @@ struct PersistenceTests {
         #expect(t?.username == "alice")
         #expect(t?.auth == .privateKey(path: "/keys/id"))
     }
+
+    @Test("appearance metadata round-trips through ConnectionProfile")
+    func appearanceMetadataRoundTrip() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let profile = ConnectionProfile(
+            name: "n",
+            hostname: "h",
+            colorTag: "blue",
+            iconName: "server.rack"
+        )
+        ctx.insert(profile)
+        try ctx.save()
+
+        let fetched = try #require(try ctx.fetch(FetchDescriptor<ConnectionProfile>()).first)
+        #expect(fetched.colorTag == "blue")
+        #expect(fetched.iconName == "server.rack")
+    }
 }

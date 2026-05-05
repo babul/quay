@@ -41,6 +41,9 @@ final class ConnectionProfile {
     /// User-chosen color tag (e.g. "red", "amber"). Optional UI hint.
     var colorTag: String?
 
+    /// User-chosen SF Symbol name for connection list display.
+    var iconName: String?
+
     /// Free-form notes shown in the connection editor.
     var notes: String?
 
@@ -61,6 +64,7 @@ final class ConnectionProfile {
         privateKeyPath: String? = nil,
         sshConfigAlias: String? = nil,
         colorTag: String? = nil,
+        iconName: String? = nil,
         notes: String? = nil,
         sortIndex: Int = 0,
         parent: Folder? = nil
@@ -75,6 +79,7 @@ final class ConnectionProfile {
         self.privateKeyPath = privateKeyPath
         self.sshConfigAlias = sshConfigAlias
         self.colorTag = colorTag
+        self.iconName = iconName
         self.notes = notes
         self.sortIndex = sortIndex
         self.parent = parent

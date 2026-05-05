@@ -21,6 +21,8 @@ struct ConnectionEditor: View {
     @State private var secretRef: String = ""
     @State private var privateKeyPath: String = ""
     @State private var sshConfigAlias: String = ""
+    @State private var colorTag: String?
+    @State private var iconName: String?
     @State private var notes: String = ""
     @State private var didLoad = false
 
@@ -65,6 +67,11 @@ struct ConnectionEditor: View {
                 }
             }
 
+            Section("Appearance") {
+                iconPicker
+                colorPicker
+            }
+
             Section("Notes") {
                 TextEditor(text: $notes)
                     .frame(minHeight: 60)
@@ -100,6 +107,79 @@ struct ConnectionEditor: View {
         }
     }
 
+    private var colorPicker: some View {
+        LabeledContent("Color") {
+            HStack(spacing: 8) {
+                Button {
+                    colorTag = nil
+                } label: {
+                    Image(systemName: colorTag == nil ? "circle.inset.filled" : "circle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Default")
+
+                ForEach(ConnectionColor.tags) { tag in
+                    Button {
+                        colorTag = tag.id
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(tag.color)
+                                .frame(width: 16, height: 16)
+                            if colorTag == tag.id {
+                                Circle()
+                                    .strokeBorder(.primary, lineWidth: 2)
+                                    .frame(width: 22, height: 22)
+                            }
+                        }
+                        .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .help(tag.label)
+                }
+            }
+            .accessibilityLabel("Connection color")
+        }
+    }
+
+    private var iconPicker: some View {
+        LabeledContent("Icon") {
+            HStack(spacing: 8) {
+                Button {
+                    iconName = nil
+                } label: {
+                    Image(systemName: ConnectionIcon.fallback)
+                        .symbolVariant(iconName == nil ? .fill : .none)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help("Default")
+
+                ForEach(ConnectionIcon.options) { option in
+                    Button {
+                        iconName = option.id
+                    } label: {
+                        ZStack {
+                            Image(systemName: option.id)
+                                .imageScale(.medium)
+                            if iconName == option.id {
+                                RoundedRectangle(cornerRadius: 5)
+                                    .strokeBorder(.primary, lineWidth: 1.5)
+                                    .frame(width: 26, height: 24)
+                            }
+                        }
+                    }
+                    .frame(width: 24, height: 24)
+                    .buttonStyle(.plain)
+                    .help(option.label)
+                }
+            }
+        }
+        .accessibilityLabel("Connection icon")
+    }
+
     private var canSave: Bool {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         switch authMethod {
@@ -122,6 +202,8 @@ struct ConnectionEditor: View {
             secretRef = p.secretRef ?? ""
             privateKeyPath = p.privateKeyPath ?? ""
             sshConfigAlias = p.sshConfigAlias ?? ""
+            colorTag = ConnectionColor.isKnown(p.colorTag) ? p.colorTag : nil
+            iconName = p.iconName
             notes = p.notes ?? ""
         }
     }
@@ -144,6 +226,8 @@ struct ConnectionEditor: View {
                 secretRef: secret,
                 privateKeyPath: keyPath,
                 sshConfigAlias: alias,
+                colorTag: colorTag,
+                iconName: iconName,
                 notes: notes.isEmpty ? nil : notes
             )
             ctx.insert(profile)
@@ -157,6 +241,8 @@ struct ConnectionEditor: View {
             p.secretRef = secret
             p.privateKeyPath = keyPath
             p.sshConfigAlias = alias
+            p.colorTag = colorTag
+            p.iconName = iconName
             p.notes = notes.isEmpty ? nil : notes
         }
 

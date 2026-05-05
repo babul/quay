@@ -1,3 +1,5 @@
+import AppKit
+import Foundation
 import SwiftData
 import SwiftUI
 
@@ -34,6 +36,8 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            identityHeader
+            Divider()
             searchField
             Divider()
             list
@@ -48,6 +52,28 @@ struct SidebarView: View {
             }
             .frame(minWidth: 480, minHeight: 420)
         }
+    }
+
+    private var identityHeader: some View {
+        HStack(spacing: 9) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 24, height: 24)
+                .cornerRadius(5)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Quay")
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Text(localHostname)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     private var filtered: [ConnectionProfile] {
@@ -66,7 +92,11 @@ struct SidebarView: View {
                 .onAppear {
                     NotificationCenter.default.addObserver(
                         forName: .focusSearch, object: nil, queue: .main
-                    ) { _ in searchFocused = true }
+                    ) { _ in
+                        Task { @MainActor in
+                            searchFocused = true
+                        }
+                    }
                 }
             if !query.isEmpty {
                 Button {
@@ -134,8 +164,9 @@ struct SidebarView: View {
 
     private func connectionRow(_ profile: ConnectionProfile) -> some View {
         HStack {
-            Image(systemName: "terminal.fill")
-                .foregroundStyle(.tint)
+            Image(systemName: ConnectionIcon.systemName(for: profile.iconName))
+                .foregroundStyle(ConnectionColor.color(for: profile.colorTag) ?? Color.accentColor)
+                .frame(width: 16)
             VStack(alignment: .leading, spacing: 0) {
                 Text(profile.name)
                 Text(profile.sshTarget?.hostname ?? profile.hostname)
@@ -172,6 +203,10 @@ struct SidebarView: View {
     private func newFolder() {
         let nextIdx = (folders.map(\.sortIndex).max() ?? -1) + 1
         ctx.insert(Folder(name: "New Folder", sortIndex: nextIdx))
+    }
+
+    private var localHostname: String {
+        Host.current().localizedName ?? ProcessInfo.processInfo.hostName
     }
 }
 
