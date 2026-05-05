@@ -42,34 +42,42 @@ struct ContentView: View {
 
     private var tabSurfaces: some View {
         ZStack {
-            ForEach(tabManager.tabs) { tab in
-                tabContent(for: tab)
-                    .opacity(tab.id == tabManager.selectedTabID ? 1 : 0)
-                    .allowsHitTesting(tab.id == tabManager.selectedTabID)
+            // Single container that keeps every surface view as a direct NSView
+            // subview at all times. Visibility is toggled via isHidden rather
+            // than removing from the hierarchy, so libghostty never loses its
+            // render target and background sessions stay alive.
+            TerminalSurfaceHostsView(
+                tabs: tabManager.tabs,
+                selectedTabID: tabManager.selectedTabID
+            )
+
+            // Status overlay for the selected tab only.
+            if let tab = tabManager.selectedTab {
+                statusOverlay(for: tab)
             }
         }
     }
 
     @ViewBuilder
-    private func tabContent(for tab: TerminalTabItem) -> some View {
+    private func statusOverlay(for tab: TerminalTabItem) -> some View {
         switch tab.phase {
         case .idle, .starting:
-            ProgressView("Connecting…")
+            Color(nsColor: .windowBackgroundColor)
+                .overlay { ProgressView("Connecting…") }
         case .running:
-            if let surface = tab.surfaceView {
-                TerminalSurfaceHostView(surfaceView: surface)
-            } else {
-                ProgressView("Connecting…")
-            }
+            EmptyView()
         case .failed(let message):
-            ContentUnavailableView {
-                Label("Connection lost", systemImage: "exclamationmark.triangle")
-            } description: {
-                Text(message)
-            } actions: {
-                Button("Reconnect") { tab.reconnect() }
-                    .keyboardShortcut(.return, modifiers: .command)
-            }
+            Color(nsColor: .windowBackgroundColor)
+                .overlay {
+                    ContentUnavailableView {
+                        Label("Connection lost", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(message)
+                    } actions: {
+                        Button("Reconnect") { tab.reconnect() }
+                            .keyboardShortcut(.return, modifiers: .command)
+                    }
+                }
         }
     }
 
@@ -82,14 +90,46 @@ struct ContentView: View {
     }
 }
 
-/// Wraps an existing `GhosttySurfaceView` for SwiftUI without recreating it.
-/// `makeNSView` returns the already-live view; `updateNSView` is a no-op
-/// because config changes are broadcast via `GhosttyRuntime.reloadConfig()`.
-private struct TerminalSurfaceHostView: NSViewRepresentable {
-    let surfaceView: GhosttySurfaceView
+/// Manages all live `GhosttySurfaceView` instances as direct NSView subviews
+/// of a single container. SwiftUI's `opacity(0)` on macOS can remove NSViews
+/// from the hierarchy, causing libghostty to lose its render target and killing
+/// background sessions. Using `isHidden` keeps every view in the window so
+/// sessions stay alive regardless of which tab is selected.
+private struct TerminalSurfaceHostsView: NSViewRepresentable {
+    let tabs: [TerminalTabItem]
+    let selectedTabID: UUID?
 
-    func makeNSView(context: Context) -> GhosttySurfaceView { surfaceView }
-    func updateNSView(_ nsView: GhosttySurfaceView, context: Context) {}
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        v.wantsLayer = true
+        return v
+    }
+
+    func updateNSView(_ container: NSView, context: Context) {
+        let existing = container.subviews.compactMap { $0 as? GhosttySurfaceView }
+        let existingIDs = Set(existing.map { ObjectIdentifier($0) })
+
+        // Add surface views for tabs not yet in the container.
+        for tab in tabs {
+            guard let sv = tab.surfaceView,
+                  !existingIDs.contains(ObjectIdentifier(sv)) else { continue }
+            sv.frame = container.bounds
+            sv.autoresizingMask = [.width, .height]
+            container.addSubview(sv)
+        }
+
+        // Remove surface views whose tabs have been closed.
+        let activeIDs = Set(tabs.compactMap { $0.surfaceView }.map { ObjectIdentifier($0) })
+        for sv in existing where !activeIDs.contains(ObjectIdentifier(sv)) {
+            sv.removeFromSuperview()
+        }
+
+        // Toggle visibility — never remove, so libghostty keeps its render target.
+        let selectedSurface = tabs.first(where: { $0.id == selectedTabID })?.surfaceView
+        for sv in container.subviews {
+            sv.isHidden = !(sv === selectedSurface)
+        }
+    }
 }
 
 #Preview {
