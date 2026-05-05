@@ -1,8 +1,11 @@
+import ComposableArchitecture
 import GhosttyKit
 import SwiftUI
 
 @main
 struct QuayApp: App {
+    let store = Store(initialState: AppFeature.State()) { AppFeature() }
+
     init() {
         // ghostty_init must be called once before any other libghostty entry
         // points. We pass the real argc/argv so libghostty can detect CLI
@@ -14,7 +17,7 @@ struct QuayApp: App {
 
     var body: some Scene {
         WindowGroup("Quay") {
-            ContentView()
+            ContentView(store: store)
                 .frame(minWidth: 900, minHeight: 600)
         }
         .windowStyle(.titleBar)

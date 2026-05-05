@@ -33,6 +33,10 @@ final class TerminalTabItem: Identifiable {
     private var askpassServer: AskpassServer?
     private var epoch: Int = 0
 
+    /// Called when the child process exits. Set by external observers (e.g.,
+    /// `TerminalClient`) to receive cross-feature child-exit events.
+    var onChildExited: (() -> Void)?
+
     init(profile: ConnectionProfile) {
         self.id = UUID()
         self.profile = profile
@@ -54,7 +58,18 @@ final class TerminalTabItem: Identifiable {
                 askpassServer = askpass
             }
             epoch &+= 1
-            surfaceView = GhosttySurfaceView(runtime: .shared, config: config)
+            let view = GhosttySurfaceView(runtime: .shared, config: config)
+            view.onBridgeCreated = { [weak self] bridge in
+                guard let self else { return }
+                bridge.onCloseRequest = { [weak self] in
+                    self?.phase = .failed("Session ended")
+                }
+                bridge.onChildExited = { [weak self] _ in
+                    self?.phase = .failed("Session ended")
+                    self?.onChildExited?()
+                }
+            }
+            surfaceView = view
             phase = .running
         } catch {
             phase = .failed("\(error)")

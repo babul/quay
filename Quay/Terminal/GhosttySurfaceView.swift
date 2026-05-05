@@ -25,6 +25,11 @@ final class GhosttySurfaceView: NSView {
     // Last occlusion state, to avoid redundant calls to set_occlusion.
     private var lastOccluded: Bool = false
 
+    /// Called once, right after the bridge and surface are created in
+    /// `viewDidMoveToWindow`. The owning tab item uses this to wire
+    /// `onCloseRequest`/`onChildExited` without a timing dependency.
+    var onBridgeCreated: ((GhosttySurfaceBridge) -> Void)?
+
     // IME state — owned here; modified by GhosttySurfaceView+IME.
     var markedText = NSMutableAttributedString()
     var keyTextAccumulator: [String]?
@@ -75,6 +80,9 @@ final class GhosttySurfaceView: NSView {
 
         runtime.registerSurface(newBridge)
         installWindowObservers()
+        window?.makeFirstResponder(self)
+        onBridgeCreated?(newBridge)
+        onBridgeCreated = nil
     }
 
     private func installWindowObservers() {
@@ -104,6 +112,14 @@ final class GhosttySurfaceView: NSView {
         guard let surface, let window else { return }
         let occluded = !window.occlusionState.contains(.visible)
         guard occluded != lastOccluded else { return }
+        lastOccluded = occluded
+        ghostty_surface_set_occlusion(surface, occluded)
+    }
+
+    /// Explicitly occlude or un-occlude this surface when the owning tab is
+    /// hidden or shown. Suppresses Metal rendering for non-selected tabs.
+    func setTabOccluded(_ occluded: Bool) {
+        guard let surface, occluded != lastOccluded else { return }
         lastOccluded = occluded
         ghostty_surface_set_occlusion(surface, occluded)
     }

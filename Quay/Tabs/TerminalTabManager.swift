@@ -9,6 +9,8 @@ import Observation
 @Observable
 @MainActor
 final class TerminalTabManager {
+    static let shared = TerminalTabManager()
+
     private(set) var tabs: [TerminalTabItem] = []
     private(set) var selectedTabID: UUID?
 
@@ -37,11 +39,13 @@ final class TerminalTabManager {
     }
 
     func select(_ item: TerminalTabItem) {
-        // Update occlusion on the previously-focused surface.
         if let prev = selectedTab, prev.id != item.id {
             prev.surfaceView?.resignFirstResponder()
+            prev.surfaceView?.setTabOccluded(true)
         }
         selectedTabID = item.id
+        item.surfaceView?.setTabOccluded(false)
+        item.surfaceView?.window?.makeFirstResponder(item.surfaceView)
     }
 
     func closeTab(_ item: TerminalTabItem) {
