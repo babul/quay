@@ -13,6 +13,11 @@ final class TerminalTabManager {
 
     private(set) var tabs: [TerminalTabItem] = []
     private(set) var selectedTabID: UUID?
+    private let connectTab: @MainActor (TerminalTabItem) -> Void
+
+    init(connectTab: @escaping @MainActor (TerminalTabItem) -> Void = { $0.connect() }) {
+        self.connectTab = connectTab
+    }
 
     var selectedTab: TerminalTabItem? {
         guard let id = selectedTabID else { return nil }
@@ -21,20 +26,24 @@ final class TerminalTabManager {
 
     // MARK: Commands
 
-    /// Open a new tab for `profile` and immediately connect.
+    /// Select an existing tab for `profile`, or open/connect the first one.
     @discardableResult
-    func openTab(for profile: ConnectionProfile) -> TerminalTabItem {
-        // Reuse an existing idle tab for the same profile if one exists,
-        // so rapidly re-clicking the sidebar doesn't pile up duplicate tabs.
-        if let existing = tabs.first(where: { $0.profile.id == profile.id && $0.canReconnectInPlace }) {
+    func openOrSelectTab(for profile: ConnectionProfile) -> TerminalTabItem {
+        if let existing = tabs.first(where: { $0.profile.id == profile.id }) {
             select(existing)
-            existing.connect()
             return existing
         }
+
+        return openNewTab(for: profile)
+    }
+
+    /// Open a new tab for `profile` and immediately connect.
+    @discardableResult
+    func openNewTab(for profile: ConnectionProfile) -> TerminalTabItem {
         let item = TerminalTabItem(profile: profile)
         tabs.append(item)
         select(item)
-        item.connect()
+        connectTab(item)
         return item
     }
 
@@ -75,16 +84,5 @@ final class TerminalTabManager {
     func reconnectTab(id: UUID) {
         guard let item = tabs.first(where: { $0.id == id }) else { return }
         reconnectTab(item)
-    }
-}
-
-private extension TerminalTabItem {
-    var canReconnectInPlace: Bool {
-        switch phase {
-        case .idle, .disconnected, .failed:
-            return true
-        case .starting, .running:
-            return false
-        }
     }
 }

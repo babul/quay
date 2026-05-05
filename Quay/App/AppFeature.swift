@@ -4,7 +4,7 @@ import ComposableArchitecture
 /// any future cross-feature state (badges, notifications, window restore).
 ///
 /// Tab opening is intentionally handled in `ContentView` (direct call to
-/// `TerminalTabManager.openTab(for:)`) because it requires a SwiftData
+/// `TerminalTabManager.openOrSelectTab(for:)`) because it requires a SwiftData
 /// `modelContext` that reducers don't hold.
 @Reducer
 struct AppFeature {

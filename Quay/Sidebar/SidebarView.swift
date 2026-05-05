@@ -18,6 +18,8 @@ struct SidebarView: View {
     private var allConnections: [ConnectionProfile]
 
     @Binding var selection: UUID?
+    var onOpenConnection: (ConnectionProfile) -> Void = { _ in }
+    var onOpenConnectionInNewTab: (ConnectionProfile) -> Void = { _ in }
 
     @State private var query: String = ""
     @State private var editorTarget: EditorTarget?
@@ -228,7 +230,16 @@ struct SidebarView: View {
             Spacer()
         }
         .tag(profile.id)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selection = profile.id
+            onOpenConnection(profile)
+        }
         .contextMenu {
+            Button("Connect New Tab") {
+                selection = profile.id
+                onOpenConnectionInNewTab(profile)
+            }
             Button("Edit…") { editorTarget = .edit(profile) }
             Button("Delete", role: .destructive) {
                 ctx.delete(profile)

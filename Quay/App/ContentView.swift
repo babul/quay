@@ -11,17 +11,21 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(selection: $selectedConnectionID)
+            SidebarView(
+                selection: $selectedConnectionID,
+                onOpenConnection: { profile in
+                    tabManager.openOrSelectTab(for: profile)
+                },
+                onOpenConnectionInNewTab: { profile in
+                    tabManager.openNewTab(for: profile)
+                }
+            )
         } detail: {
             detail
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
         .navigationSubtitle(tabManager.selectedTab?.displayHost ?? "")
         .onAppear { store.send(.onAppear) }
-        .onChange(of: selectedConnectionID) { _, id in
-            guard let id, let profile = lookup(id: id) else { return }
-            tabManager.openTab(for: profile)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
             columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
         }
@@ -87,14 +91,6 @@ struct ContentView: View {
                     }
                 }
         }
-    }
-
-    @Environment(\.modelContext) private var ctx
-    private func lookup(id: UUID) -> ConnectionProfile? {
-        let descriptor = FetchDescriptor<ConnectionProfile>(
-            predicate: #Predicate { $0.id == id }
-        )
-        return try? ctx.fetch(descriptor).first
     }
 }
 
