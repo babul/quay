@@ -3,6 +3,11 @@ import GhosttyKit
 import OSLog
 import UserNotifications
 
+private let ghosttySurfaceBridgeLogger = Logger(
+    subsystem: "com.montopolis.quay",
+    category: "bridge"
+)
+
 /// Per-surface action dispatcher and state coordinator.
 ///
 /// Owns zero C memory. The runtime's `action_cb`, `read_clipboard_cb`, and
@@ -15,8 +20,6 @@ import UserNotifications
 /// closures set by the owning tab item.
 @MainActor
 final class GhosttySurfaceBridge {
-    private nonisolated static let logger = Logger(subsystem: "com.montopolis.quay", category: "bridge")
-
     /// Observable state read by SwiftUI overlays and the tab bar.
     let state: GhosttySurfaceState
 
@@ -137,7 +140,7 @@ final class GhosttySurfaceBridge {
         )
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
-                GhosttySurfaceBridge.logger.debug("notification error: \(error)")
+                ghosttySurfaceBridgeLogger.debug("notification error: \(error)")
             }
         }
     }
