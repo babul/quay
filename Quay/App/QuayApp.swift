@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import GhosttyKit
 import SwiftUI
@@ -19,6 +20,7 @@ struct QuayApp: App {
         WindowGroup("Quay") {
             ContentView(store: store)
                 .frame(minWidth: 900, minHeight: 600)
+                .background(WindowConfigurator())
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
@@ -31,6 +33,31 @@ struct QuayApp: App {
                 }
                 .keyboardShortcut("l", modifiers: [.command])
             }
+        }
+    }
+}
+
+private struct WindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        ConfiguringView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ConfiguringView)?.configureWindow()
+    }
+
+    private final class ConfiguringView: NSView {
+        private var didConfigureWindow = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            configureWindow()
+        }
+
+        func configureWindow() {
+            guard !didConfigureWindow, let window else { return }
+            didConfigureWindow = true
+            window.setFrameAutosaveName("Quay.MainWindow.Frame")
         }
     }
 }
