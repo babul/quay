@@ -20,6 +20,33 @@ enum SSHAuth: Sendable, Equatable {
     case sshConfigAlias(alias: String)
 }
 
+/// Remote terminal type sent by OpenSSH when allocating a pseudo-terminal.
+enum RemoteTerminalType: String, Codable, CaseIterable, Identifiable, Sendable {
+    case xterm256Color = "xterm-256color"
+    case xtermColor = "xterm-color"
+    case vt100
+    case xtermGhostty = "xterm-ghostty"
+
+    static let defaultValue: Self = .xterm256Color
+
+    var id: String { rawValue }
+
+    var label: String { rawValue }
+
+    var helpText: String {
+        switch self {
+        case .xterm256Color:
+            return "Best default for modern SSH hosts."
+        case .xtermColor:
+            return "Fallback for older hosts with limited terminfo."
+        case .vt100:
+            return "Last-resort fallback for rescue shells and minimal systems."
+        case .xtermGhostty:
+            return "Use only when the remote host has Ghostty terminfo installed."
+        }
+    }
+}
+
 /// Connection-level SSH inputs the builder consumes.
 ///
 /// Mirrors the subset of `ConnectionProfile` (added in Step 5) that the
@@ -30,6 +57,7 @@ struct SSHTarget: Sendable, Equatable {
     var port: Int?
     var username: String?
     var auth: SSHAuth
+    var remoteTerminalType: RemoteTerminalType = .defaultValue
     /// Extra `-o key=value` overrides appended verbatim. Reserved; v0.1
     /// leaves this empty.
     var extraOptions: [String: String] = [:]
@@ -39,16 +67,15 @@ struct SSHTarget: Sendable, Equatable {
 struct SSHCommand: Sendable, Equatable {
     /// Single shell-parseable command line for `ghostty_surface_config_s.command`.
     var command: String
-    /// Environment variables to inject into the spawned process. Populated
-    /// only when a secret reference needs the askpass helper.
+    /// Environment variables to inject into the spawned process.
     var environment: [String: String]
 }
 
 /// Pure function: `(SSHTarget, askpass info) -> SSHCommand`.
 ///
 /// The resulting command string drives `/usr/bin/ssh` directly. The
-/// environment dict carries `SSH_ASKPASS_*` plumbing for password and
-/// passphrase auth — the actual askpass server is owned by Step 6.
+/// environment dict carries `TERM` plus any `SSH_ASKPASS_*` plumbing for
+/// password and passphrase auth — the actual askpass server is owned by Step 6.
 enum SSHCommandBuilder {
     /// Plumbing the builder needs from Step 6 to wire up `SSH_ASKPASS`.
     /// `nil` means no askpass plumbing is added (every auth that requires
@@ -64,7 +91,7 @@ enum SSHCommandBuilder {
 
     static func build(_ target: SSHTarget, askpass: AskpassEnv? = nil) -> SSHCommand {
         var argv: [String] = [sshBinary]
-        var env: [String: String] = [:]
+        var env: [String: String] = ["TERM": target.remoteTerminalType.rawValue]
 
         // Common flags. `BatchMode=no` makes sure ssh asks for prompts via
         // the askpass helper rather than failing silently.

@@ -38,6 +38,9 @@ final class ConnectionProfile {
     /// `.sshConfigAlias` auth method.
     var sshConfigAlias: String?
 
+    /// `RemoteTerminalType.rawValue` sent as TERM for this SSH session.
+    var remoteTerminalTypeRaw: String?
+
     /// User-chosen color tag (e.g. "red", "amber"). Optional UI hint.
     var colorTag: String?
 
@@ -63,6 +66,7 @@ final class ConnectionProfile {
         secretRef: String? = nil,
         privateKeyPath: String? = nil,
         sshConfigAlias: String? = nil,
+        remoteTerminalType: RemoteTerminalType = .defaultValue,
         colorTag: String? = nil,
         iconName: String? = nil,
         notes: String? = nil,
@@ -78,6 +82,7 @@ final class ConnectionProfile {
         self.secretRef = secretRef
         self.privateKeyPath = privateKeyPath
         self.sshConfigAlias = sshConfigAlias
+        self.remoteTerminalTypeRaw = remoteTerminalType.rawValue
         self.colorTag = colorTag
         self.iconName = iconName
         self.notes = notes
@@ -96,6 +101,19 @@ final class ConnectionProfile {
     /// The stored auth as an enum. Returns `nil` if `authMethodRaw` is invalid.
     var authMethod: AuthMethod? {
         AuthMethod(rawValue: authMethodRaw)
+    }
+
+    var remoteTerminalType: RemoteTerminalType {
+        get {
+            guard let remoteTerminalTypeRaw,
+                  let type = RemoteTerminalType(rawValue: remoteTerminalTypeRaw) else {
+                return .defaultValue
+            }
+            return type
+        }
+        set {
+            remoteTerminalTypeRaw = newValue.rawValue
+        }
     }
 
     /// Reconstruct an `SSHAuth` from stored fields. Returns `nil` if the
@@ -128,7 +146,8 @@ final class ConnectionProfile {
             hostname: hostname,
             port: port,
             username: username,
-            auth: auth
+            auth: auth,
+            remoteTerminalType: remoteTerminalType
         )
     }
 }

@@ -12,7 +12,7 @@ struct SSHCommandBuilderTests {
             SSHTarget(hostname: "example.com", port: nil, username: nil, auth: .sshAgent)
         )
         #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no example.com")
-        #expect(cmd.environment.isEmpty)
+        #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
 
     @Test("agent + user + non-default port")
@@ -21,7 +21,7 @@ struct SSHCommandBuilderTests {
             SSHTarget(hostname: "host.internal", port: 2222, username: "deploy", auth: .sshAgent)
         )
         #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no -p 2222 deploy@host.internal")
-        #expect(cmd.environment.isEmpty)
+        #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
 
     // MARK: Identity file
@@ -39,7 +39,7 @@ struct SSHCommandBuilderTests {
         #expect(cmd.command.contains("-i /Users/me/.ssh/id_ed25519"))
         #expect(cmd.command.contains("-o IdentitiesOnly=yes"))
         #expect(cmd.command.hasSuffix(" u@h"))
-        #expect(cmd.environment.isEmpty)
+        #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
 
     @Test("private key path containing spaces is quoted")
@@ -57,13 +57,13 @@ struct SSHCommandBuilderTests {
 
     // MARK: Password / passphrase auth wires askpass env
 
-    @Test("password auth without askpass info: no env (will fall back to interactive)")
+    @Test("password auth without askpass info: only TERM env")
     func passwordNoAskpass() {
         let cmd = SSHCommandBuilder.build(
             SSHTarget(hostname: "h", port: nil, username: "u",
                       auth: .password(passwordRef: "keychain://quay/h"))
         )
-        #expect(cmd.environment.isEmpty)
+        #expect(cmd.environment == ["TERM": "xterm-256color"])
         #expect(cmd.command.contains("PreferredAuthentications=password,keyboard-interactive"))
         #expect(cmd.command.contains("PubkeyAuthentication=no"))
     }
@@ -79,6 +79,7 @@ struct SSHCommandBuilderTests {
                       auth: .password(passwordRef: "keychain://quay/h")),
             askpass: askpass
         )
+        #expect(cmd.environment["TERM"] == "xterm-256color")
         #expect(cmd.environment["SSH_ASKPASS"] == askpass.helperPath)
         #expect(cmd.environment["SSH_ASKPASS_REQUIRE"] == "force")
         #expect(cmd.environment["DISPLAY"] == ":0")
@@ -101,8 +102,25 @@ struct SSHCommandBuilderTests {
             ),
             askpass: askpass
         )
+        #expect(cmd.environment["TERM"] == "xterm-256color")
         #expect(cmd.environment["SSH_ASKPASS"] == "/p/quay-askpass")
         #expect(cmd.command.contains("-i /k"))
+    }
+
+    @Test("remote terminal type is emitted as TERM")
+    func remoteTerminalTypeEnv() {
+        for type in RemoteTerminalType.allCases {
+            let cmd = SSHCommandBuilder.build(
+                SSHTarget(
+                    hostname: "h",
+                    port: nil,
+                    username: nil,
+                    auth: .sshAgent,
+                    remoteTerminalType: type
+                )
+            )
+            #expect(cmd.environment["TERM"] == type.rawValue)
+        }
     }
 
     // MARK: ssh-config alias

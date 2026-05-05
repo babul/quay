@@ -241,6 +241,7 @@ struct SidebarView: View {
                 onOpenConnectionInNewTab(profile)
             }
             Button("Edit…") { editorTarget = .edit(profile) }
+            Button("Duplicate") { duplicateConnection(profile) }
             Button("Delete", role: .destructive) {
                 ctx.delete(profile)
             }
@@ -326,6 +327,13 @@ struct SidebarView: View {
         SidebarCollapseState.save(collapsedFolderIDs)
         ctx.delete(folder)
         try? ctx.save()
+    }
+
+    private func duplicateConnection(_ profile: ConnectionProfile) {
+        guard let duplicate = try? FolderStore.duplicateConnection(profile, in: ctx) else {
+            return
+        }
+        selection = duplicate.id
     }
 
     private func bootstrapFolders() {

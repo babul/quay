@@ -127,13 +127,28 @@ struct PersistenceTests {
             port: 2222,
             username: "alice",
             authMethod: .privateKey,
-            privateKeyPath: "/keys/id"
+            privateKeyPath: "/keys/id",
+            remoteTerminalType: .vt100
         )
         let t = p.sshTarget
         #expect(t?.hostname == "host.example.com")
         #expect(t?.port == 2222)
         #expect(t?.username == "alice")
         #expect(t?.auth == .privateKey(path: "/keys/id"))
+        #expect(t?.remoteTerminalType == .vt100)
+    }
+
+    @Test("remote terminal type defaults and ignores invalid stored values")
+    func remoteTerminalTypeDefaultAndInvalidFallback() {
+        let profile = ConnectionProfile(name: "n", hostname: "h")
+        #expect(profile.remoteTerminalType == .xterm256Color)
+        #expect(profile.remoteTerminalTypeRaw == "xterm-256color")
+
+        profile.remoteTerminalTypeRaw = "not-a-term"
+        #expect(profile.remoteTerminalType == .xterm256Color)
+
+        profile.remoteTerminalType = .xtermGhostty
+        #expect(profile.remoteTerminalTypeRaw == "xterm-ghostty")
     }
 
     @Test("appearance metadata round-trips through ConnectionProfile")
@@ -196,5 +211,74 @@ struct PersistenceTests {
             existingNames: names
         )
         #expect(next == "New Folder 3")
+    }
+
+    @Test("unique connection copy name increments suffix")
+    func uniqueConnectionCopyNameIncrementsSuffix() {
+        let names = Set(["Prod", "Prod Copy", "Prod Copy 2"])
+        let next = FolderStore.uniqueConnectionCopyName(
+            baseName: "Prod",
+            existingNames: names
+        )
+        #expect(next == "Prod Copy 3")
+    }
+
+    @Test("duplicate connection copies fields and appends to same folder")
+    func duplicateConnectionCopiesFieldsAndAppendsToSameFolder() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let prod = Folder(name: "Prod")
+        let stage = Folder(name: "Stage")
+        let original = ConnectionProfile(
+            name: "web",
+            hostname: "web.example.com",
+            port: 2222,
+            username: "deploy",
+            authMethod: .privateKeyWithPassphrase,
+            secretRef: "keychain://quay/web",
+            privateKeyPath: "/Users/example/.ssh/id_ed25519",
+            sshConfigAlias: "web-alias",
+            remoteTerminalType: .xtermColor,
+            colorTag: "blue",
+            iconName: "server.rack",
+            notes: "production host",
+            sortIndex: 0,
+            parent: prod
+        )
+        let existingCopy = ConnectionProfile(
+            name: "web Copy",
+            hostname: "other.example.com",
+            sortIndex: 1,
+            parent: prod
+        )
+        let otherFolderCopy = ConnectionProfile(
+            name: "web Copy 2",
+            hostname: "stage.example.com",
+            parent: stage
+        )
+        ctx.insert(prod)
+        ctx.insert(stage)
+        ctx.insert(original)
+        ctx.insert(existingCopy)
+        ctx.insert(otherFolderCopy)
+        try ctx.save()
+
+        let duplicate = try FolderStore.duplicateConnection(original, in: ctx)
+
+        #expect(duplicate.id != original.id)
+        #expect(duplicate.name == "web Copy 2")
+        #expect(duplicate.hostname == original.hostname)
+        #expect(duplicate.port == original.port)
+        #expect(duplicate.username == original.username)
+        #expect(duplicate.authMethodRaw == original.authMethodRaw)
+        #expect(duplicate.secretRef == original.secretRef)
+        #expect(duplicate.privateKeyPath == original.privateKeyPath)
+        #expect(duplicate.sshConfigAlias == original.sshConfigAlias)
+        #expect(duplicate.remoteTerminalType == original.remoteTerminalType)
+        #expect(duplicate.colorTag == original.colorTag)
+        #expect(duplicate.iconName == original.iconName)
+        #expect(duplicate.notes == original.notes)
+        #expect(duplicate.parent?.id == prod.id)
+        #expect(duplicate.sortIndex == 2)
     }
 }

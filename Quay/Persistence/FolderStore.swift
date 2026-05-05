@@ -67,4 +67,47 @@ enum FolderStore {
         }
         return "\(baseName) \(index)"
     }
+
+    static func uniqueConnectionCopyName(baseName: String, existingNames: Set<String>) -> String {
+        let copyName = "\(baseName) Copy"
+        guard existingNames.contains(copyName) else { return copyName }
+
+        var index = 2
+        while existingNames.contains("\(copyName) \(index)") {
+            index += 1
+        }
+        return "\(copyName) \(index)"
+    }
+
+    @discardableResult
+    static func duplicateConnection(
+        _ profile: ConnectionProfile,
+        in context: ModelContext
+    ) throws -> ConnectionProfile {
+        let folder = try profile.parent ?? ensureDefaultFolder(in: context)
+        let existingNames = Set(folder.connections.map(\.name))
+        let duplicate = ConnectionProfile(
+            name: uniqueConnectionCopyName(
+                baseName: profile.name,
+                existingNames: existingNames
+            ),
+            hostname: profile.hostname,
+            port: profile.port,
+            username: profile.username,
+            authMethod: profile.authMethod ?? .sshAgent,
+            secretRef: profile.secretRef,
+            privateKeyPath: profile.privateKeyPath,
+            sshConfigAlias: profile.sshConfigAlias,
+            remoteTerminalType: profile.remoteTerminalType,
+            colorTag: profile.colorTag,
+            iconName: profile.iconName,
+            notes: profile.notes,
+            sortIndex: nextConnectionSortIndex(in: folder),
+            parent: folder
+        )
+        duplicate.authMethodRaw = profile.authMethodRaw
+        context.insert(duplicate)
+        try context.save()
+        return duplicate
+    }
 }

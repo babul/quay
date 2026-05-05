@@ -24,6 +24,7 @@ struct ConnectionEditor: View {
     @State private var secretRef: String = ""
     @State private var privateKeyPath: String = ""
     @State private var sshConfigAlias: String = ""
+    @State private var remoteTerminalType: RemoteTerminalType = .defaultValue
     @State private var colorTag: String?
     @State private var iconName: String?
     @State private var notes: String = ""
@@ -70,6 +71,17 @@ struct ConnectionEditor: View {
                 case .sshConfigAlias:
                     TextField("Host alias from ~/.ssh/config", text: $sshConfigAlias)
                 }
+            }
+
+            Section("Terminal") {
+                Picker("Remote TERM", selection: $remoteTerminalType) {
+                    ForEach(RemoteTerminalType.allCases) { type in
+                        Text(type.label).tag(type)
+                    }
+                }
+                Text(remoteTerminalType.helpText)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
             }
 
             Section("Appearance") {
@@ -229,6 +241,7 @@ struct ConnectionEditor: View {
             secretRef = p.secretRef ?? ""
             privateKeyPath = p.privateKeyPath ?? ""
             sshConfigAlias = p.sshConfigAlias ?? ""
+            remoteTerminalType = p.remoteTerminalType
             colorTag = ConnectionColor.isKnown(p.colorTag) ? p.colorTag : nil
             iconName = p.iconName
             notes = p.notes ?? ""
@@ -258,6 +271,7 @@ struct ConnectionEditor: View {
                 secretRef: secret,
                 privateKeyPath: keyPath,
                 sshConfigAlias: alias,
+                remoteTerminalType: remoteTerminalType,
                 colorTag: colorTag,
                 iconName: iconName,
                 notes: notes.isEmpty ? nil : notes,
@@ -275,6 +289,7 @@ struct ConnectionEditor: View {
             p.secretRef = secret
             p.privateKeyPath = keyPath
             p.sshConfigAlias = alias
+            p.remoteTerminalType = remoteTerminalType
             p.colorTag = colorTag
             p.iconName = iconName
             p.notes = notes.isEmpty ? nil : notes
