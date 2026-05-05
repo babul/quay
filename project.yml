@@ -34,6 +34,11 @@ configs:
   Debug: debug
   Release: release
 
+packages:
+  ComposableArchitecture:
+    url: https://github.com/pointfreeco/swift-composable-architecture
+    from: "1.17.0"
+
 targets:
   Quay:
     type: application
@@ -65,6 +70,8 @@ targets:
           - -liconv
         CLANG_CXX_LIBRARY: libc++
     dependencies:
+      - package: ComposableArchitecture
+        product: ComposableArchitecture
       - target: QuayAskpass
         copy:
           destination: executables
