@@ -29,6 +29,7 @@ settings:
       ONLY_ACTIVE_ARCH: YES
     Release:
       SWIFT_OPTIMIZATION_LEVEL: -O
+      ONLY_ACTIVE_ARCH: YES
 
 configs:
   Debug: debug
@@ -64,10 +65,7 @@ targets:
         optional: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.montopolis.quay
-        PRODUCT_NAME: Quay
         GENERATE_INFOPLIST_FILE: YES
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright (c) 2026 The Montopolis Group, Ltd."
         INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Quay connects to SSH servers on your local and private networks."
@@ -83,6 +81,15 @@ targets:
           - -lc++
           - -liconv
         CLANG_CXX_LIBRARY: libc++
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.montopolis.quay.debug
+          PRODUCT_NAME: "Quay (Debug)"
+          ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-Debug
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.montopolis.quay
+          PRODUCT_NAME: Quay
+          ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - package: ComposableArchitecture
         product: ComposableArchitecture
