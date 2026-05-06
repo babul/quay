@@ -20,9 +20,10 @@ struct SidebarView: View {
     @Binding var selection: UUID?
     var onOpenConnection: (ConnectionProfile) -> Void = { _ in }
     var onOpenConnectionInNewTab: (ConnectionProfile) -> Void = { _ in }
+    var onCreateConnection: () -> Void = {}
+    var onEditConnection: (ConnectionProfile) -> Void = { _ in }
 
     @State private var query: String = ""
-    @State private var editorTarget: EditorTarget?
     @State private var renameTarget: Folder?
     @State private var renameText: String = ""
     @State private var collapsedFolderIDs = SidebarCollapseState.load()
@@ -57,12 +58,6 @@ struct SidebarView: View {
         )
         .background(SidebarWidthObserver())
         .navigationTitle("Quay")
-        .sheet(item: $editorTarget) { target in
-            ConnectionEditor(target: target) {
-                editorTarget = nil
-            }
-            .frame(minWidth: 480, minHeight: 420)
-        }
         .alert("Rename Group", isPresented: renameIsPresented) {
             TextField("Group name", text: $renameText)
             Button("Rename") { renameFolder() }
@@ -246,7 +241,7 @@ struct SidebarView: View {
                 selection = profile.id
                 onOpenConnectionInNewTab(profile)
             }
-            Button("Edit…") { editorTarget = .edit(profile) }
+            Button("Edit…") { onEditConnection(profile) }
             Button("Duplicate") { duplicateConnection(profile) }
             Button("Delete", role: .destructive) {
                 ctx.delete(profile)
@@ -257,7 +252,7 @@ struct SidebarView: View {
     private var footer: some View {
         HStack {
             Menu {
-                Button("New Connection…") { editorTarget = .create }
+                Button("New Connection…") { onCreateConnection() }
                 Button("New Folder") { newFolder() }
             } label: {
                 Image(systemName: "plus")

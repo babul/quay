@@ -7,6 +7,7 @@ struct ContentView: View {
     let store: StoreOf<AppFeature>
     @State private var selectedConnectionID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility
+    @State private var editorTarget: SidebarView.EditorTarget?
     private let tabManager = TerminalTabManager.shared
 
     init(store: StoreOf<AppFeature>) {
@@ -25,6 +26,12 @@ struct ContentView: View {
                 },
                 onOpenConnectionInNewTab: { profile in
                     tabManager.openNewTab(for: profile)
+                },
+                onCreateConnection: {
+                    editorTarget = .create
+                },
+                onEditConnection: { profile in
+                    editorTarget = .edit(profile)
                 }
             )
         } detail: {
@@ -43,6 +50,12 @@ struct ContentView: View {
         }
         .onChange(of: columnVisibility) { _, visibility in
             SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
+        }
+        .sheet(item: $editorTarget) { target in
+            ConnectionEditor(target: target) {
+                editorTarget = nil
+            }
+            .frame(minWidth: 480, minHeight: 420)
         }
     }
 
@@ -70,7 +83,12 @@ struct ContentView: View {
             }
         } else {
             VStack(spacing: 0) {
-                TerminalTabBar(tabManager: tabManager)
+                TerminalTabBar(
+                    tabManager: tabManager,
+                    onEditConnection: { profile in
+                        editorTarget = .edit(profile)
+                    }
+                )
                 Divider()
                 tabSurfaces
             }

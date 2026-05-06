@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 /// transitions) propagate via @Observable without going through TCA.
 struct TerminalTabBar: View {
     var tabManager: TerminalTabManager
+    var onEditConnection: (ConnectionProfile) -> Void = { _ in }
     @AppStorage("appearance.showTabColorBars") private var showTabColorBars = true
 
     var body: some View {
@@ -20,6 +21,7 @@ struct TerminalTabBar: View {
                         showColorBar: showTabColorBars,
                         isSelected: tab.id == tabManager.selectedTabID,
                         onSelect: { tabManager.select(tab) },
+                        onEdit: { onEditConnection(tab.profile) },
                         onDisconnect: { tabManager.disconnectTab(tab) },
                         onReconnect: { tabManager.reconnectTab(tab) },
                         onClose: { tabManager.closeTab(tab) }
@@ -59,6 +61,7 @@ private struct TabButton: View {
     var showColorBar: Bool
     var isSelected: Bool
     var onSelect: () -> Void
+    var onEdit: () -> Void
     var onDisconnect: () -> Void
     var onReconnect: () -> Void
     var onClose: () -> Void
@@ -91,6 +94,10 @@ private struct TabButton: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button(action: onEdit) {
+                Label("Edit…", systemImage: "pencil")
+            }
+
             Button(action: onDisconnect) {
                 Label("Disconnect", systemImage: "bolt.horizontal.circle")
             }
