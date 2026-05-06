@@ -2,42 +2,35 @@
 # release.sh — build, notarize, sign for Sparkle, update appcast, and publish a GitHub release.
 #
 # Usage:
-#   ./scripts/release.sh [--notes <file>]
+#   ./scripts/release.sh
 #
-# Reads MARKETING_VERSION and CURRENT_PROJECT_VERSION from project.yml.
-# The gh-pages branch must already exist (see docs/sparkle-updates.md for one-time setup).
-# The Sparkle EdDSA private key must be in the login Keychain (run scripts/bootstrap-sparkle.sh
-# once to download the CLI tools and generate_keys).
+# Prompts for version, build number, and release notes (opens $EDITOR with a
+# draft generated from git log). Updates project.yml and commits the bump before
+# archiving. The gh-pages branch must exist (see docs/sparkle-updates.md).
+# The Sparkle EdDSA private key must be in the login Keychain.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-bold()  { printf "\033[1m%s\033[0m\n" "$*"; }
-info()  { printf "  %s\n" "$*"; }
-fail()  { printf "\033[31merror:\033[0m %s\n" "$*" >&2; exit 1; }
+bold()         { printf "\033[1m%s\033[0m\n" "$*"; }
+info()         { printf "  %s\n" "$*"; }
+fail()         { printf "\033[31merror:\033[0m %s\n" "$*" >&2; exit 1; }
 
-# ── args ──────────────────────────────────────────────────────────────────────
-NOTES_FILE=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --notes) NOTES_FILE="$2"; shift 2 ;;
-    *)        fail "unknown argument: $1" ;;
-  esac
-done
+# Read key from project.yml
+read_yml_key() {
+  local key="$1"
+  grep "$key:" "$REPO_ROOT/project.yml" | head -1 | awk '{print $2}' | tr -d '"'
+}
 
-# ── version from project.yml ──────────────────────────────────────────────────
-VERSION="$(grep 'MARKETING_VERSION:' "$REPO_ROOT/project.yml" | head -1 | awk '{print $2}' | tr -d '"')"
-BUILD="$(grep 'CURRENT_PROJECT_VERSION:' "$REPO_ROOT/project.yml" | head -1 | awk '{print $2}' | tr -d '"')"
-[[ -n "$VERSION" ]] || fail "could not read MARKETING_VERSION from project.yml"
-[[ -n "$BUILD"   ]] || fail "could not read CURRENT_PROJECT_VERSION from project.yml"
-TAG="v${VERSION}"
-ZIP_NAME="Quay-${VERSION}.zip"
+# Update key in project.yml
+update_yml_key() {
+  local key="$1" old_val="$2" new_val="$3"
+  sed -i '' "s/${key}: \"${old_val}\"/${key}: \"${new_val}\"/" "$REPO_ROOT/project.yml"
+}
 
-info "version: $VERSION  build: $BUILD  tag: $TAG"
-
-# ── locate sign_update ─────────────────────────────────────────────────────────
+# ── locate sign_update ────────────────────────────────────────────────────────
 SIGN_UPDATE=""
 if [[ -x "$REPO_ROOT/vendor/sparkle/bin/sign_update" ]]; then
   SIGN_UPDATE="$REPO_ROOT/vendor/sparkle/bin/sign_update"
@@ -47,7 +40,7 @@ else
   fail "sign_update not found.\n\nRun ./scripts/bootstrap-sparkle.sh to download Sparkle CLI tools,\nor install via: brew install --cask sparkle"
 fi
 
-# ── preflight ─────────────────────────────────────────────────────────────────
+# ── early preflight (before any prompts) ─────────────────────────────────────
 bold "==> Preflight checks"
 
 command -v gh >/dev/null || fail "gh CLI not found. Install: brew install gh"
@@ -55,17 +48,74 @@ gh auth status >/dev/null 2>&1 || fail "gh CLI not authenticated. Run: gh auth l
 
 [[ -z "$(git status --porcelain)" ]] || fail "working tree is dirty — commit or stash changes first"
 
-git fetch --tags --quiet
-if git rev-parse "$TAG" >/dev/null 2>&1; then
-  fail "tag $TAG already exists — bump MARKETING_VERSION in project.yml before releasing"
-fi
-
 if ! git rev-parse --verify gh-pages >/dev/null 2>&1 && \
    ! git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
   fail "gh-pages branch not found.\n\nSee docs/sparkle-updates.md for one-time setup."
 fi
 
 info "preflight OK"
+
+# ── version prompt ────────────────────────────────────────────────────────────
+CURRENT_VERSION="$(read_yml_key 'MARKETING_VERSION')"
+CURRENT_BUILD="$(read_yml_key 'CURRENT_PROJECT_VERSION')"
+[[ -n "$CURRENT_VERSION" ]] || fail "could not read MARKETING_VERSION from project.yml"
+[[ -n "$CURRENT_BUILD"   ]] || fail "could not read CURRENT_PROJECT_VERSION from project.yml"
+
+printf "\n"
+read -r -p "  Version [$CURRENT_VERSION]: " INPUT_VERSION
+read -r -p "  Build   [$CURRENT_BUILD]: "   INPUT_BUILD
+printf "\n"
+
+VERSION="${INPUT_VERSION:-$CURRENT_VERSION}"
+BUILD="${INPUT_BUILD:-$CURRENT_BUILD}"
+TAG="v${VERSION}"
+
+git fetch --tags --quiet
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+  fail "tag $TAG already exists — enter a different version"
+fi
+
+CHANGED_YML=0
+if [[ "$VERSION" != "$CURRENT_VERSION" ]]; then
+  update_yml_key "MARKETING_VERSION" "$CURRENT_VERSION" "$VERSION"
+  CHANGED_YML=1
+fi
+if [[ "$BUILD" != "$CURRENT_BUILD" ]]; then
+  update_yml_key "CURRENT_PROJECT_VERSION" "$CURRENT_BUILD" "$BUILD"
+  CHANGED_YML=1
+fi
+
+if [[ "$CHANGED_YML" -eq 1 ]]; then
+  git add project.yml
+  git commit -m "chore(release): bump to ${TAG}"
+  info "committed version bump → ${TAG}"
+fi
+
+info "version: $VERSION  build: $BUILD  tag: $TAG"
+
+# ── release notes ─────────────────────────────────────────────────────────────
+bold "==> Drafting release notes"
+
+LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+NOTES_TMP="$(mktemp /tmp/quay-release-notes-XXXXXX.md)"
+
+{
+  printf "## What's Changed\n\n"
+  if [[ -n "$LAST_TAG" ]]; then
+    git log --oneline "${LAST_TAG}..HEAD" --no-decorate \
+      | sed 's/^/- /'
+    printf "\n**Full Changelog**: https://github.com/babul/quay/compare/%s...%s\n" "$LAST_TAG" "$TAG"
+  else
+    git log --oneline --no-decorate | sed 's/^/- /'
+  fi
+} > "$NOTES_TMP"
+
+EDITOR="${EDITOR:-$(command -v nano || command -v vi)}"
+"$EDITOR" "$NOTES_TMP"
+
+[[ -s "$NOTES_TMP" ]] || fail "release notes are empty — aborting"
+
+info "release notes saved"
 
 # ── notarize ──────────────────────────────────────────────────────────────────
 bold "==> Notarizing"
@@ -75,6 +125,7 @@ APP="$REPO_ROOT/build/notarize/export/Quay.app"
 [[ -d "$APP" ]] || fail "notarize.sh did not produce $APP"
 
 # ── zip for Sparkle ───────────────────────────────────────────────────────────
+ZIP_NAME="Quay-${VERSION}.zip"
 bold "==> Creating distribution zip"
 mkdir -p "$REPO_ROOT/build/release"
 ZIP_PATH="$REPO_ROOT/build/release/$ZIP_NAME"
@@ -87,8 +138,8 @@ bold "==> Signing with EdDSA"
 SIGN_OUTPUT="$("$SIGN_UPDATE" "$ZIP_PATH")"
 ED_SIG="$(echo "$SIGN_OUTPUT" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)"
 ED_LEN="$(echo "$SIGN_OUTPUT" | grep -o 'length="[^"]*"' | cut -d'"' -f2)"
-[[ -n "$ED_SIG" ]] || fail "sign_update did not produce an EdDSA signature — is the private key in your login Keychain? (run scripts/bootstrap-sparkle.sh)"
-[[ -n "$ED_LEN" ]] || fail "sign_update did not produce a length"
+[[ -n "$ED_SIG" ]] || fail "sign_update produced no EdDSA signature — is the private key in your login Keychain?"
+[[ -n "$ED_LEN" ]] || fail "sign_update produced no length"
 info "signature: ${ED_SIG:0:24}…  length: $ED_LEN"
 
 # ── update appcast on gh-pages ────────────────────────────────────────────────
@@ -155,21 +206,13 @@ git -C "$WORKTREE" push origin gh-pages
 git worktree remove "$WORKTREE"
 info "appcast.xml updated on gh-pages"
 
-# ── GitHub release ─────────────────────────────────────────────────────────────
+# ── GitHub release ────────────────────────────────────────────────────────────
 bold "==> Creating GitHub release ${TAG}"
-
-GH_NOTES_FLAG=()
-if [[ -n "$NOTES_FILE" ]]; then
-  [[ -f "$NOTES_FILE" ]] || fail "notes file not found: $NOTES_FILE"
-  GH_NOTES_FLAG=(--notes-file "$NOTES_FILE")
-else
-  GH_NOTES_FLAG=(--generate-notes)
-fi
-
 gh release create "$TAG" \
   "$ZIP_PATH" \
   --title "Quay ${VERSION}" \
-  "${GH_NOTES_FLAG[@]}"
+  --notes-file "$NOTES_TMP"
+rm -f "$NOTES_TMP"
 
 bold "==> Done"
 printf "\n  Release:  https://github.com/babul/quay/releases/tag/%s\n" "$TAG"
