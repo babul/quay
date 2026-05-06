@@ -61,7 +61,6 @@ struct ContentView: View {
             ConnectionEditor(target: target) {
                 editorTarget = nil
             }
-            .frame(minWidth: 480, minHeight: 420)
         }
     }
 
