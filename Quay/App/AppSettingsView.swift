@@ -3,12 +3,14 @@ import SwiftUI
 enum AppDefaultsKeys {
     static let showTabColorBars = "appearance.showTabColorBars"
     static let confirmCloseActiveSessions = "tabs.confirmCloseActiveSessions"
+    static let sftpDefaultLocalDirectory = "sftp.defaultLocalDirectory"
 }
 
 struct AppSettingsView: View {
     @AppStorage(AppDefaultsKeys.showTabColorBars) private var showTabColorBars = true
     @AppStorage(AppDefaultsKeys.confirmCloseActiveSessions) private var confirmCloseActiveSessions = true
     @AppStorage(SFTPClient.defaultsKey) private var sftpClientRaw = SFTPClient.macOSOpenSSH.rawValue
+    @AppStorage(AppDefaultsKeys.sftpDefaultLocalDirectory) private var sftpDefaultLocalDirectory = ""
 
     @State private var exportRequested = false
     @State private var importRequested = false
@@ -48,6 +50,18 @@ struct AppSettingsView: View {
                 Text(selectedSFTPClient.helpText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                HStack {
+                    TextField(
+                        "Default local folder",
+                        text: $sftpDefaultLocalDirectory,
+                        prompt: Text("~/Downloads")
+                    )
+                    Button("Choose…") { pickDefaultLocalDirectory() }
+                }
+                Text("Used when a connection doesn't specify a local directory.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Data") {
@@ -57,7 +71,7 @@ struct AppSettingsView: View {
         }
         .formStyle(.grouped)
         .padding(20)
-        .frame(width: 520, height: 450)
+        .frame(width: 520, height: 500)
         .settingsImportExportFlow(
             triggerExport: $exportRequested,
             triggerImport: $importRequested
@@ -66,5 +80,16 @@ struct AppSettingsView: View {
 
     private var selectedSFTPClient: SFTPClient {
         SFTPClient(rawValue: sftpClientRaw) ?? .macOSOpenSSH
+    }
+
+    private func pickDefaultLocalDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        if panel.runModal() == .OK, let url = panel.url {
+            sftpDefaultLocalDirectory = url.path
+        }
     }
 }

@@ -187,7 +187,7 @@ struct ConnectionEditor: View {
                         title: "Local directory",
                         text: $localDirectory,
                         isRevealed: $localDirectoryIsRevealed,
-                        prompt: "Default local folder",
+                        prompt: "Uses global default if empty",
                         width: 360
                     )
                     Button("Choose…") { pickLocalDirectory() }

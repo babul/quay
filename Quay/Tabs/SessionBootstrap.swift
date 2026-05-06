@@ -65,6 +65,7 @@ enum SessionBootstrap {
         if kind == .sftp {
             cfg.workingDirectory = normalizedLocalDirectory(localDirectoryOverride)
                 ?? normalizedLocalDirectory(target.localDirectory)
+                ?? defaultLocalDirectory()
         }
         cfg.environment = [:]
         cfg.waitAfterCommand = true
@@ -113,5 +114,16 @@ enum SessionBootstrap {
             return nil
         }
         return trimmed
+    }
+
+    static func defaultLocalDirectory() -> String? {
+        if let stored = UserDefaults.standard.string(forKey: AppDefaultsKeys.sftpDefaultLocalDirectory),
+           let normalized = normalizedLocalDirectory(stored) {
+            return normalized
+        }
+        let downloads = FileManager.default
+            .urls(for: .downloadsDirectory, in: .userDomainMask)
+            .first?.path
+        return normalizedLocalDirectory(downloads)
     }
 }
