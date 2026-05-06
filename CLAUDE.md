@@ -81,3 +81,4 @@ SwiftData `ModelContainer` stored at `~/Library/Application Support/<bundleID>/Q
 - `ConnectionProfile.auth` reconstructs the `SSHAuth` enum from stored fields; always go through that property rather than reading raw fields.
 - When modifying `project.yml`, run `xcodegen generate` immediately — the `.xcodeproj` is not committed.
 - `GhosttyKit.xcframework` in `Frameworks/` is gitignored. Never commit it; it is rebuilt from `vendor/ghostty` via the build script.
+- **Any new user-facing preference added to `AppSettingsView` must also be added to `PreferencesDTO` in `Quay/Persistence/SettingsBundle.swift`** — one optional field, one encode line, one decode line in `applyPreferences`. This keeps export/import in sync with the Settings UI. Sidebar layout and window geometry keys are intentionally excluded.

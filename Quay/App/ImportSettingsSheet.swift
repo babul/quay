@@ -121,18 +121,14 @@ private struct SettingsImportExportFlow: ViewModifier {
 
     @MainActor
     private func startImport() {
-        runImportFlow(
-            modelContext: modelContext,
-            onPassword: { data in
-                pendingImportFile = IdentifiableData(data: data)
-            },
-            onSummary: { summary in
-                showImportSummaryAlert(summary)
-            },
-            onError: { msg in
-                importError = msg
-            }
-        )
+        Task { @MainActor in
+            runImportFlow(
+                modelContext: modelContext,
+                onPassword: { data in pendingImportFile = IdentifiableData(data: data) },
+                onSummary: { summary in showImportSummaryAlert(summary) },
+                onError: { msg in importError = msg }
+            )
+        }
     }
 }
 

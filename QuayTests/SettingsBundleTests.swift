@@ -316,6 +316,91 @@ struct SettingsBundleTests {
 
     // MARK: - 12. loginScriptStepsJSON opaque pass-through
 
+    // MARK: - Preferences round-trip
+
+    private static let preferenceKeys = [
+        AppDefaultsKeys.showTabColorBars,
+        AppDefaultsKeys.confirmCloseActiveSessions,
+        SFTPClient.defaultsKey,
+        AppDefaultsKeys.sftpDefaultLocalDirectory,
+    ]
+
+    private static func preservingPreferences(_ body: () throws -> Void) rethrows {
+        let saved = preferenceKeys.map { ($0, UserDefaults.standard.object(forKey: $0)) }
+        defer {
+            for (key, value) in saved {
+                if let value { UserDefaults.standard.set(value, forKey: key) }
+                else { UserDefaults.standard.removeObject(forKey: key) }
+            }
+        }
+        try body()
+    }
+
+    @Test("Preferences are encoded and restored on import")
+    func preferencesRoundTrip() throws {
+        try Self.preservingPreferences {
+            let src = try Self.makeContainer()
+
+            UserDefaults.standard.set(false, forKey: AppDefaultsKeys.showTabColorBars)
+            UserDefaults.standard.set(false, forKey: AppDefaultsKeys.confirmCloseActiveSessions)
+            UserDefaults.standard.set("lftp", forKey: SFTPClient.defaultsKey)
+            UserDefaults.standard.set("/tmp/sftp-test", forKey: AppDefaultsKeys.sftpDefaultLocalDirectory)
+
+            let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
+
+            for key in Self.preferenceKeys { UserDefaults.standard.removeObject(forKey: key) }
+
+            let dst = try Self.makeContainer()
+            try SettingsBundle.decode(data: bundleData, modelContext: dst.mainContext, password: nil)
+
+            #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool == false)
+            #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.confirmCloseActiveSessions) as? Bool == false)
+            #expect(UserDefaults.standard.string(forKey: SFTPClient.defaultsKey) == "lftp")
+            #expect(UserDefaults.standard.string(forKey: AppDefaultsKeys.sftpDefaultLocalDirectory) == "/tmp/sftp-test")
+        }
+    }
+
+    @Test("Preferences missing from source don't clobber existing values")
+    func preferencesNotClobbedWhenAbsent() throws {
+        try Self.preservingPreferences {
+            let src = try Self.makeContainer()
+
+            for key in Self.preferenceKeys { UserDefaults.standard.removeObject(forKey: key) }
+            let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
+
+            UserDefaults.standard.set(true, forKey: AppDefaultsKeys.showTabColorBars)
+            UserDefaults.standard.set(true, forKey: AppDefaultsKeys.confirmCloseActiveSessions)
+
+            let dst = try Self.makeContainer()
+            try SettingsBundle.decode(data: bundleData, modelContext: dst.mainContext, password: nil)
+
+            #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool == true)
+            #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.confirmCloseActiveSessions) as? Bool == true)
+        }
+    }
+
+    @Test("Bundle without preferences field decodes cleanly")
+    func oldBundleWithoutPreferences() throws {
+        try Self.preservingPreferences {
+            let legacyJSON = """
+            {
+                "magic": "quay.bundle",
+                "formatVersion": 1,
+                "exportedAt": "2025-01-01T00:00:00Z",
+                "payload": { "folders": [], "connections": [] }
+            }
+            """
+            let data = Data(legacyJSON.utf8)
+            let dst = try Self.makeContainer()
+
+            UserDefaults.standard.set(true, forKey: AppDefaultsKeys.showTabColorBars)
+
+            try SettingsBundle.decode(data: data, modelContext: dst.mainContext, password: nil)
+
+            #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool == true)
+        }
+    }
+
     @Test("loginScriptStepsJSON is not re-normalized on import")
     func loginScriptStepsPassThrough() throws {
         let src = try Self.makeContainer()
