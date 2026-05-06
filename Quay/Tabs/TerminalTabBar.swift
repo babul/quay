@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Horizontal tab strip reading directly from `TerminalTabManager`.
 /// No reducer round-trip — high-frequency updates (title changes, phase
@@ -31,26 +30,21 @@ struct TerminalTabBar: View {
                         onClose: { requestClose(tab) },
                         onContextClose: { tabManager.closeTab(tab) }
                     )
-                    .onDrag {
-                        NSItemProvider(object: tab.id.uuidString as NSString)
+                    .draggable(tab.id.uuidString) {
+                        Text(tab.displayTitle)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(.bar, in: RoundedRectangle(cornerRadius: 4))
                     }
-                    .onDrop(
-                        of: [.plainText],
-                        delegate: TabDropDelegate(
-                            tabManager: tabManager,
-                            destinationID: tab.id
-                        )
-                    )
+                    .dropDestination(for: String.self) { items, _ in
+                        moveDroppedTab(items: items, before: tab.id)
+                    }
                 }
                 Color.clear
                     .frame(width: 24)
-                    .onDrop(
-                        of: [.plainText],
-                        delegate: TabDropDelegate(
-                            tabManager: tabManager,
-                            destinationID: nil
-                        )
-                    )
+                    .dropDestination(for: String.self) { items, _ in
+                        moveDroppedTab(items: items, before: nil)
+                    }
             }
         }
         .background(.bar)
@@ -69,6 +63,12 @@ struct TerminalTabBar: View {
         if confirmClosingTab(tab) {
             tabManager.closeTab(tab)
         }
+    }
+
+    private func moveDroppedTab(items: [String], before destinationID: UUID?) -> Bool {
+        guard let raw = items.first, let id = UUID(uuidString: raw) else { return false }
+        tabManager.moveTab(id: id, before: destinationID)
+        return true
     }
 
     private func confirmClosingTab(_ tab: TerminalTabItem) -> Bool {
@@ -205,41 +205,3 @@ private struct TabButton: View {
     }
 }
 
-private struct TabDropDelegate: DropDelegate {
-    let tabManager: TerminalTabManager
-    let destinationID: UUID?
-
-    func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [UTType.plainText.identifier])
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func dropEntered(info: DropInfo) {
-        moveDroppedTab(info: info)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        moveDroppedTab(info: info)
-    }
-
-    @discardableResult
-    private func moveDroppedTab(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [UTType.plainText.identifier]).first else {
-            return false
-        }
-
-        provider.loadObject(ofClass: NSString.self) { value, _ in
-            guard let rawID = value as? NSString,
-                  let id = UUID(uuidString: String(rawID))
-            else { return }
-
-            Task { @MainActor in
-                tabManager.moveTab(id: id, before: destinationID)
-            }
-        }
-        return true
-    }
-}
