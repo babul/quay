@@ -335,7 +335,7 @@ enum SettingsBundle {
                 : dto.name
 
             let secretRef: String?
-            if let ref = dto.secretRef, (try? SecretReference.parseV01(ref)) != nil {
+            if let ref = dto.secretRef, (try? SecretReference(ref)) != nil {
                 secretRef = ref
             } else {
                 secretRef = nil
