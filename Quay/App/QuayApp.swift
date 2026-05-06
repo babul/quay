@@ -64,16 +64,22 @@ private final class AppTerminationDelegate: NSObject, NSApplicationDelegate {
         let tabs = TerminalTabManager.shared.tabsRequiringCloseConfirmation(
             confirmActiveSessions: confirmCloseActiveSessions
         )
-        guard !tabs.isEmpty else { return .terminateNow }
-
-        for tab in tabs {
+        switch TerminalTabManager.appQuitConfirmation(activeTabCount: tabs.count) {
+        case .none:
+            return .terminateNow
+        case .single:
+            guard let tab = tabs.first else { return .terminateNow }
             TerminalTabManager.shared.select(tab)
             guard confirmQuitClosingTab(tab) else {
                 return .terminateCancel
             }
+            return .terminateNow
+        case .multiple(let count):
+            guard confirmQuitClosingAllTabs(activeTabCount: count) else {
+                return .terminateCancel
+            }
+            return .terminateNow
         }
-
-        return .terminateNow
     }
 
     private var confirmCloseActiveSessions: Bool {
@@ -93,9 +99,27 @@ private final class AppTerminationDelegate: NSObject, NSApplicationDelegate {
         """
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Close Tab and Quit")
-        alert.addButton(withTitle: "Cancel Quit")
+        configureEscapeCancelButton(alert.addButton(withTitle: "Cancel Quit"))
 
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func confirmQuitClosingAllTabs(activeTabCount: Int) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Close Active Connections?"
+        alert.informativeText = """
+        Quay has \(activeTabCount) active connections. Quitting will disconnect all of them.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Quit All")
+        configureEscapeCancelButton(alert.addButton(withTitle: "Cancel Quit"))
+
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func configureEscapeCancelButton(_ button: NSButton) {
+        button.keyEquivalent = "\u{1b}"
+        button.keyEquivalentModifierMask = []
     }
 }
 

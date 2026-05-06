@@ -76,7 +76,9 @@ struct TerminalTabBar: View {
         """
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Close Tab")
-        alert.addButton(withTitle: "Cancel")
+        let cancelButton = alert.addButton(withTitle: "Cancel")
+        cancelButton.keyEquivalent = "\u{1b}"
+        cancelButton.keyEquivalentModifierMask = []
 
         return alert.runModal() == .alertFirstButtonReturn
     }

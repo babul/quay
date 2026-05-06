@@ -11,6 +11,12 @@ import Observation
 final class TerminalTabManager {
     static let shared = TerminalTabManager()
 
+    enum AppQuitConfirmation: Equatable {
+        case none
+        case single
+        case multiple(Int)
+    }
+
     private(set) var tabs: [TerminalTabItem] = []
     private(set) var selectedTabID: UUID?
     private let connectTab: @MainActor (TerminalTabItem) -> Void
@@ -44,6 +50,17 @@ final class TerminalTabManager {
                 phase: $0.phase,
                 confirmActiveSessions: confirmActiveSessions
             )
+        }
+    }
+
+    static func appQuitConfirmation(activeTabCount: Int) -> AppQuitConfirmation {
+        switch activeTabCount {
+        case 0:
+            return .none
+        case 1:
+            return .single
+        default:
+            return .multiple(activeTabCount)
         }
     }
 

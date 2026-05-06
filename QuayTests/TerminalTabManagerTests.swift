@@ -155,6 +155,14 @@ struct TerminalTabManagerTests {
         #expect(!TerminalTabManager.shouldConfirmClose(phase: .failed("Session ended"), confirmActiveSessions: false))
     }
 
+    @Test("App quit confirmation consolidates multiple active tabs")
+    func appQuitConfirmationConsolidatesMultipleActiveTabs() {
+        #expect(TerminalTabManager.appQuitConfirmation(activeTabCount: 0) == .none)
+        #expect(TerminalTabManager.appQuitConfirmation(activeTabCount: 1) == .single)
+        #expect(TerminalTabManager.appQuitConfirmation(activeTabCount: 2) == .multiple(2))
+        #expect(TerminalTabManager.appQuitConfirmation(activeTabCount: 5) == .multiple(5))
+    }
+
     @Test("Terminal title updates do not replace saved display name")
     func terminalTitleDoesNotReplaceSavedDisplayName() {
         let profile = ConnectionProfile(
