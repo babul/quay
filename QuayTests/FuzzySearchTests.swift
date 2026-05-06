@@ -36,4 +36,22 @@ struct FuzzySearchTests {
         #expect(ranked.count == 2)
         #expect(ranked.allSatisfy { $0.contains("prod") })
     }
+
+    @Test("rank can match hidden partial IP hostname")
+    func rankCanMatchHiddenPartialIPHostname() {
+        let profiles = [
+            ConnectionProfile(name: "jumpbox", hostname: "5.161.194.242"),
+            ConnectionProfile(name: "prod", hostname: "prod.example.com")
+        ]
+
+        let leadingPartial = FuzzySearch.rank(profiles, query: "5.16") { profile in
+            [profile.name, profile.hostname]
+        }
+        let middlePartial = FuzzySearch.rank(profiles, query: "194") { profile in
+            [profile.name, profile.hostname]
+        }
+
+        #expect(leadingPartial.map(\.name) == ["jumpbox"])
+        #expect(middlePartial.map(\.name) == ["jumpbox"])
+    }
 }

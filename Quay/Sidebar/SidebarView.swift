@@ -478,11 +478,7 @@ struct SidebarView: View {
 
 enum SidebarDisplayText {
     static func connectionSubtitle(for profile: ConnectionProfile) -> String? {
-        if profile.authMethod == .sshConfigAlias {
-            return redactedHost(profile.sshConfigAlias ?? profile.hostname)
-        }
-
-        return redactedHost(profile.sshTarget?.hostname ?? profile.hostname)
+        nil
     }
 
     static func sshConfigHostTitle(for host: DiscoveredSSHHost) -> String {

@@ -18,11 +18,11 @@ struct SidebarDisplayTextTests {
         #expect(SidebarDisplayText.redactedHost("[fe80::1%en0]") == nil)
     }
 
-    @Test("keeps non-IP connection subtitle")
-    func keepsNonIPConnectionSubtitle() {
+    @Test("hides non-IP connection subtitle")
+    func hidesNonIPConnectionSubtitle() {
         let profile = ConnectionProfile(name: "prod", hostname: "prod.example.com")
 
-        #expect(SidebarDisplayText.connectionSubtitle(for: profile) == "prod.example.com")
+        #expect(SidebarDisplayText.connectionSubtitle(for: profile) == nil)
     }
 
     @Test("redacts literal IP ssh config aliases")
