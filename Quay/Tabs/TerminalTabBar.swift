@@ -130,12 +130,8 @@ private struct TabButton: View {
         .padding(.vertical, 5)
         .background(tabBackground)
         .contextMenu {
-            Button(action: onEdit) {
-                Label("Edit…", systemImage: "pencil")
-            }
-
-            Button(action: onOpenSFTP) {
-                Label("Open SFTP", systemImage: "arrow.up.arrow.down")
+            Button(action: onReconnect) {
+                Label("Reconnect", systemImage: "arrow.clockwise.circle")
             }
 
             Button(action: onDisconnect) {
@@ -143,8 +139,14 @@ private struct TabButton: View {
             }
             .disabled(!canDisconnect)
 
-            Button(action: onReconnect) {
-                Label("Reconnect", systemImage: "arrow.clockwise.circle")
+            Button(action: onOpenSFTP) {
+                Label("Open SFTP", systemImage: "arrow.up.arrow.down")
+            }
+
+            Divider()
+
+            Button(action: onEdit) {
+                Label("Edit…", systemImage: "pencil")
             }
 
             Divider()

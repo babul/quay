@@ -243,15 +243,38 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func folderContextMenu(_ folder: Folder) -> some View {
-        Button("New Connection…") { onCreateConnection(folder) }
+        Button { onCreateConnection(folder) } label: {
+            Label("New Connection…", systemImage: "plus")
+        }
         Divider()
-        Button("Edit…") { beginEditingGroup(folder) }
-        Button("Delete", role: .destructive) {
+        Button { beginEditingGroup(folder) } label: {
+            Label("Edit…", systemImage: "pencil")
+        }
+        Button(role: .destructive) {
             deleteFolder(folder)
+        } label: {
+            Label("Delete", systemImage: "trash")
         }
         .disabled(folder.name == FolderStore.defaultFolderName
             || !folder.connections.isEmpty
             || !folder.children.isEmpty)
+    }
+
+    @ViewBuilder
+    private func connectButtons(id: UUID, profile: ConnectionProfile) -> some View {
+        Button {
+            selection = id
+            onOpenConnectionInNewTab(profile)
+        } label: {
+            Label("Connect", systemImage: "terminal")
+        }
+        Button {
+            selection = id
+            onOpenSFTPConnection(profile)
+        } label: {
+            Label("Open SFTP", systemImage: "arrow.up.arrow.down")
+        }
+        Divider()
     }
 
     private func connectionRow(_ profile: ConnectionProfile) -> some View {
@@ -273,18 +296,18 @@ struct SidebarView: View {
         .contentShape(Rectangle())
         .onTapGesture { handleConnectionClick(profile) }
         .contextMenu {
-            Button("Connect") {
-                selection = profile.id
-                onOpenConnectionInNewTab(profile)
+            connectButtons(id: profile.id, profile: profile)
+            Button { onEditConnection(profile) } label: {
+                Label("Edit…", systemImage: "pencil")
             }
-            Button("Open SFTP") {
-                selection = profile.id
-                onOpenSFTPConnection(profile)
+            Button { duplicateConnection(profile) } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
             }
-            Button("Edit…") { onEditConnection(profile) }
-            Button("Duplicate") { duplicateConnection(profile) }
-            Button("Delete", role: .destructive) {
+            Divider()
+            Button(role: .destructive) {
                 ctx.delete(profile)
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }
@@ -330,19 +353,17 @@ struct SidebarView: View {
         .contentShape(Rectangle())
         .onTapGesture { handleSSHConfigHostClick(host) }
         .contextMenu {
-            Button("Connect") {
-                selection = host.id
-                onOpenConnectionInNewTab(transientProfile(for: host))
-            }
-            Button("Open SFTP") {
-                selection = host.id
-                onOpenSFTPConnection(transientProfile(for: host))
-            }
-            Button("Save as Quay Connection") {
+            let profile = transientProfile(for: host)
+            connectButtons(id: host.id, profile: profile)
+            Button {
                 saveSSHConfigHost(host)
+            } label: {
+                Label("Save as Quay Connection", systemImage: "square.and.arrow.down")
             }
-            Button("Save and Edit…") {
+            Button {
                 saveSSHConfigHost(host, editAfterSave: true)
+            } label: {
+                Label("Save and Edit…", systemImage: "square.and.pencil")
             }
         }
         .help(sshConfigHostHelp(host))

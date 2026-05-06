@@ -14,11 +14,23 @@ extension GhosttySurfaceView: NSMenuItemValidation {
         guard event.type == .rightMouseDown else { return nil }
         let menu = NSMenu()
         if currentSelectionText() != nil {
-            menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            menu.addItem(
+                titled: "Copy",
+                action: #selector(copy(_:)),
+                systemImageName: "doc.on.doc"
+            )
         }
-        menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        menu.addItem(
+            titled: "Paste",
+            action: #selector(paste(_:)),
+            systemImageName: "doc.on.clipboard"
+        )
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        menu.addItem(
+            titled: "Select All",
+            action: #selector(selectAll(_:)),
+            systemImageName: "selection.pin.in.out"
+        )
         return menu
     }
 
@@ -55,5 +67,17 @@ extension GhosttySurfaceView: NSMenuItemValidation {
         default:
             return true
         }
+    }
+}
+
+private extension NSMenu {
+    @discardableResult
+    func addItem(titled title: String, action: Selector, systemImageName: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        if #available(macOS 26, *) {
+            item.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: title)
+        }
+        addItem(item)
+        return item
     }
 }
