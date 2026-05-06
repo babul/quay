@@ -282,14 +282,7 @@ struct SidebarView: View {
             Image(systemName: ConnectionIcon.systemName(for: profile.iconName))
                 .foregroundStyle(ConnectionColor.color(for: profile.colorTag) ?? Color.accentColor)
                 .frame(width: 16)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(profile.name)
-                if let subtitle = SidebarDisplayText.connectionSubtitle(for: profile) {
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text(profile.name)
             Spacer()
         }
         .tag(profile.id)
@@ -370,30 +363,22 @@ struct SidebarView: View {
     }
 
     private func handleConnectionClick(_ profile: ConnectionProfile) {
-        let now = Date()
-        let isSecondClick = lastConnectionClick?.id == profile.id
-            && now.timeIntervalSince(lastConnectionClick?.time ?? .distantPast) <= NSEvent.doubleClickInterval
-
-        selection = profile.id
-        lastConnectionClick = (profile.id, now)
-
-        if isSecondClick {
-            lastConnectionClick = nil
-            onOpenConnection(profile)
-        }
+        handleItemClick(id: profile.id) { onOpenConnection(profile) }
     }
 
     private func handleSSHConfigHostClick(_ host: DiscoveredSSHHost) {
+        handleItemClick(id: host.id) { onOpenConnection(transientProfile(for: host)) }
+    }
+
+    private func handleItemClick(id: UUID, onOpen: () -> Void) {
         let now = Date()
-        let isSecondClick = lastConnectionClick?.id == host.id
+        let isSecondClick = lastConnectionClick?.id == id
             && now.timeIntervalSince(lastConnectionClick?.time ?? .distantPast) <= NSEvent.doubleClickInterval
-
-        selection = host.id
-        lastConnectionClick = (host.id, now)
-
+        selection = id
+        lastConnectionClick = (id, now)
         if isSecondClick {
             lastConnectionClick = nil
-            onOpenConnection(transientProfile(for: host))
+            onOpen()
         }
     }
 
@@ -512,10 +497,6 @@ struct SidebarView: View {
 }
 
 enum SidebarDisplayText {
-    static func connectionSubtitle(for profile: ConnectionProfile) -> String? {
-        nil
-    }
-
     static func sshConfigHostTitle(for host: DiscoveredSSHHost) -> String {
         redactedHost(host.displayName) ?? "SSH Config Host"
     }

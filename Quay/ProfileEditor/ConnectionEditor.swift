@@ -102,25 +102,25 @@ struct ConnectionEditor: View {
         VStack(alignment: .leading, spacing: 18) {
             EditorSection("Identity") {
                 FormTextField(title: "Display name", text: $name)
-                EditorDivider()
+                Divider()
                 groupPicker
-                EditorDivider()
-                FormPrivateTextField(
+                Divider()
+                FormTextField(
                     title: "Hostname",
                     text: $hostname,
                     isRevealed: $hostnameIsRevealed,
                     isDisabled: authMethod == .sshConfigAlias
                 )
-                EditorDivider()
+                Divider()
                 HStack {
-                    FormPrivateTextField(
+                    FormTextField(
                         title: "Port",
                         text: $port,
                         isRevealed: $portIsRevealed,
                         width: 124,
                         labelWidth: 48
                     )
-                    FormPrivateTextField(
+                    FormTextField(
                         title: "Username",
                         text: $username,
                         isRevealed: $usernameIsRevealed,
@@ -146,21 +146,21 @@ struct ConnectionEditor: View {
                         .font(.caption)
                         .frame(width: ConnectionEditorLayout.rowWidth, alignment: .leading)
                 case .privateKey:
-                    EditorDivider()
+                    Divider()
                     keyPathField
                 case .privateKeyWithPassphrase:
-                    EditorDivider()
+                    Divider()
                     keyPathField
-                    EditorDivider()
+                    Divider()
                     secretRefField(label: "Passphrase reference",
                                    placeholder: "keychain://service/account")
                 case .password:
-                    EditorDivider()
+                    Divider()
                     secretRefField(label: "Password reference",
                                    placeholder: "keychain://service/account")
                 case .sshConfigAlias:
-                    EditorDivider()
-                    FormPrivateTextField(
+                    Divider()
+                    FormTextField(
                         title: "Host alias",
                         text: $sshConfigAlias,
                         isRevealed: $sshConfigAliasIsRevealed,
@@ -175,7 +175,7 @@ struct ConnectionEditor: View {
                         Text(type.label).tag(type)
                     }
                 }
-                EditorDivider()
+                Divider()
                 Text(remoteTerminalType.helpText)
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -184,7 +184,7 @@ struct ConnectionEditor: View {
 
             EditorSection("SFTP") {
                 HStack {
-                    FormPrivateTextField(
+                    FormTextField(
                         title: "Local directory",
                         text: $localDirectory,
                         isRevealed: $localDirectoryIsRevealed,
@@ -193,8 +193,8 @@ struct ConnectionEditor: View {
                     )
                     Button("Choose…") { pickLocalDirectory() }
                 }
-                EditorDivider()
-                FormPrivateTextField(
+                Divider()
+                FormTextField(
                     title: "Remote directory",
                     text: $remoteDirectory,
                     isRevealed: $remoteDirectoryIsRevealed,
@@ -217,12 +217,12 @@ struct ConnectionEditor: View {
                         onDelete: { removeLoginScriptStep(id: step.id) }
                     )
                     if step.id != loginScriptSteps.last?.id {
-                        EditorDivider()
+                        Divider()
                     }
                 }
             }
 
-            EditorDivider()
+            Divider()
 
             Button {
                 addLoginScriptStep()
@@ -241,7 +241,7 @@ struct ConnectionEditor: View {
                 accessibilityLabel: "Connection icon",
                 selection: $iconName
             )
-            EditorDivider()
+            Divider()
             colorPicker
         }
     }
@@ -335,12 +335,12 @@ struct ConnectionEditor: View {
     }
 
     private var canSave: Bool {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        guard name.trimmedNonEmpty != nil else { return false }
         switch authMethod {
         case .sshConfigAlias:
-            return !sshConfigAlias.trimmingCharacters(in: .whitespaces).isEmpty
+            return sshConfigAlias.trimmedNonEmpty != nil
         default:
-            return !hostname.trimmingCharacters(in: .whitespaces).isEmpty
+            return hostname.trimmedNonEmpty != nil
         }
     }
 
@@ -387,12 +387,8 @@ struct ConnectionEditor: View {
         let secret = secretRef.isEmpty ? nil : secretRef
         let keyPath = privateKeyPath.isEmpty ? nil : privateKeyPath
         let alias = sshConfigAlias.isEmpty ? nil : sshConfigAlias
-        let localDir = localDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? nil
-            : localDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        let remoteDir = remoteDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? nil
-            : remoteDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let localDir = localDirectory.trimmedNonEmpty
+        let remoteDir = remoteDirectory.trimmedNonEmpty
         let folder = selectedFolder ?? (try? FolderStore.ensureDefaultFolder(in: ctx))
         let scripts = loginScriptSteps.normalizedLoginScriptSteps
 
@@ -448,27 +444,24 @@ struct ConnectionEditor: View {
     }
 
     private func pickKeyFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = FileManager.default
-            .homeDirectoryForCurrentUser
-            .appending(path: ".ssh")
-        if panel.runModal() == .OK, let url = panel.url {
+        if let url = pickURL(files: true, startingAt: FileManager.default.homeDirectoryForCurrentUser.appending(path: ".ssh")) {
             privateKeyPath = url.path
         }
     }
 
     private func pickLocalDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
-        if panel.runModal() == .OK, let url = panel.url {
+        if let url = pickURL(files: false, startingAt: FileManager.default.homeDirectoryForCurrentUser) {
             localDirectory = url.path
         }
+    }
+
+    private func pickURL(files: Bool, startingAt startURL: URL) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = files
+        panel.canChooseDirectories = !files
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = startURL
+        return panel.runModal() == .OK ? panel.url : nil
     }
 
     private func ensureDefaultFolderSelection() {
@@ -497,11 +490,6 @@ struct ConnectionEditor: View {
         renumberLoginScriptSteps()
     }
 
-    private func moveLoginScriptSteps(from source: IndexSet, to destination: Int) {
-        loginScriptSteps.move(fromOffsets: source, toOffset: destination)
-        renumberLoginScriptSteps()
-    }
-
     private func renumberLoginScriptSteps() {
         for index in loginScriptSteps.indices {
             loginScriptSteps[index].sortIndex = index
@@ -517,7 +505,7 @@ private struct LoginScriptStepRow: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            FormPrivateTextField(
+            FormTextField(
                 title: "Match",
                 text: $step.match,
                 isRevealed: $matchIsRevealed,
@@ -525,7 +513,7 @@ private struct LoginScriptStepRow: View {
                 width: 170,
                 labelWidth: 46
             )
-            FormPrivateTextField(
+            FormTextField(
                 title: "Send",
                 text: $step.send,
                 isRevealed: $sendIsRevealed,
@@ -540,54 +528,6 @@ private struct LoginScriptStepRow: View {
             .frame(width: 28, height: 28)
             .help("Remove script step")
             .accessibilityLabel("Remove login script step")
-        }
-    }
-}
-
-private struct FormTextField: View {
-    let title: String
-    @Binding var text: String
-    var prompt: String?
-    var width: CGFloat?
-    var isDisabled: Bool = false
-    var labelWidth: CGFloat = 128
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: labelWidth, alignment: .leading)
-            TextField("", text: $text, prompt: Text(prompt ?? title))
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.regular)
-                .disabled(isDisabled)
-                .opacity(isDisabled ? 0.72 : 1)
-                .accessibilityLabel(title)
-                .frame(width: width)
-        }
-        .frame(width: width == nil ? ConnectionEditorLayout.rowWidth : nil, alignment: .leading)
-    }
-}
-
-enum ConnectionEditorPrivacy {
-    enum Field: CaseIterable {
-        case hostname
-        case port
-        case username
-        case sshConfigAlias
-        case localDirectory
-        case remoteDirectory
-        case loginScriptMatch
-        case loginScriptSend
-    }
-
-    static func isSensitive(_ field: Field) -> Bool {
-        switch field {
-        case .hostname, .port, .username, .sshConfigAlias,
-             .localDirectory, .remoteDirectory,
-             .loginScriptMatch, .loginScriptSend:
-            return true
         }
     }
 }
@@ -642,16 +582,10 @@ private struct EditorSection<Content: View>: View {
     }
 }
 
-private struct EditorDivider: View {
-    var body: some View {
-        Divider()
-    }
-}
-
-private struct FormPrivateTextField: View {
+private struct FormTextField: View {
     let title: String
     @Binding var text: String
-    @Binding var isRevealed: Bool
+    var isRevealed: Binding<Bool>? = nil
     var prompt: String?
     var width: CGFloat?
     var isDisabled: Bool = false
@@ -664,34 +598,51 @@ private struct FormPrivateTextField: View {
                 .foregroundStyle(.secondary)
                 .frame(width: labelWidth, alignment: .leading)
 
-            HStack(spacing: 6) {
-                Group {
-                    if isRevealed {
-                        TextField("", text: $text, prompt: Text(prompt ?? title))
-                    } else {
-                        SecureField("", text: $text, prompt: Text(prompt ?? title))
+            if let isRevealed {
+                HStack(spacing: 6) {
+                    Group {
+                        if isRevealed.wrappedValue {
+                            TextField("", text: $text, prompt: Text(prompt ?? title))
+                        } else {
+                            SecureField("", text: $text, prompt: Text(prompt ?? title))
+                        }
                     }
-                }
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.regular)
-                .disabled(isDisabled)
-                .opacity(isDisabled ? 0.72 : 1)
-                .accessibilityLabel(title)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.regular)
+                    .disabled(isDisabled)
+                    .opacity(isDisabled ? 0.72 : 1)
+                    .accessibilityLabel(title)
 
-                Button {
-                    isRevealed.toggle()
-                } label: {
-                    Image(systemName: isRevealed ? "eye.slash" : "eye")
+                    Button {
+                        isRevealed.wrappedValue.toggle()
+                    } label: {
+                        Image(systemName: isRevealed.wrappedValue ? "eye.slash" : "eye")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .disabled(isDisabled)
+                    .help(isRevealed.wrappedValue ? "Hide \(title)" : "Reveal \(title)")
+                    .accessibilityLabel(isRevealed.wrappedValue ? "Hide \(title)" : "Reveal \(title)")
                 }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .disabled(isDisabled)
-                .help(isRevealed ? "Hide \(title)" : "Reveal \(title)")
-                .accessibilityLabel(isRevealed ? "Hide \(title)" : "Reveal \(title)")
+                .frame(width: width)
+            } else {
+                TextField("", text: $text, prompt: Text(prompt ?? title))
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.regular)
+                    .disabled(isDisabled)
+                    .opacity(isDisabled ? 0.72 : 1)
+                    .accessibilityLabel(title)
+                    .frame(width: width)
             }
-            .frame(width: width)
         }
         .frame(width: width == nil ? ConnectionEditorLayout.rowWidth : nil, alignment: .leading)
+    }
+}
+
+private extension String {
+    var trimmedNonEmpty: String? {
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
     }
 }
 

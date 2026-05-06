@@ -98,8 +98,6 @@ final class TerminalTabItem: Identifiable {
     /// `AskpassServer` owned for the tab's lifetime, stopped only on tab close.
     private var askpassServer: AskpassServer?
     private var loginScriptRunner: LoginScriptRunner?
-    private var epoch: Int = 0
-
     /// Called when the child process exits. Set by external observers (e.g.,
     /// `TerminalClient`) to receive cross-feature child-exit events.
     var onChildExited: (() -> Void)?
@@ -136,7 +134,6 @@ final class TerminalTabItem: Identifiable {
                 askpassServer?.stop()
                 askpassServer = askpass
             }
-            epoch &+= 1
             let view = GhosttySurfaceView(runtime: .shared, config: config)
             view.onBridgeCreated = { [weak self] bridge in
                 guard let self else { return }
@@ -213,10 +210,7 @@ final class TerminalTabItem: Identifiable {
 
     var displayHost: String {
         guard let target = profile.sshTarget else { return profile.hostname }
-        switch target.auth {
-        case .sshConfigAlias(let alias): return alias
-        default: break
-        }
+        if case .sshConfigAlias(let alias) = target.auth { return alias }
         return ""
     }
 

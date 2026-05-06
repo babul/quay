@@ -189,7 +189,7 @@ final class ConnectionProfile {
         get {
             guard let loginScriptStepsJSON,
                   let data = loginScriptStepsJSON.data(using: .utf8),
-                  let decoded = try? JSONDecoder().decode([LoginScriptStep].self, from: data) else {
+                  let decoded = try? Self.jsonDecoder.decode([LoginScriptStep].self, from: data) else {
                 return []
             }
             return decoded.normalizedLoginScriptSteps
@@ -236,10 +236,13 @@ final class ConnectionProfile {
         )
     }
 
+    private static let jsonEncoder = JSONEncoder()
+    private static let jsonDecoder = JSONDecoder()
+
     private static func encodeLoginScriptSteps(_ steps: [LoginScriptStep]) -> String? {
         let normalized = steps.normalizedLoginScriptSteps
         guard !normalized.isEmpty,
-              let data = try? JSONEncoder().encode(normalized) else {
+              let data = try? jsonEncoder.encode(normalized) else {
             return nil
         }
         return String(data: data, encoding: .utf8)

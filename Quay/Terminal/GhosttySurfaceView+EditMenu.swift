@@ -41,12 +41,6 @@ extension GhosttySurfaceView: NSMenuItemValidation {
         pb.setString(text, forType: .string)
     }
 
-    @objc func cut(_ sender: Any?) {
-        // Terminals don't really cut — it's ambiguous (do you remove from
-        // scrollback?). Fall back to copy so the menu item is non-destructive.
-        copy(sender)
-    }
-
     @objc func paste(_ sender: Any?) {
         guard let text = NSPasteboard.general.string(forType: .string) else { return }
         injectPasteText(text)
@@ -58,7 +52,7 @@ extension GhosttySurfaceView: NSMenuItemValidation {
 
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(copy(_:)), #selector(cut(_:)):
+        case #selector(copy(_:)):
             return currentSelectionText() != nil
         case #selector(paste(_:)):
             return NSPasteboard.general.string(forType: .string) != nil

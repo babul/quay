@@ -28,9 +28,8 @@ final class GhosttyRuntime {
 
     func registerSurface(_ bridge: GhosttySurfaceBridge) {
         surfaceRefs.add(bridge)
-        if let scheme = lastColorScheme,
-           let surface = bridge.view?.surface {
-            ghostty_surface_set_color_scheme(surface, scheme)
+        if let scheme = lastColorScheme {
+            applyColorSchemeToSurfaces(scheme, bridge: bridge)
         }
     }
 
@@ -107,9 +106,13 @@ final class GhosttyRuntime {
 
     private func applyColorSchemeToSurfaces(_ scheme: ghostty_color_scheme_e) {
         for bridge in surfaceRefs.allObjects {
-            guard let surface = bridge.view?.surface else { continue }
-            ghostty_surface_set_color_scheme(surface, scheme)
+            applyColorSchemeToSurfaces(scheme, bridge: bridge)
         }
+    }
+
+    private func applyColorSchemeToSurfaces(_ scheme: ghostty_color_scheme_e, bridge: GhosttySurfaceBridge) {
+        guard let surface = bridge.view?.surface else { return }
+        ghostty_surface_set_color_scheme(surface, scheme)
     }
 
     private func replaceConfig(with newConfig: ghostty_config_t) {
@@ -199,10 +202,6 @@ extension GhosttyRuntime {
                     let source = action.action.config_change.config
                     guard let clone = ghostty_config_clone(source) else { return false }
                     GhosttyRuntime.shared.replaceConfig(with: clone)
-                    NotificationCenter.default.post(
-                        name: .ghosttyRuntimeConfigDidChange,
-                        object: GhosttyRuntime.shared
-                    )
                     return false
                 case GHOSTTY_ACTION_RELOAD_CONFIG:
                     GhosttyRuntime.shared.reloadConfig()
@@ -219,13 +218,7 @@ extension GhosttyRuntime {
               let userdataPtr = ghostty_surface_userdata(surfacePtr)
         else { return false }
 
-        // Convert to Sendable UInt to cross nonisolated → @MainActor boundary.
-        let bits = UInt(bitPattern: userdataPtr)
-        return MainActor.assumeIsolated {
-            guard let ptr = UnsafeMutableRawPointer(bitPattern: bits) else { return false }
-            let bridge = Unmanaged<GhosttySurfaceBridge>
-                .fromOpaque(ptr)
-                .takeUnretainedValue()
+        return withBridge(userdata: userdataPtr, default: false) { bridge in
             if action.tag == GHOSTTY_ACTION_RELOAD_CONFIG {
                 GhosttyRuntime.shared.reloadConfig()
                 return true
@@ -241,14 +234,8 @@ extension GhosttyRuntime {
         ghostty_clipboard_e,
         UnsafeMutableRawPointer?
     ) -> Bool = { userdata, _, state in
-        guard let userdata else { return false }
-        let bits = UInt(bitPattern: userdata)
         let stateBits = UInt(bitPattern: state)
-        return MainActor.assumeIsolated {
-            guard let ptr = UnsafeMutableRawPointer(bitPattern: bits) else { return false }
-            let bridge = Unmanaged<GhosttySurfaceBridge>
-                .fromOpaque(ptr)
-                .takeUnretainedValue()
+        return withBridge(userdata: userdata, default: false) { bridge in
             guard let surface = bridge.view?.surface else { return false }
             guard let str = NSPasteboard.general.string(forType: .string), !str.isEmpty else {
                 return false
@@ -299,14 +286,25 @@ extension GhosttyRuntime {
         UnsafeMutableRawPointer?,
         Bool
     ) -> Void = { userdata, _ in
-        guard let userdata else { return }
-        let bits = UInt(bitPattern: userdata)
-        MainActor.assumeIsolated {
-            guard let ptr = UnsafeMutableRawPointer(bitPattern: bits) else { return }
-            let bridge = Unmanaged<GhosttySurfaceBridge>
-                .fromOpaque(ptr)
-                .takeUnretainedValue()
+        withBridge(userdata: userdata, default: ()) { bridge in
             bridge.onCloseRequest?()
+        }
+    }
+
+    /// Restores a `GhosttySurfaceBridge` from a C callback's userdata pointer and
+    /// runs `body` on the main actor. Returns `defaultValue` if the pointer is nil.
+    @discardableResult
+    private static func withBridge<T: Sendable>(
+        userdata: UnsafeMutableRawPointer?,
+        default defaultValue: T,
+        body: @MainActor (GhosttySurfaceBridge) -> T
+    ) -> T {
+        guard let userdata else { return defaultValue }
+        let bits = UInt(bitPattern: userdata)
+        return MainActor.assumeIsolated {
+            guard let ptr = UnsafeMutableRawPointer(bitPattern: bits) else { return defaultValue }
+            let bridge = Unmanaged<GhosttySurfaceBridge>.fromOpaque(ptr).takeUnretainedValue()
+            return body(bridge)
         }
     }
 }

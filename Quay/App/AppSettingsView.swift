@@ -1,8 +1,13 @@
 import SwiftUI
 
+enum AppDefaultsKeys {
+    static let showTabColorBars = "appearance.showTabColorBars"
+    static let confirmCloseActiveSessions = "tabs.confirmCloseActiveSessions"
+}
+
 struct AppSettingsView: View {
-    @AppStorage("appearance.showTabColorBars") private var showTabColorBars = true
-    @AppStorage("tabs.confirmCloseActiveSessions") private var confirmCloseActiveSessions = true
+    @AppStorage(AppDefaultsKeys.showTabColorBars) private var showTabColorBars = true
+    @AppStorage(AppDefaultsKeys.confirmCloseActiveSessions) private var confirmCloseActiveSessions = true
     @AppStorage(SFTPClient.defaultsKey) private var sftpClientRaw = SFTPClient.macOSOpenSSH.rawValue
 
     @State private var exportRequested = false

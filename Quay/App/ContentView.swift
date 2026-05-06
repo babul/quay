@@ -84,12 +84,8 @@ struct ContentView: View {
     }
 
     private func restoreSavedSidebarVisibility() {
-        Task { @MainActor in
-            await Task.yield()
-            columnVisibility = Self.savedColumnVisibility
-
-            try? await Task.sleep(for: .milliseconds(150))
-            columnVisibility = Self.savedColumnVisibility
+        scheduleAfterSwiftUILayout {
+            self.columnVisibility = Self.savedColumnVisibility
         }
     }
 

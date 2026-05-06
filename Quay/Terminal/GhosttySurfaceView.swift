@@ -34,7 +34,6 @@ final class GhosttySurfaceView: NSView {
     // IME state — owned here; modified by GhosttySurfaceView+IME.
     var markedText = NSMutableAttributedString()
     var keyTextAccumulator: [String]?
-    var lastPerformKeyEvent: TimeInterval?
 
     init(runtime: GhosttyRuntime, config: GhosttySurfaceConfig) {
         self.runtime = runtime

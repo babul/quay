@@ -59,24 +59,11 @@ enum FolderStore {
     }
 
     static func uniqueFolderName(baseName: String, existingNames: Set<String>) -> String {
-        guard existingNames.contains(baseName) else { return baseName }
-
-        var index = 2
-        while existingNames.contains("\(baseName) \(index)") {
-            index += 1
-        }
-        return "\(baseName) \(index)"
+        uniqueName(base: baseName, existingNames: existingNames)
     }
 
     static func uniqueConnectionCopyName(baseName: String, existingNames: Set<String>) -> String {
-        let copyName = "\(baseName) Copy"
-        guard existingNames.contains(copyName) else { return copyName }
-
-        var index = 2
-        while existingNames.contains("\(copyName) \(index)") {
-            index += 1
-        }
-        return "\(copyName) \(index)"
+        uniqueName(base: "\(baseName) Copy", existingNames: existingNames)
     }
 
     @discardableResult
@@ -103,13 +90,14 @@ enum FolderStore {
     }
 
     private static func uniqueConnectionName(baseName: String, existingNames: Set<String>) -> String {
-        guard existingNames.contains(baseName) else { return baseName }
+        uniqueName(base: baseName, existingNames: existingNames)
+    }
 
+    private static func uniqueName(base: String, existingNames: Set<String>) -> String {
+        guard existingNames.contains(base) else { return base }
         var index = 2
-        while existingNames.contains("\(baseName) \(index)") {
-            index += 1
-        }
-        return "\(baseName) \(index)"
+        while existingNames.contains("\(base) \(index)") { index += 1 }
+        return "\(base) \(index)"
     }
 
     @discardableResult

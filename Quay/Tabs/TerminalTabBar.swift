@@ -9,8 +9,8 @@ struct TerminalTabBar: View {
     var tabManager: TerminalTabManager
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
     var onOpenSFTP: (TerminalTabItem) -> Void = { _ in }
-    @AppStorage("appearance.showTabColorBars") private var showTabColorBars = true
-    @AppStorage("tabs.confirmCloseActiveSessions") private var confirmCloseActiveSessions = true
+    @AppStorage(AppDefaultsKeys.showTabColorBars) private var showTabColorBars = true
+    @AppStorage(AppDefaultsKeys.confirmCloseActiveSessions) private var confirmCloseActiveSessions = true
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -72,18 +72,11 @@ struct TerminalTabBar: View {
     }
 
     private func confirmClosingTab(_ tab: TerminalTabItem) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "Close Active Tab?"
-        alert.informativeText = """
-        "\(tab.displayTitle)" is still active. Closing the tab will disconnect this session.
-        """
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Close Tab")
-        let cancelButton = alert.addButton(withTitle: "Cancel")
-        cancelButton.keyEquivalent = "\u{1b}"
-        cancelButton.keyEquivalentModifierMask = []
-
-        return alert.runModal() == .alertFirstButtonReturn
+        NSAlert.confirmation(
+            title: "Close Active Tab?",
+            message: "\"\(tab.displayTitle)\" is still active. Closing the tab will disconnect this session.",
+            confirmTitle: "Close Tab"
+        )
     }
 }
 

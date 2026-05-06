@@ -27,9 +27,6 @@ extension GhosttySurfaceView {
         // Snapshot the keyboard layout so we can detect IME input-source changes.
         let keyboardIdBefore: String? = markedTextBefore ? nil : currentKeyboardLayoutID()
 
-        // Last command-key event re-dispatch sentinel (see doCommand).
-        lastPerformKeyEvent = nil
-
         // Run through the input method system so CJK / dead-key composition works.
         interpretKeyEvents([event])
 
@@ -86,15 +83,8 @@ extension GhosttySurfaceView {
         _ = ghostty_surface_key(surface, key_ev)
     }
 
-    /// Re-dispatch command+key events that we didn't consume back through the
-    /// event system so menu items / AppKit key equivalents can handle them.
     override func doCommand(by selector: Selector) {
-        if let ts = lastPerformKeyEvent,
-           let current = NSApp.currentEvent,
-           ts == current.timestamp {
-            NSApp.sendEvent(current)
-        }
-        // Prevent NSBeep for all other unimplemented commands.
+        // Prevent NSBeep for unimplemented commands.
     }
 
     // MARK: Private helpers

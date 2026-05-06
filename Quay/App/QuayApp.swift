@@ -68,8 +68,6 @@ private struct GhosttyColorSchemeSyncModifier: ViewModifier {
 
 @MainActor
 private final class AppTerminationDelegate: NSObject, NSApplicationDelegate {
-    private static let confirmCloseActiveSessionsKey = "tabs.confirmCloseActiveSessions"
-
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let tabs = TerminalTabManager.shared.tabsRequiringCloseConfirmation(
             confirmActiveSessions: confirmCloseActiveSessions
@@ -80,12 +78,22 @@ private final class AppTerminationDelegate: NSObject, NSApplicationDelegate {
         case .single:
             guard let tab = tabs.first else { return .terminateNow }
             TerminalTabManager.shared.select(tab)
-            guard confirmQuitClosingTab(tab) else {
+            guard NSAlert.confirmation(
+                title: "Close Active Tab?",
+                message: "\"\(tab.displayTitle)\" is still active. Closing Quay will disconnect this session.",
+                confirmTitle: "Close Tab and Quit",
+                cancelTitle: "Cancel Quit"
+            ) else {
                 return .terminateCancel
             }
             return .terminateNow
         case .multiple(let count):
-            guard confirmQuitClosingAllTabs(activeTabCount: count) else {
+            guard NSAlert.confirmation(
+                title: "Close Active Connections?",
+                message: "Quay has \(count) active connections. Quitting will disconnect all of them.",
+                confirmTitle: "Quit All",
+                cancelTitle: "Cancel Quit"
+            ) else {
                 return .terminateCancel
             }
             return .terminateNow
@@ -93,43 +101,43 @@ private final class AppTerminationDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var confirmCloseActiveSessions: Bool {
-        guard let storedValue = UserDefaults.standard.object(
-            forKey: Self.confirmCloseActiveSessionsKey
-        ) as? Bool else {
-            return true
-        }
-        return storedValue
+        UserDefaults.standard.object(forKey: AppDefaultsKeys.confirmCloseActiveSessions) as? Bool ?? true
     }
+}
 
-    private func confirmQuitClosingTab(_ tab: TerminalTabItem) -> Bool {
+extension NSAlert {
+    @discardableResult
+    static func confirmation(
+        title: String,
+        message: String,
+        confirmTitle: String,
+        cancelTitle: String = "Cancel"
+    ) -> Bool {
         let alert = NSAlert()
-        alert.messageText = "Close Active Tab?"
-        alert.informativeText = """
-        "\(tab.displayTitle)" is still active. Closing Quay will disconnect this session.
-        """
+        alert.messageText = title
+        alert.informativeText = message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Close Tab and Quit")
-        configureEscapeCancelButton(alert.addButton(withTitle: "Cancel Quit"))
-
+        alert.addButton(withTitle: confirmTitle)
+        let cancel = alert.addButton(withTitle: cancelTitle)
+        cancel.keyEquivalent = "\u{1b}"
+        cancel.keyEquivalentModifierMask = []
         return alert.runModal() == .alertFirstButtonReturn
     }
+}
 
-    private func confirmQuitClosingAllTabs(activeTabCount: Int) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "Close Active Connections?"
-        alert.informativeText = """
-        Quay has \(activeTabCount) active connections. Quitting will disconnect all of them.
-        """
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Quit All")
-        configureEscapeCancelButton(alert.addButton(withTitle: "Cancel Quit"))
-
-        return alert.runModal() == .alertFirstButtonReturn
-    }
-
-    private func configureEscapeCancelButton(_ button: NSButton) {
-        button.keyEquivalent = "\u{1b}"
-        button.keyEquivalentModifierMask = []
+/// Runs `action` twice — once after a layout yield and once 150 ms later —
+/// to work around SwiftUI overwriting restored state during initial placement.
+@MainActor
+func scheduleAfterSwiftUILayout(
+    action: @escaping @MainActor () -> Void,
+    completion: (@MainActor () -> Void)? = nil
+) {
+    Task { @MainActor in
+        await Task.yield()
+        action()
+        try? await Task.sleep(for: .milliseconds(150))
+        action()
+        completion?()
     }
 }
 
@@ -194,16 +202,9 @@ private struct WindowConfigurator: NSViewRepresentable {
         private func restoreSavedFrameAfterSwiftUIPlacement() {
             guard UserDefaults.standard.string(forKey: Self.savedFrameKey) != nil else { return }
             isRestoringFrame = true
-
-            Task { @MainActor in
-                await Task.yield()
-                restoreSavedFrame()
-
-                try? await Task.sleep(for: .milliseconds(150))
-                restoreSavedFrame()
-
-                isRestoringFrame = false
-                saveFrame()
+            scheduleAfterSwiftUILayout(action: { [weak self] in self?.restoreSavedFrame() }) { [weak self] in
+                self?.isRestoringFrame = false
+                self?.saveFrame()
             }
         }
 
