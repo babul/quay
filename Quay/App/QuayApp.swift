@@ -31,7 +31,7 @@ struct QuayApp: App {
                     NotificationCenter.default.post(name: .startImportSettings, object: nil)
                 }
             }
-            CommandMenu("View") {
+            CommandGroup(replacing: .sidebar) {
                 Button("Toggle Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
                 }
@@ -68,6 +68,10 @@ private struct GhosttyColorSchemeSyncModifier: ViewModifier {
 
 @MainActor
 private final class AppTerminationDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let tabs = TerminalTabManager.shared.tabsRequiringCloseConfirmation(
             confirmActiveSessions: confirmCloseActiveSessions
@@ -170,6 +174,7 @@ private struct WindowConfigurator: NSViewRepresentable {
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
+            window.tabbingMode = .disallowed
             window.setFrameAutosaveName("Quay.MainWindow.Frame")
 
             let center = NotificationCenter.default
