@@ -138,7 +138,28 @@ final class GhosttyRuntime {
         }
     }
 
+    static func userConfigURL() -> URL {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        let xdg = home.appending(path: ".config/ghostty/config")
+        let appSupport = home.appending(path: "Library/Application Support/com.mitchellh.ghostty/config")
+        if fm.fileExists(atPath: xdg.path) { return xdg }
+        if fm.fileExists(atPath: appSupport.path) { return appSupport }
+        do {
+            try fm.createDirectory(at: xdg.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !fm.createFile(atPath: xdg.path, contents: Data()) {
+                logger.error("Failed to create Ghostty config at \(xdg.path, privacy: .public)")
+            }
+        } catch {
+            logger.error("Failed to create Ghostty config directory: \(error)")
+        }
+        return xdg
+    }
+
     private static func loadUserConfig(into config: ghostty_config_t) {
+        if let bundledDefaults = Bundle.main.url(forResource: "default-ghostty", withExtension: "conf") {
+            ghostty_config_load_file(config, bundledDefaults.path)
+        }
         ghostty_config_load_default_files(config)
         ghostty_config_load_cli_args(config)
         ghostty_config_load_recursive_files(config)

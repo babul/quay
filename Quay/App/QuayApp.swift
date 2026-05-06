@@ -43,6 +43,15 @@ struct QuayApp: App {
                 }
                 .keyboardShortcut("l", modifiers: [.command])
             }
+            CommandMenu("Terminal") {
+                Button("Open Ghostty Config") {
+                    NSWorkspace.shared.open(GhosttyRuntime.userConfigURL())
+                }
+                Button("Reload Ghostty Config") {
+                    GhosttyRuntime.shared.reloadConfig()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
             CommandGroup(replacing: .help) {
                 Button("Quay on GitHub") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/babul/quay")!)

@@ -78,6 +78,33 @@ Press **⌘L** to focus the search field and filter connections by name — resu
 | **⌃⇧Tab** | Switch to previous tab (wraps) |
 | **⌘L** | Focus sidebar search |
 | **⌘B** | Toggle sidebar |
+| **⌘⇧R** | Reload Ghostty config |
+
+## Terminal configuration
+
+Quay's terminal is powered by [Ghostty](https://ghostty.org)'s terminal core and reads the same config file Ghostty uses — `~/.config/ghostty/config` (or `~/Library/Application Support/com.mitchellh.ghostty/config` if that's where yours lives). Any change you make there affects Quay.
+
+**If you don't have Ghostty installed or have no config file**, Quay's built-in defaults give you:
+
+| Setting | Value |
+|---|---|
+| Font | SF Mono 13 |
+| Theme | Ghostty default |
+| Cursor | Block, no blink |
+| Padding | 8 px horizontal, 6 px vertical |
+| Scrollback | 100,000 lines |
+
+Use **Terminal → Open Ghostty Config** to open the config in your default text editor (creating the file if it doesn't exist yet). Use **Terminal → Reload Ghostty Config** (⌘⇧R) to pick up changes without restarting Quay.
+
+For the full list of available settings — fonts, colors, keybindings, window decorations, and more — see the [Ghostty configuration reference](https://ghostty.org/docs/config).
+
+**Light and dark themes** can be set per color scheme with a single line:
+
+```
+theme = light:GitHub Light,dark:GitHub Dark
+```
+
+Quay automatically tells Ghostty which scheme is active as macOS switches appearance.
 
 ## ~/.ssh/config hosts
 
