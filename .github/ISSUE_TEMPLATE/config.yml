@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/babul/quay/discussions
+    about: For questions, ideas, or general discussion. Issues are reserved for bug reports and feature requests.
+  - name: Report a security vulnerability
+    url: https://github.com/babul/quay/security/advisories/new
+    about: SSH credential, Keychain, or askpass IPC issues — do NOT file a public issue.
