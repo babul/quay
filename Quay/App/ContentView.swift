@@ -6,8 +6,15 @@ import SwiftUI
 struct ContentView: View {
     let store: StoreOf<AppFeature>
     @State private var selectedConnectionID: UUID?
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var columnVisibility: NavigationSplitViewVisibility
     private let tabManager = TerminalTabManager.shared
+
+    init(store: StoreOf<AppFeature>) {
+        self.store = store
+        _columnVisibility = State(
+            initialValue: Self.savedColumnVisibility
+        )
+    }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -25,9 +32,31 @@ struct ContentView: View {
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
         .navigationSubtitle(tabManager.selectedTab?.displayHost ?? "")
-        .onAppear { store.send(.onAppear) }
+        .onAppear {
+            store.send(.onAppear)
+            restoreSavedSidebarVisibility()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
-            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+            let shouldShowSidebar = columnVisibility == .detailOnly
+            columnVisibility = shouldShowSidebar ? .all : .detailOnly
+            SidebarLayoutState.saveSidebarVisible(shouldShowSidebar)
+        }
+        .onChange(of: columnVisibility) { _, visibility in
+            SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
+        }
+    }
+
+    private static var savedColumnVisibility: NavigationSplitViewVisibility {
+        SidebarLayoutState.loadSidebarVisible() ? .all : .detailOnly
+    }
+
+    private func restoreSavedSidebarVisibility() {
+        Task { @MainActor in
+            await Task.yield()
+            columnVisibility = Self.savedColumnVisibility
+
+            try? await Task.sleep(for: .milliseconds(150))
+            columnVisibility = Self.savedColumnVisibility
         }
     }
 

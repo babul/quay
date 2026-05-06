@@ -43,4 +43,43 @@ struct SidebarCollapseStateTests {
         #expect(collapsed == Set([kept]))
         #expect(SidebarCollapseState.load(from: defaults) == Set([kept]))
     }
+
+    @Test("missing sidebar width loads default")
+    func missingSidebarWidthLoadsDefault() throws {
+        let defaults = try makeDefaults()
+        #expect(SidebarLayoutState.loadWidth(from: defaults) == SidebarLayoutState.defaultWidth)
+    }
+
+    @Test("valid sidebar width persists")
+    func validSidebarWidthPersists() throws {
+        let defaults = try makeDefaults()
+
+        SidebarLayoutState.saveWidth(360, to: defaults)
+
+        #expect(SidebarLayoutState.loadWidth(from: defaults) == 360)
+    }
+
+    @Test("invalid sidebar width is ignored")
+    func invalidSidebarWidthIsIgnored() throws {
+        let defaults = try makeDefaults()
+
+        SidebarLayoutState.saveWidth(SidebarLayoutState.minimumWidth - 1, to: defaults)
+        #expect(SidebarLayoutState.loadWidth(from: defaults) == SidebarLayoutState.defaultWidth)
+
+        SidebarLayoutState.saveWidth(SidebarLayoutState.maximumWidth + 1, to: defaults)
+        #expect(SidebarLayoutState.loadWidth(from: defaults) == SidebarLayoutState.defaultWidth)
+    }
+
+    @Test("sidebar visibility defaults visible and persists")
+    func sidebarVisibilityDefaultsVisibleAndPersists() throws {
+        let defaults = try makeDefaults()
+
+        #expect(SidebarLayoutState.loadSidebarVisible(from: defaults))
+
+        SidebarLayoutState.saveSidebarVisible(false, to: defaults)
+        #expect(!SidebarLayoutState.loadSidebarVisible(from: defaults))
+
+        SidebarLayoutState.saveSidebarVisible(true, to: defaults)
+        #expect(SidebarLayoutState.loadSidebarVisible(from: defaults))
+    }
 }

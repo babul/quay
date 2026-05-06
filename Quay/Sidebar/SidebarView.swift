@@ -50,6 +50,12 @@ struct SidebarView: View {
             footer
         }
         .frame(minWidth: 240)
+        .navigationSplitViewColumnWidth(
+            min: SidebarLayoutState.minimumWidth,
+            ideal: SidebarLayoutState.loadWidth(),
+            max: SidebarLayoutState.maximumWidth
+        )
+        .background(SidebarWidthObserver())
         .navigationTitle("Quay")
         .sheet(item: $editorTarget) { target in
             ConnectionEditor(target: target) {
@@ -350,4 +356,93 @@ extension Notification.Name {
     static let focusSearch = Notification.Name("com.montopolis.quay.focusSearch")
     /// Posted by the ⌘B menu command to show or hide the sidebar.
     static let toggleSidebar = Notification.Name("com.montopolis.quay.toggleSidebar")
+}
+
+@MainActor
+private struct SidebarWidthObserver: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.isHidden = true
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.attach(from: view)
+    }
+
+    @MainActor
+    final class Coordinator {
+        private weak var splitView: NSSplitView?
+        private var frameObserver: NSObjectProtocol?
+        private var isRestoringWidth = false
+
+        func attach(from view: NSView) {
+            Task { @MainActor [weak self, weak view] in
+                guard let self, let view, let splitView = view.enclosingSplitView else { return }
+                guard self.splitView !== splitView else { return }
+
+                self.detach()
+                self.splitView = splitView
+                self.restoreWidth(in: splitView)
+                self.observeSidebarFrame(in: splitView)
+            }
+        }
+
+        private func detach() {
+            if let frameObserver {
+                NotificationCenter.default.removeObserver(frameObserver)
+            }
+            frameObserver = nil
+            splitView = nil
+        }
+
+        private func restoreWidth(in splitView: NSSplitView) {
+            guard SidebarLayoutState.loadSidebarVisible(),
+                  splitView.arrangedSubviews.count > 1
+            else { return }
+
+            isRestoringWidth = true
+            Task { @MainActor [weak self, weak splitView] in
+                guard let self, let splitView else { return }
+                await Task.yield()
+                splitView.setPosition(SidebarLayoutState.loadWidth(), ofDividerAt: 0)
+
+                try? await Task.sleep(for: .milliseconds(100))
+                self.isRestoringWidth = false
+            }
+        }
+
+        private func observeSidebarFrame(in splitView: NSSplitView) {
+            guard let sidebarView = splitView.arrangedSubviews.first else { return }
+
+            sidebarView.postsFrameChangedNotifications = true
+            frameObserver = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification,
+                object: sidebarView,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self, weak sidebarView] in
+                    guard let self,
+                          let sidebarView,
+                          !self.isRestoringWidth
+                    else { return }
+
+                    SidebarLayoutState.saveWidth(sidebarView.frame.width)
+                }
+            }
+        }
+    }
+}
+
+private extension NSView {
+    var enclosingSplitView: NSSplitView? {
+        if let splitView = self as? NSSplitView {
+            return splitView
+        }
+        return superview?.enclosingSplitView
+    }
 }
