@@ -7,9 +7,9 @@ import AppKit
 // comes from NSMenuItemValidation which we conform to below.
 
 extension GhosttySurfaceView: NSMenuItemValidation {
-    /// Right-click context menu. AppKit calls this BEFORE `rightMouseDown`,
-    /// so returning a non-nil menu suppresses the mouse event from reaching
-    /// libghostty — which is the desired behaviour for context menus.
+    /// Right-click context menu. AppKit invokes this from inside
+    /// `super.rightMouseDown(with:)`; returning a non-nil menu causes
+    /// AppKit to display the contextual menu.
     override func menu(for event: NSEvent) -> NSMenu? {
         guard event.type == .rightMouseDown else { return nil }
         let menu = NSMenu()

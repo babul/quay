@@ -213,6 +213,7 @@ final class GhosttySurfaceView: NSView {
     override func rightMouseDown(with event: NSEvent) {
         sendMousePos(event)
         sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_RIGHT)
+        super.rightMouseDown(with: event)
     }
 
     override func rightMouseUp(with event: NSEvent) {
