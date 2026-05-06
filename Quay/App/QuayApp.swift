@@ -22,6 +22,15 @@ struct QuayApp: App {
         .modelContainer(PersistenceContainer.shared)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .newItem) {
+                Divider()
+                Button("Export Settings…") {
+                    NotificationCenter.default.post(name: .startExportSettings, object: nil)
+                }
+                Button("Import Settings…") {
+                    NotificationCenter.default.post(name: .startImportSettings, object: nil)
+                }
+            }
             CommandMenu("View") {
                 Button("Toggle Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
@@ -39,6 +48,7 @@ struct QuayApp: App {
         Settings {
             AppSettingsView()
         }
+        .modelContainer(PersistenceContainer.shared)
     }
 }
 

@@ -273,7 +273,7 @@ struct SidebarView: View {
         .contentShape(Rectangle())
         .onTapGesture { handleConnectionClick(profile) }
         .contextMenu {
-            Button("Connect New Tab") {
+            Button("Connect") {
                 selection = profile.id
                 onOpenConnectionInNewTab(profile)
             }
@@ -330,7 +330,7 @@ struct SidebarView: View {
         .contentShape(Rectangle())
         .onTapGesture { handleSSHConfigHostClick(host) }
         .contextMenu {
-            Button("Connect New Tab") {
+            Button("Connect") {
                 selection = host.id
                 onOpenConnectionInNewTab(transientProfile(for: host))
             }
@@ -636,6 +636,10 @@ extension Notification.Name {
     static let focusSearch = Notification.Name("com.montopolis.quay.focusSearch")
     /// Posted by the ⌘B menu command to show or hide the sidebar.
     static let toggleSidebar = Notification.Name("com.montopolis.quay.toggleSidebar")
+    /// Posted by the File menu "Export Settings…" item.
+    static let startExportSettings = Notification.Name("com.montopolis.quay.startExportSettings")
+    /// Posted by the File menu "Import Settings…" item.
+    static let startImportSettings = Notification.Name("com.montopolis.quay.startImportSettings")
 }
 
 @MainActor

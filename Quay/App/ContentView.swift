@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility
     @State private var editorTarget: SidebarView.EditorTarget?
     @State private var ghosttyConfigChangeToken = 0
+    @State private var exportRequested = false
+    @State private var importRequested = false
     private let tabManager = TerminalTabManager.shared
 
     init(store: StoreOf<AppFeature>) {
@@ -60,11 +62,21 @@ struct ContentView: View {
         .onChange(of: columnVisibility) { _, visibility in
             SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .startExportSettings)) { _ in
+            exportRequested = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .startImportSettings)) { _ in
+            importRequested = true
+        }
         .sheet(item: $editorTarget) { target in
             ConnectionEditor(target: target) {
                 editorTarget = nil
             }
         }
+        .settingsImportExportFlow(
+            triggerExport: $exportRequested,
+            triggerImport: $importRequested
+        )
     }
 
     private static var savedColumnVisibility: NavigationSplitViewVisibility {

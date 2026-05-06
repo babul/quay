@@ -48,6 +48,24 @@ targets:
   Quay:
     type: application
     platform: macOS
+    info:
+      path: Quay/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSHumanReadableCopyright: "Copyright (c) 2026 The Montopolis Group, Ltd."
+        LSMinimumSystemVersion: "14.0"
+        NSLocalNetworkUsageDescription: "Quay connects to SSH servers on your local and private networks."
+        NSPrincipalClass: NSApplication
+        LSApplicationCategoryType: public.app-category.developer-tools
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.montopolis.quay.bundle
+            UTTypeDescription: Quay Settings Bundle
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - quaybundle
     sources:
       - path: Quay
         excludes:
@@ -69,13 +87,8 @@ targets:
         optional: true
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright (c) 2026 The Montopolis Group, Ltd."
-        INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Quay connects to SSH servers on your local and private networks."
-        INFOPLIST_KEY_NSPrincipalClass: NSApplication
-        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         ENABLE_HARDENED_RUNTIME: YES
+        PRODUCT_MODULE_NAME: Quay
         SWIFT_OBJC_BRIDGING_HEADER: Quay/Quay-Bridging-Header.h
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
@@ -142,4 +155,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.montopolis.quay.tests
         GENERATE_INFOPLIST_FILE: YES
         BUNDLE_LOADER: $(TEST_HOST)
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Quay.app/Contents/MacOS/Quay
+      configs:
+        Debug:
+          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Quay (Debug).app/Contents/MacOS/Quay (Debug)"
+        Release:
+          TEST_HOST: $(BUILT_PRODUCTS_DIR)/Quay.app/Contents/MacOS/Quay

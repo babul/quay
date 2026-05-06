@@ -5,6 +5,9 @@ struct AppSettingsView: View {
     @AppStorage("tabs.confirmCloseActiveSessions") private var confirmCloseActiveSessions = true
     @AppStorage(SFTPClient.defaultsKey) private var sftpClientRaw = SFTPClient.macOSOpenSSH.rawValue
 
+    @State private var exportRequested = false
+    @State private var importRequested = false
+
     var body: some View {
         Form {
             Section("Appearance") {
@@ -41,10 +44,19 @@ struct AppSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Data") {
+                Button("Export Settings…") { exportRequested = true }
+                Button("Import Settings…") { importRequested = true }
+            }
         }
         .formStyle(.grouped)
         .padding(20)
-        .frame(width: 520, height: 320)
+        .frame(width: 520, height: 450)
+        .settingsImportExportFlow(
+            triggerExport: $exportRequested,
+            triggerImport: $importRequested
+        )
     }
 
     private var selectedSFTPClient: SFTPClient {

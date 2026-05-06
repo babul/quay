@@ -10,3 +10,5 @@
 #if __has_include(<GhosttyKit/ghostty.h>)
 #import <GhosttyKit/ghostty.h>
 #endif
+
+#import <CommonCrypto/CommonCrypto.h>
