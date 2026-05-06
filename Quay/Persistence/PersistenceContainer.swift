@@ -54,23 +54,7 @@ enum PersistenceContainer {
                 }
             }
         }
-        // Migration 2: prior bundle prefix (com.montopolis → io.github.babul).
-        let priorId = folder.replacingOccurrences(of: "io.github.babul.quay", with: "com.montopolis.quay")
-        if priorId != folder {
-            let priorDir = appSupport.appending(path: priorId, directoryHint: .isDirectory)
-            let priorStore = priorDir.appending(path: "Quay.store", directoryHint: .notDirectory)
-            if FileManager.default.fileExists(atPath: priorStore.path),
-               !FileManager.default.fileExists(atPath: newStore.path) {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                for suffix in ["", "-shm", "-wal"] {
-                    let src = priorDir.appending(path: "Quay.store\(suffix)")
-                    let dst = dir.appending(path: "Quay.store\(suffix)")
-                    if FileManager.default.fileExists(atPath: src.path) {
-                        try? FileManager.default.moveItem(at: src, to: dst)
-                    }
-                }
-            }
-        }
+
         try FileManager.default.createDirectory(
             at: dir,
             withIntermediateDirectories: true
