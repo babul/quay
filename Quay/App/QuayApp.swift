@@ -193,7 +193,7 @@ private struct WindowConfigurator: NSViewRepresentable {
             guard !didConfigureWindow, let window else { return }
             didConfigureWindow = true
             window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
+            window.titlebarAppearsTransparent = false
             window.styleMask.insert(.fullSizeContentView)
             window.tabbingMode = .disallowed
             window.setFrameAutosaveName("Quay.MainWindow.Frame")
