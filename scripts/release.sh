@@ -61,13 +61,26 @@ CURRENT_BUILD="$(read_yml_key 'CURRENT_PROJECT_VERSION')"
 [[ -n "$CURRENT_VERSION" ]] || fail "could not read MARKETING_VERSION from project.yml"
 [[ -n "$CURRENT_BUILD"   ]] || fail "could not read CURRENT_PROJECT_VERSION from project.yml"
 
+# Compute the highest sparkle:version already published to enforce monotonic build numbers.
+MAX_PUBLISHED_BUILD="$(git show gh-pages:appcast.xml 2>/dev/null \
+  | grep -oE '<sparkle:version>[0-9]+</sparkle:version>' \
+  | grep -oE '[0-9]+' \
+  | sort -rn | head -1)"
+MAX_PUBLISHED_BUILD="${MAX_PUBLISHED_BUILD:-0}"
+NEXT_BUILD="$((MAX_PUBLISHED_BUILD + 1))"
+
 printf "\n"
 read -r -p "  Version [$CURRENT_VERSION]: " INPUT_VERSION
-read -r -p "  Build   [$CURRENT_BUILD]: "   INPUT_BUILD
+read -r -p "  Build   [$NEXT_BUILD]: "       INPUT_BUILD
 printf "\n"
 
 VERSION="${INPUT_VERSION:-$CURRENT_VERSION}"
-BUILD="${INPUT_BUILD:-$CURRENT_BUILD}"
+BUILD="${INPUT_BUILD:-$NEXT_BUILD}"
+
+# Enforce strictly monotonic build numbers across releases.
+if (( BUILD <= MAX_PUBLISHED_BUILD )); then
+  fail "build number $BUILD must be > highest published ($MAX_PUBLISHED_BUILD)"
+fi
 TAG="v${VERSION}"
 
 git fetch --tags --quiet
