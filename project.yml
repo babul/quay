@@ -54,7 +54,7 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSHumanReadableCopyright: "Copyright (c) 2026 Abhijit \"Babul\" Mukherjee"
+        NSHumanReadableCopyright: "Copyright (c) 2026 Babul A. Mukherjee"
         LSMinimumSystemVersion: "14.0"
         NSLocalNetworkUsageDescription: "Quay connects to SSH servers on your local and private networks."
         NSPrincipalClass: NSApplication

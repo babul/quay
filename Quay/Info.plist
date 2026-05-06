@@ -23,7 +23,7 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright (c) 2026 The Montopolis Group, Ltd.</string>
+	<string>Copyright (c) 2026 Babul A. Mukherjee</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Quay connects to SSH servers on your local and private networks.</string>
 	<key>NSPrincipalClass</key>
