@@ -163,6 +163,16 @@ struct TerminalTabManagerTests {
         #expect(TerminalTabManager.appQuitConfirmation(activeTabCount: 5) == .multiple(5))
     }
 
+    @Test("Child exit marks tab disconnected instead of failed")
+    func childExitMarksTabDisconnectedInsteadOfFailed() {
+        let profile = ConnectionProfile(name: "prod", hostname: "prod.example.com")
+        let tab = TerminalTabItem(profile: profile)
+
+        tab.markSessionEnded()
+
+        #expect(tab.phase == .disconnected)
+    }
+
     @Test("Terminal title updates do not replace saved display name")
     func terminalTitleDoesNotReplaceSavedDisplayName() {
         let profile = ConnectionProfile(

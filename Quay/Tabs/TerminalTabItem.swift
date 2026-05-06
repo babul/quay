@@ -168,11 +168,11 @@ final class TerminalTabItem: Identifiable {
         phase = .disconnected
     }
 
-    private func markSessionEnded() {
+    func markSessionEnded() {
         loginScriptRunner?.stop()
         loginScriptRunner = nil
         if phase != .disconnected {
-            phase = .failed("Session ended")
+            phase = .disconnected
         }
     }
 

@@ -128,7 +128,7 @@ struct ConnectionEditor: View {
 
             EditorSection("Authentication") {
                 Picker("Method", selection: $authMethod) {
-                    Text("ssh-agent").tag(ConnectionProfile.AuthMethod.sshAgent)
+                    Text("OpenSSH defaults").tag(ConnectionProfile.AuthMethod.sshAgent)
                     Text("Private key").tag(ConnectionProfile.AuthMethod.privateKey)
                     Text("Private key + passphrase").tag(ConnectionProfile.AuthMethod.privateKeyWithPassphrase)
                     Text("Password").tag(ConnectionProfile.AuthMethod.password)
@@ -137,7 +137,7 @@ struct ConnectionEditor: View {
 
                 switch authMethod {
                 case .sshAgent:
-                    Text("Uses keys loaded into ssh-agent.")
+                    Text("Uses ~/.ssh/config, default identity files, and keys loaded into ssh-agent.")
                         .foregroundStyle(.secondary)
                         .font(.caption)
                         .frame(width: ConnectionEditorLayout.rowWidth, alignment: .leading)

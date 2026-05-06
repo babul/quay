@@ -70,6 +70,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright (c) 2026 The Montopolis Group, Ltd."
         INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Quay connects to SSH servers on your local and private networks."
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         ENABLE_HARDENED_RUNTIME: YES
