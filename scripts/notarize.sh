@@ -58,32 +58,22 @@ if [[ "$SKIP_ARCHIVE" -eq 0 ]]; then
   cp -R "$ARCHIVE/Products/Applications/Quay.app" "$EXPORT_DIR/"
 
   bold "==> Re-signing Sparkle nested code with Developer ID"
+  DEV_ID_HASH="$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep "Developer ID Application: .* (T5F5K95U46)" \
+    | head -1 | awk '{print $2}')"
+  [[ -n "$DEV_ID_HASH" ]] || fail "could not find Developer ID Application identity in keychain"
+
   SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
-
-  # Re-sign Sparkle components with Developer ID certificate
   if [[ -d "$SPARKLE/Versions/B" ]]; then
-    local base="$SPARKLE/Versions/B"
-    # XPC services and helpers to re-sign
-    local -a binaries=(
-      "$base/XPCServices/Installer.xpc"
-      "$base/XPCServices/Downloader.xpc"
-      "$base/Autoupdate"
-      "$base/Updater.app"
-    )
-
-    for binary in "${binaries[@]}"; do
-      if [[ -e "$binary" ]]; then
-        codesign -f -s "$DEV_ID_HASH" -o runtime "$binary"
-      fi
-    done
-
-    # Re-sign framework root (should preserve entitlements from Downloader.xpc)
+    # Re-sign Sparkle components
+    base="$SPARKLE/Versions/B"
+    codesign -f -s "$DEV_ID_HASH" -o runtime "$base/XPCServices/Installer.xpc"
+    codesign -f -s "$DEV_ID_HASH" -o runtime --preserve-metadata=entitlements "$base/XPCServices/Downloader.xpc"
+    codesign -f -s "$DEV_ID_HASH" -o runtime "$base/Autoupdate"
+    codesign -f -s "$DEV_ID_HASH" -o runtime "$base/Updater.app"
     codesign -f -s "$DEV_ID_HASH" -o runtime "$SPARKLE"
   fi
-
-  # Re-sign main app bundle
-  codesign -f -s "$DEV_ID_HASH" -o runtime \
-    --preserve-metadata=entitlements "$APP"
+  codesign -f -s "$DEV_ID_HASH" -o runtime --preserve-metadata=entitlements "$APP"
 else
   bold "==> Skipping archive (--skip-archive)"
   [[ -d "$APP" ]] || fail "export not found at $APP; run without --skip-archive first"
