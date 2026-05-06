@@ -45,20 +45,9 @@ enum AppearanceIcon {
         let label: String
     }
 
-    static let options: [Option] = [
-        Option(id: "terminal.fill", label: "Terminal"),
-        Option(id: "server.rack", label: "Server"),
-        Option(id: "network", label: "Network"),
-        Option(id: "globe", label: "Globe"),
-        Option(id: "cloud.fill", label: "Cloud"),
-        Option(id: "lock.shield.fill", label: "Secure"),
-        Option(id: "externaldrive.connected.to.line.below", label: "Storage"),
-        Option(id: "cpu.fill", label: "Compute"),
-        Option(id: "shippingbox.fill", label: "Container"),
-        Option(id: "house.fill", label: "Home"),
-        Option(id: "building.2.fill", label: "Office"),
-        Option(id: "bolt.fill", label: "Fast")
-    ]
+    static var options: [Option] {
+        AppearanceIconCatalog.allSymbols.map { Option(id: $0.id, label: $0.label) }
+    }
 
     static var allNames: [String] {
         options.map(\.id)
@@ -106,40 +95,140 @@ struct AppearanceIconPicker: View {
     let accessibilityLabel: String
     @Binding var selection: String?
 
+    @State private var presented = false
+
     var body: some View {
         LabeledContent(title) {
-            HStack(spacing: 8) {
-                Button {
-                    selection = nil
-                } label: {
-                    Image(systemName: defaultSystemName)
-                        .symbolVariant(selection == nil ? .fill : .none)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .help(defaultHelp)
-
-                ForEach(AppearanceIcon.options) { option in
-                    Button {
-                        selection = option.id
-                    } label: {
-                        ZStack {
-                            Image(systemName: option.id)
-                                .imageScale(.medium)
-                            if selection == option.id {
-                                RoundedRectangle(cornerRadius: 5)
-                                    .strokeBorder(.primary, lineWidth: 1.5)
-                                    .frame(width: 26, height: 24)
-                            }
-                        }
-                    }
+            Button {
+                presented = true
+            } label: {
+                Image(systemName: selection ?? defaultSystemName)
+                    .imageScale(.medium)
                     .frame(width: 24, height: 24)
-                    .buttonStyle(.plain)
-                    .help(option.label)
-                }
+                    .padding(6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(.secondary.opacity(0.4), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(AppearanceIconCatalog.allSymbols.first { $0.id == selection }?.label ?? defaultHelp)
+            .popover(isPresented: $presented, arrowEdge: .bottom) {
+                AppearanceIconGrid(
+                    selection: $selection,
+                    defaultSystemName: defaultSystemName,
+                    defaultHelp: defaultHelp
+                )
             }
         }
         .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+private struct AppearanceIconGrid: View {
+    @Binding var selection: String?
+    let defaultSystemName: String
+    let defaultHelp: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
+
+    private let columns = Array(repeating: GridItem(.fixed(36), spacing: 6), count: 6)
+
+    private var visibleSections: [AppearanceIconCatalog.Section] {
+        AppearanceIconCatalog.search(query)
+    }
+
+    private var customSymbol: AppearanceIconCatalog.Symbol? {
+        guard !query.isEmpty, visibleSections.isEmpty,
+              AppearanceIconCatalog.validate(custom: query) else { return nil }
+        return AppearanceIconCatalog.Symbol(id: query, label: "Custom")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TextField("Search symbols", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+                .focused($searchFocused)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12, pinnedViews: .sectionHeaders) {
+                    defaultRow
+                    if let custom = customSymbol {
+                        sectionView(title: "Custom", symbols: [custom])
+                    } else {
+                        ForEach(visibleSections) { section in
+                            sectionView(title: section.title, symbols: section.symbols)
+                        }
+                    }
+                }
+                .padding(12)
+            }
+        }
+        .frame(width: 320, height: 360)
+        .onAppear { searchFocused = true }
+    }
+
+    private var defaultRow: some View {
+        Button {
+            selection = nil
+            dismiss()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: defaultSystemName)
+                    .frame(width: 24, height: 24)
+                Text("Default")
+                    .font(.subheadline)
+                Spacer()
+                if selection == nil {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .help(defaultHelp)
+    }
+
+    private func sectionView(title: String, symbols: [AppearanceIconCatalog.Symbol]) -> some View {
+        Section {
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(symbols) { symbol in
+                    iconButton(symbol)
+                }
+            }
+        } header: {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+        }
+    }
+
+    private func iconButton(_ symbol: AppearanceIconCatalog.Symbol) -> some View {
+        Button {
+            selection = symbol.id
+            dismiss()
+        } label: {
+            ZStack {
+                Image(systemName: symbol.id)
+                    .imageScale(.medium)
+                if selection == symbol.id {
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(.primary, lineWidth: 1.5)
+                        .frame(width: 26, height: 24)
+                }
+            }
+        }
+        .frame(width: 28, height: 28)
+        .buttonStyle(.plain)
+        .help(symbol.label)
     }
 }
