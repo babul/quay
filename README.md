@@ -70,6 +70,15 @@ Connections are grouped into **folders** in the sidebar. Create a folder via the
 
 Press **⌘L** to focus the search field and filter connections by name — results are ranked by fuzzy match so partial strings work fine.
 
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| **⌃Tab** | Switch to next tab (wraps) |
+| **⌃⇧Tab** | Switch to previous tab (wraps) |
+| **⌘L** | Focus sidebar search |
+| **⌘B** | Toggle sidebar |
+
 ## ~/.ssh/config hosts
 
 Quay reads `~/.ssh/config` on launch and shows every concrete `Host` alias in a collapsible **~/.ssh/config** section at the bottom of the sidebar. Click any host to open a terminal immediately — Quay delegates entirely to the matching `Host` block, so all your existing config options (identity files, port, jump hosts, `ProxyCommand`, etc.) work without touching Quay's connection editor.

@@ -156,6 +156,19 @@ final class GhosttySurfaceView: NSView {
         return ok
     }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard mods.contains(.control), event.characters(byApplyingModifiers: []) == "\t" else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if mods.contains(.shift) {
+            TerminalTabManager.shared.selectPreviousTab()
+        } else {
+            TerminalTabManager.shared.selectNextTab()
+        }
+        return true
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         pushSize()

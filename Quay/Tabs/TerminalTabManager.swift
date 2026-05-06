@@ -112,6 +112,17 @@ final class TerminalTabManager {
         // after the selected surface is ordered frontmost.
     }
 
+    func selectNextTab() { cycleTab(offset: 1) }
+    func selectPreviousTab() { cycleTab(offset: -1) }
+
+    private func cycleTab(offset: Int) {
+        guard tabs.count > 1,
+              let current = selectedTabID,
+              let index = tabs.firstIndex(where: { $0.id == current })
+        else { return }
+        select(tabs[(index + offset + tabs.count) % tabs.count])
+    }
+
     func moveTab(id: UUID, before destinationID: UUID?) {
         guard id != destinationID else { return }
         guard let sourceIndex = tabs.firstIndex(where: { $0.id == id }) else { return }

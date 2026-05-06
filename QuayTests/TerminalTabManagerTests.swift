@@ -322,4 +322,58 @@ struct TerminalTabManagerTests {
         #expect(LoginScriptRunner.terminalText(for: "whoami\n") == "whoami")
         #expect(LoginScriptRunner.terminalText(for: "whoami\r") == "whoami")
     }
+
+    // MARK: Tab cycling
+
+    @Test("selectNextTab cycles forward through tabs")
+    func selectNextTabCyclesForward() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let a = manager.openNewTab(for: ConnectionProfile(name: "a", hostname: "a.example.com"))
+        let b = manager.openNewTab(for: ConnectionProfile(name: "b", hostname: "b.example.com"))
+        let c = manager.openNewTab(for: ConnectionProfile(name: "c", hostname: "c.example.com"))
+        manager.select(a)
+
+        manager.selectNextTab()
+        #expect(manager.selectedTabID == b.id)
+
+        manager.selectNextTab()
+        #expect(manager.selectedTabID == c.id)
+
+        manager.selectNextTab()
+        #expect(manager.selectedTabID == a.id)
+    }
+
+    @Test("selectPreviousTab cycles backward through tabs and wraps")
+    func selectPreviousTabCyclesBackwardWithWrap() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let a = manager.openNewTab(for: ConnectionProfile(name: "a", hostname: "a.example.com"))
+        let b = manager.openNewTab(for: ConnectionProfile(name: "b", hostname: "b.example.com"))
+        let c = manager.openNewTab(for: ConnectionProfile(name: "c", hostname: "c.example.com"))
+        manager.select(a)
+
+        manager.selectPreviousTab()
+        #expect(manager.selectedTabID == c.id)
+
+        manager.selectPreviousTab()
+        #expect(manager.selectedTabID == b.id)
+    }
+
+    @Test("selectNextTab is a no-op with zero tabs")
+    func selectNextTabIsNoOpWithZeroTabs() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+
+        manager.selectNextTab()
+
+        #expect(manager.selectedTabID == nil)
+    }
+
+    @Test("selectNextTab is a no-op with a single tab")
+    func selectNextTabIsNoOpWithSingleTab() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let tab = manager.openNewTab(for: ConnectionProfile(name: "only", hostname: "only.example.com"))
+
+        manager.selectNextTab()
+
+        #expect(manager.selectedTabID == tab.id)
+    }
 }
