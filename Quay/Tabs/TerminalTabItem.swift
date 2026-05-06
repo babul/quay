@@ -3,6 +3,67 @@ import Foundation
 import Observation
 import SwiftUI
 
+@MainActor
+final class LoginScriptRunner {
+    private let steps: [LoginScriptStep]
+    private let readVisibleText: () -> String
+    private let sendText: (String) -> Void
+    private let pollInterval: TimeInterval
+    private let stepTimeout: TimeInterval
+
+    private var task: Task<Void, Never>?
+
+    init(
+        steps: [LoginScriptStep],
+        pollInterval: TimeInterval = 0.25,
+        stepTimeout: TimeInterval = 30,
+        readVisibleText: @escaping () -> String,
+        sendText: @escaping (String) -> Void
+    ) {
+        self.steps = steps.normalizedLoginScriptSteps
+        self.pollInterval = pollInterval
+        self.stepTimeout = stepTimeout
+        self.readVisibleText = readVisibleText
+        self.sendText = sendText
+    }
+
+    func start() {
+        stop()
+        guard !steps.isEmpty else { return }
+        task = Task { [weak self] in
+            await self?.run()
+        }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+    }
+
+    private func run() async {
+        for step in steps {
+            let deadline = Date().addingTimeInterval(stepTimeout)
+            while !Task.isCancelled {
+                if readVisibleText().contains(step.match) {
+                    sendText(Self.terminalText(for: step.send))
+                    break
+                }
+
+                guard Date() < deadline else { return }
+                let nanoseconds = UInt64(max(0.001, pollInterval) * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: nanoseconds)
+            }
+        }
+    }
+
+    static func terminalText(for text: String) -> String {
+        if text.hasSuffix("\r") || text.hasSuffix("\n") {
+            return String(text.dropLast())
+        }
+        return text
+    }
+}
+
 /// A single SSH tab. Long-lived: the `GhosttySurfaceView` is created once and
 /// re-used across reconnects. Only the inner `ghostty_surface_t` is freed and
 /// recreated on reconnect, so SwiftUI never tears down the `NSView`.
@@ -34,6 +95,7 @@ final class TerminalTabItem: Identifiable {
 
     /// `AskpassServer` owned for the tab's lifetime, stopped only on tab close.
     private var askpassServer: AskpassServer?
+    private var loginScriptRunner: LoginScriptRunner?
     private var epoch: Int = 0
 
     /// Called when the child process exits. Set by external observers (e.g.,
@@ -77,6 +139,16 @@ final class TerminalTabItem: Identifiable {
                     self?.markSessionEnded()
                     self?.onChildExited?()
                 }
+                let runner = LoginScriptRunner(
+                    steps: self.profile.loginScriptSteps,
+                    readVisibleText: { [weak bridge] in bridge?.visibleText() ?? "" },
+                    sendText: { [weak bridge] text in
+                        bridge?.sendText(text)
+                        bridge?.sendReturnKey()
+                    }
+                )
+                self.loginScriptRunner = runner
+                runner.start()
             }
             surfaceView = view
             phase = .running
@@ -90,11 +162,15 @@ final class TerminalTabItem: Identifiable {
     }
 
     func disconnect() {
+        loginScriptRunner?.stop()
+        loginScriptRunner = nil
         surfaceView?.disconnectProcess()
         phase = .disconnected
     }
 
     private func markSessionEnded() {
+        loginScriptRunner?.stop()
+        loginScriptRunner = nil
         if phase != .disconnected {
             phase = .failed("Session ended")
         }
@@ -102,11 +178,15 @@ final class TerminalTabItem: Identifiable {
 
     /// Tear down the surface but keep the askpass server alive for the tab's duration.
     private func disconnectSurface() {
+        loginScriptRunner?.stop()
+        loginScriptRunner = nil
         surfaceView = nil
     }
 
     /// Called when the tab is permanently closed. Stops the askpass server.
     func close() {
+        loginScriptRunner?.stop()
+        loginScriptRunner = nil
         askpassServer?.stop()
         askpassServer = nil
         surfaceView = nil

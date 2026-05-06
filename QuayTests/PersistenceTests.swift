@@ -169,6 +169,42 @@ struct PersistenceTests {
         #expect(fetched.iconName == "server.rack")
     }
 
+    @Test("login script steps round-trip through ConnectionProfile")
+    func loginScriptStepsRoundTrip() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let profile = ConnectionProfile(
+            name: "n",
+            hostname: "h",
+            loginScriptSteps: [
+                LoginScriptStep(match: ":~#", send: "su - babul", sortIndex: 0),
+                LoginScriptStep(match: "Password:", send: "opensesame", sortIndex: 1)
+            ]
+        )
+        ctx.insert(profile)
+        try ctx.save()
+
+        let fetched = try #require(try ctx.fetch(FetchDescriptor<ConnectionProfile>()).first)
+        #expect(fetched.loginScriptSteps.map(\.match) == [":~#", "Password:"])
+        #expect(fetched.loginScriptSteps.map(\.send) == ["su - babul", "opensesame"])
+        #expect(fetched.loginScriptSteps.map(\.sortIndex) == [0, 1])
+    }
+
+    @Test("login script steps normalize empty rows and order")
+    func loginScriptStepsNormalizeEmptyRowsAndOrder() {
+        let profile = ConnectionProfile(name: "n", hostname: "h")
+        profile.loginScriptSteps = [
+            LoginScriptStep(match: "  second  ", send: "  two  ", sortIndex: 2),
+            LoginScriptStep(match: "", send: "ignored", sortIndex: 0),
+            LoginScriptStep(match: "first", send: "one", sortIndex: 1),
+            LoginScriptStep(match: "ignored", send: "   ", sortIndex: 3)
+        ]
+
+        #expect(profile.loginScriptSteps.map(\.match) == ["first", "second"])
+        #expect(profile.loginScriptSteps.map(\.send) == ["one", "two"])
+        #expect(profile.loginScriptSteps.map(\.sortIndex) == [0, 1])
+    }
+
     @Test("default Hosts folder is created once")
     func defaultHostsFolderCreatedOnce() throws {
         let container = try Self.makeContainer()
@@ -242,6 +278,9 @@ struct PersistenceTests {
             colorTag: "blue",
             iconName: "server.rack",
             notes: "production host",
+            loginScriptSteps: [
+                LoginScriptStep(match: ":~#", send: "whoami", sortIndex: 0)
+            ],
             sortIndex: 0,
             parent: prod
         )
@@ -278,6 +317,7 @@ struct PersistenceTests {
         #expect(duplicate.colorTag == original.colorTag)
         #expect(duplicate.iconName == original.iconName)
         #expect(duplicate.notes == original.notes)
+        #expect(duplicate.loginScriptSteps == original.loginScriptSteps)
         #expect(duplicate.parent?.id == prod.id)
         #expect(duplicate.sortIndex == 2)
     }

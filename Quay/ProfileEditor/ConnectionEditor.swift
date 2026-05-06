@@ -28,20 +28,23 @@ struct ConnectionEditor: View {
     @State private var colorTag: String?
     @State private var iconName: String?
     @State private var notes: String = ""
+    @State private var loginScriptSteps: [LoginScriptStep] = []
     @State private var selectedFolderID: UUID?
     @State private var didLoad = false
 
     var body: some View {
         Form {
             Section("Identity") {
-                TextField("Display name", text: $name)
+                FormTextField(title: "Display name", text: $name)
                 groupPicker
-                TextField("Hostname", text: $hostname)
-                    .disabled(authMethod == .sshConfigAlias)
+                FormTextField(
+                    title: "Hostname",
+                    text: $hostname,
+                    isDisabled: authMethod == .sshConfigAlias
+                )
                 HStack {
-                    TextField("Port", text: $port)
-                        .frame(width: 80)
-                    TextField("Username", text: $username)
+                    FormTextField(title: "Port", text: $port, width: 90, labelWidth: 48)
+                    FormTextField(title: "Username", text: $username, labelWidth: 78)
                 }
             }
 
@@ -69,7 +72,11 @@ struct ConnectionEditor: View {
                     secretRefField(label: "Password reference",
                                    placeholder: "keychain://service/account")
                 case .sshConfigAlias:
-                    TextField("Host alias from ~/.ssh/config", text: $sshConfigAlias)
+                    FormTextField(
+                        title: "Host alias",
+                        text: $sshConfigAlias,
+                        prompt: "Host alias from ~/.ssh/config"
+                    )
                 }
             }
 
@@ -84,14 +91,34 @@ struct ConnectionEditor: View {
                     .font(.caption)
             }
 
+            Section("Login Scripts") {
+                if loginScriptSteps.isEmpty {
+                    Text("No login scripts.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach($loginScriptSteps) { $step in
+                        LoginScriptStepRow(
+                            step: $step,
+                            onDelete: { removeLoginScriptStep(id: step.id) }
+                        )
+                    }
+                    .onMove(perform: moveLoginScriptSteps)
+                }
+
+                Button {
+                    addLoginScriptStep()
+                } label: {
+                    Label("Add script step", systemImage: "plus")
+                }
+            }
+
             Section("Appearance") {
                 iconPicker
                 colorPicker
             }
 
             Section("Notes") {
-                TextEditor(text: $notes)
-                    .frame(minHeight: 60)
+                FormTextEditor(title: "Notes", text: $notes, minHeight: 72)
             }
         }
         .formStyle(.grouped)
@@ -132,14 +159,18 @@ struct ConnectionEditor: View {
 
     private var keyPathField: some View {
         HStack {
-            TextField("Path to private key", text: $privateKeyPath)
+            FormTextField(
+                title: "Private key path",
+                text: $privateKeyPath,
+                prompt: "Path to private key"
+            )
             Button("Choose…") { pickKeyFile() }
         }
     }
 
     private func secretRefField(label: String, placeholder: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            TextField(label, text: $secretRef, prompt: Text(placeholder))
+        VStack(alignment: .leading, spacing: 4) {
+            FormTextField(title: label, text: $secretRef, prompt: placeholder)
             Text("URI to the secret in your vault. v0.1 supports keychain://")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -245,6 +276,7 @@ struct ConnectionEditor: View {
             colorTag = ConnectionColor.isKnown(p.colorTag) ? p.colorTag : nil
             iconName = p.iconName
             notes = p.notes ?? ""
+            loginScriptSteps = p.loginScriptSteps
             selectedFolderID = p.parent?.id
             ensureDefaultFolderSelection()
         } else {
@@ -259,6 +291,7 @@ struct ConnectionEditor: View {
         let keyPath = privateKeyPath.isEmpty ? nil : privateKeyPath
         let alias = sshConfigAlias.isEmpty ? nil : sshConfigAlias
         let folder = selectedFolder ?? (try? FolderStore.ensureDefaultFolder(in: ctx))
+        let scripts = loginScriptSteps.normalizedLoginScriptSteps
 
         switch target {
         case .create:
@@ -275,6 +308,7 @@ struct ConnectionEditor: View {
                 colorTag: colorTag,
                 iconName: iconName,
                 notes: notes.isEmpty ? nil : notes,
+                loginScriptSteps: scripts,
                 sortIndex: folder.map(FolderStore.nextConnectionSortIndex(in:)) ?? 0,
                 parent: folder
             )
@@ -293,6 +327,7 @@ struct ConnectionEditor: View {
             p.colorTag = colorTag
             p.iconName = iconName
             p.notes = notes.isEmpty ? nil : notes
+            p.loginScriptSteps = scripts
             p.parent = folder
         }
 
@@ -326,6 +361,111 @@ struct ConnectionEditor: View {
         }
         if let folder = try? FolderStore.ensureDefaultFolder(in: ctx) {
             selectedFolderID = folder.id
+        }
+    }
+
+    private func addLoginScriptStep() {
+        loginScriptSteps.append(
+            LoginScriptStep(
+                match: "",
+                send: "",
+                sortIndex: loginScriptSteps.count
+            )
+        )
+    }
+
+    private func removeLoginScriptStep(id: UUID) {
+        loginScriptSteps.removeAll { $0.id == id }
+        renumberLoginScriptSteps()
+    }
+
+    private func moveLoginScriptSteps(from source: IndexSet, to destination: Int) {
+        loginScriptSteps.move(fromOffsets: source, toOffset: destination)
+        renumberLoginScriptSteps()
+    }
+
+    private func renumberLoginScriptSteps() {
+        for index in loginScriptSteps.indices {
+            loginScriptSteps[index].sortIndex = index
+        }
+    }
+}
+
+private struct LoginScriptStepRow: View {
+    @Binding var step: LoginScriptStep
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            FormTextField(
+                title: "Match",
+                text: $step.match,
+                prompt: "Visible text",
+                labelWidth: 46
+            )
+            FormTextField(
+                title: "Send",
+                text: $step.send,
+                prompt: "Command",
+                labelWidth: 38
+            )
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .frame(width: 28, height: 28)
+            .help("Remove script step")
+            .accessibilityLabel("Remove login script step")
+        }
+    }
+}
+
+private struct FormTextField: View {
+    let title: String
+    @Binding var text: String
+    var prompt: String?
+    var width: CGFloat?
+    var isDisabled: Bool = false
+    var labelWidth: CGFloat = 128
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: labelWidth, alignment: .leading)
+            TextField("", text: $text, prompt: Text(prompt ?? title))
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.regular)
+                .disabled(isDisabled)
+                .opacity(isDisabled ? 0.72 : 1)
+                .accessibilityLabel(title)
+                .frame(width: width)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct FormTextEditor: View {
+    let title: String
+    @Binding var text: String
+    var minHeight: CGFloat
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 128, alignment: .leading)
+            TextEditor(text: $text)
+                .frame(minHeight: minHeight)
+                .padding(4)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(.quaternary, lineWidth: 1)
+                }
+                .accessibilityLabel(title)
         }
     }
 }

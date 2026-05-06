@@ -102,6 +102,7 @@ enum FolderStore {
             colorTag: profile.colorTag,
             iconName: profile.iconName,
             notes: profile.notes,
+            loginScriptSteps: profile.loginScriptSteps,
             sortIndex: nextConnectionSortIndex(in: folder),
             parent: folder
         )

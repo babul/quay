@@ -1,6 +1,59 @@
 import Foundation
 import SwiftData
 
+/// One Tabby-style login script step.
+///
+/// Steps are processed in `sortIndex` order. When `match` appears in the
+/// visible terminal text, `send` is written to the PTY and the runner advances.
+struct LoginScriptStep: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var match: String
+    var send: String
+    var sortIndex: Int
+
+    init(
+        id: UUID = UUID(),
+        match: String,
+        send: String,
+        sortIndex: Int
+    ) {
+        self.id = id
+        self.match = match
+        self.send = send
+        self.sortIndex = sortIndex
+    }
+}
+
+extension Array where Element == LoginScriptStep {
+    var normalizedLoginScriptSteps: [LoginScriptStep] {
+        self
+            .map {
+                LoginScriptStep(
+                    id: $0.id,
+                    match: $0.match.trimmingCharacters(in: .whitespacesAndNewlines),
+                    send: $0.send.trimmingCharacters(in: .whitespacesAndNewlines),
+                    sortIndex: $0.sortIndex
+                )
+            }
+            .filter { !$0.match.isEmpty && !$0.send.isEmpty }
+            .sorted { lhs, rhs in
+                if lhs.sortIndex == rhs.sortIndex {
+                    return lhs.id.uuidString < rhs.id.uuidString
+                }
+                return lhs.sortIndex < rhs.sortIndex
+            }
+            .enumerated()
+            .map { offset, step in
+                LoginScriptStep(
+                    id: step.id,
+                    match: step.match,
+                    send: step.send,
+                    sortIndex: offset
+                )
+            }
+    }
+}
+
 /// One saved SSH connection.
 ///
 /// Stores zero plaintext secrets — only references to entries in the user's
@@ -50,6 +103,10 @@ final class ConnectionProfile {
     /// Free-form notes shown in the connection editor.
     var notes: String?
 
+    /// JSON-encoded `[LoginScriptStep]`. Kept as optional text so old stores
+    /// naturally read as "no login scripts" during lightweight migration.
+    var loginScriptStepsJSON: String?
+
     /// Order within the parent folder (lower = higher in the list).
     var sortIndex: Int
 
@@ -70,6 +127,7 @@ final class ConnectionProfile {
         colorTag: String? = nil,
         iconName: String? = nil,
         notes: String? = nil,
+        loginScriptSteps: [LoginScriptStep] = [],
         sortIndex: Int = 0,
         parent: Folder? = nil
     ) {
@@ -86,6 +144,7 @@ final class ConnectionProfile {
         self.colorTag = colorTag
         self.iconName = iconName
         self.notes = notes
+        self.loginScriptStepsJSON = Self.encodeLoginScriptSteps(loginScriptSteps)
         self.sortIndex = sortIndex
         self.parent = parent
     }
@@ -113,6 +172,20 @@ final class ConnectionProfile {
         }
         set {
             remoteTerminalTypeRaw = newValue.rawValue
+        }
+    }
+
+    var loginScriptSteps: [LoginScriptStep] {
+        get {
+            guard let loginScriptStepsJSON,
+                  let data = loginScriptStepsJSON.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([LoginScriptStep].self, from: data) else {
+                return []
+            }
+            return decoded.normalizedLoginScriptSteps
+        }
+        set {
+            loginScriptStepsJSON = Self.encodeLoginScriptSteps(newValue)
         }
     }
 
@@ -149,5 +222,14 @@ final class ConnectionProfile {
             auth: auth,
             remoteTerminalType: remoteTerminalType
         )
+    }
+
+    private static func encodeLoginScriptSteps(_ steps: [LoginScriptStep]) -> String? {
+        let normalized = steps.normalizedLoginScriptSteps
+        guard !normalized.isEmpty,
+              let data = try? JSONEncoder().encode(normalized) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 }

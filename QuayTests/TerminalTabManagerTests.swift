@@ -154,4 +154,85 @@ struct TerminalTabManagerTests {
         #expect(!TerminalTabManager.shouldConfirmClose(phase: .disconnected, confirmActiveSessions: false))
         #expect(!TerminalTabManager.shouldConfirmClose(phase: .failed("Session ended"), confirmActiveSessions: false))
     }
+
+    @Test("Login script runner waits for each matcher and sends rows in order")
+    func loginScriptRunnerWaitsForMatchersAndSendsInOrder() async throws {
+        var visibleText = ""
+        var sent: [String] = []
+        let runner = LoginScriptRunner(
+            steps: [
+                LoginScriptStep(match: ":~#", send: "su - babul", sortIndex: 0),
+                LoginScriptStep(match: "Password:", send: "opensesame", sortIndex: 1)
+            ],
+            pollInterval: 0.001,
+            stepTimeout: 0.1,
+            readVisibleText: { visibleText },
+            sendText: { sent.append($0) }
+        )
+
+        runner.start()
+        try await Task.sleep(nanoseconds: 5_000_000)
+        #expect(sent.isEmpty)
+
+        visibleText = "root@host:~#"
+        try await Task.sleep(nanoseconds: 10_000_000)
+        #expect(sent == ["su - babul"])
+
+        visibleText = "Password:"
+        try await Task.sleep(nanoseconds: 10_000_000)
+        #expect(sent == ["su - babul", "opensesame"])
+        runner.stop()
+    }
+
+    @Test("Login script runner does not send later rows before earlier rows match")
+    func loginScriptRunnerPreservesSequentialOrder() async throws {
+        var visibleText = "second prompt"
+        var sent: [String] = []
+        let runner = LoginScriptRunner(
+            steps: [
+                LoginScriptStep(match: "first prompt", send: "first", sortIndex: 0),
+                LoginScriptStep(match: "second prompt", send: "second", sortIndex: 1)
+            ],
+            pollInterval: 0.001,
+            stepTimeout: 0.05,
+            readVisibleText: { visibleText },
+            sendText: { sent.append($0) }
+        )
+
+        runner.start()
+        try await Task.sleep(nanoseconds: 10_000_000)
+        #expect(sent.isEmpty)
+
+        visibleText = "first prompt"
+        try await Task.sleep(nanoseconds: 10_000_000)
+        #expect(sent == ["first"])
+        runner.stop()
+    }
+
+    @Test("Login script runner stops silently when a matcher times out")
+    func loginScriptRunnerStopsOnTimeout() async throws {
+        var sent: [String] = []
+        let runner = LoginScriptRunner(
+            steps: [
+                LoginScriptStep(match: "never", send: "first", sortIndex: 0),
+                LoginScriptStep(match: "ready", send: "second", sortIndex: 1)
+            ],
+            pollInterval: 0.001,
+            stepTimeout: 0.01,
+            readVisibleText: { "ready" },
+            sendText: { sent.append($0) }
+        )
+
+        runner.start()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(sent.isEmpty)
+        runner.stop()
+    }
+
+    @Test("Login script runner strips stored line endings before Return key send")
+    func loginScriptRunnerTerminalTextStripsLineEndings() {
+        #expect(LoginScriptRunner.terminalText(for: "whoami") == "whoami")
+        #expect(LoginScriptRunner.terminalText(for: "whoami\n") == "whoami")
+        #expect(LoginScriptRunner.terminalText(for: "whoami\r") == "whoami")
+    }
 }

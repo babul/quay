@@ -127,6 +127,53 @@ final class GhosttySurfaceBridge {
         }
     }
 
+    func sendReturnKey() {
+        guard let surface = view?.surface else { return }
+        var press = ghostty_input_key_s()
+        press.action = GHOSTTY_ACTION_PRESS
+        press.keycode = 36
+        press.text = nil
+        press.composing = false
+        press.mods = GHOSTTY_MODS_NONE
+        press.consumed_mods = GHOSTTY_MODS_NONE
+        press.unshifted_codepoint = 13
+        _ = ghostty_surface_key(surface, press)
+
+        var release = press
+        release.action = GHOSTTY_ACTION_RELEASE
+        _ = ghostty_surface_key(surface, release)
+    }
+
+    /// Read the currently visible viewport text. Login scripts use this to
+    /// match prompts without intercepting raw PTY output.
+    func visibleText() -> String {
+        guard let surface = view?.surface else { return "" }
+        let selection = ghostty_selection_s(
+            top_left: ghostty_point_s(
+                tag: GHOSTTY_POINT_VIEWPORT,
+                coord: GHOSTTY_POINT_COORD_TOP_LEFT,
+                x: 0,
+                y: 0
+            ),
+            bottom_right: ghostty_point_s(
+                tag: GHOSTTY_POINT_VIEWPORT,
+                coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+                x: 0,
+                y: 0
+            ),
+            rectangle: true
+        )
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text),
+              let ptr = text.text,
+              text.text_len > 0 else {
+            return ""
+        }
+        defer { ghostty_surface_free_text(surface, &text) }
+        let data = Data(bytes: ptr, count: Int(text.text_len))
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     // MARK: Private
 
     private func postDesktopNotification(title: String, body: String) {
