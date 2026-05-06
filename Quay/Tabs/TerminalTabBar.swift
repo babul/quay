@@ -17,7 +17,6 @@ struct TerminalTabBar: View {
                 ForEach(tabManager.tabs) { tab in
                     TabButton(
                         title: tab.displayTitle,
-                        subtitle: tab.displayHost,
                         phase: tab.phase,
                         colorTag: tab.profile.colorTag,
                         showColorBar: showTabColorBars,
@@ -82,7 +81,6 @@ struct TerminalTabBar: View {
 
 private struct TabButton: View {
     var title: String
-    var subtitle: String
     var phase: TerminalTabItem.Phase
     var colorTag: String?
     var showColorBar: Bool
@@ -105,7 +103,7 @@ private struct TabButton: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityTitle)
+            .accessibilityLabel(title)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
 
             Button(action: onClose) {
@@ -156,23 +154,11 @@ private struct TabButton: View {
         }
     }
 
-    private var accessibilityTitle: String {
-        subtitle.isEmpty ? title : "\(title), \(subtitle)"
-    }
-
     private var titleStack: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.system(size: 12, weight: isSelected ? .medium : .regular))
-                .lineLimit(1)
-            if !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(minWidth: 56, maxWidth: 220, alignment: .leading)
+        Text(title)
+            .font(.system(size: 12, weight: isSelected ? .medium : .regular))
+            .lineLimit(1)
+            .frame(minWidth: 56, maxWidth: 220, alignment: .leading)
     }
 
     private var tabAccent: Color {

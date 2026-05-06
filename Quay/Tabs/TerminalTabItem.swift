@@ -225,12 +225,6 @@ final class TerminalTabItem: Identifiable {
         kind == .sftp ? "\(profile.name) SFTP" : profile.name
     }
 
-    var displayHost: String {
-        guard let target = profile.sshTarget else { return profile.hostname }
-        if case .sshConfigAlias(let alias) = target.auth { return alias }
-        return ""
-    }
-
     var terminalBackgroundColor: NSColor {
         surfaceView?.bridge?.state.backgroundColor
             ?? GhosttyResolvedAppearance.backgroundColor(from: GhosttyRuntime.shared.config)

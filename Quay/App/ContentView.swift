@@ -80,7 +80,6 @@ struct ContentView: View {
             detail
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
-        .navigationSubtitle(tabManager.selectedTab?.displayHost ?? "")
     }
 
     private static var savedColumnVisibility: NavigationSplitViewVisibility {
