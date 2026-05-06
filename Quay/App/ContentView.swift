@@ -154,6 +154,9 @@ struct ContentView: View {
     }
 
     private var selectedTerminalBackgroundColor: NSColor {
+        // Force SwiftUI to re-evaluate when the Ghostty config changes.
+        // GhosttyRuntime.config is not @Observable, so we use a token that
+        // is incremented via notification and read here to create a dependency.
         _ = ghosttyConfigChangeToken
         return tabManager.selectedTab?.terminalBackgroundColor
             ?? GhosttyResolvedAppearance.backgroundColor(from: GhosttyRuntime.shared.config)

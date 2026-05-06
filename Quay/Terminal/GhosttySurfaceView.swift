@@ -233,8 +233,11 @@ final class GhosttySurfaceView: NSView {
         // reports tiny deltas (often 1.0). libghostty expects the same
         // pixel-equivalents Apple sends for trackpads, so scale up.
         if !event.hasPreciseScrollingDeltas {
-            x *= 10
-            y *= 10
+            // Discrete scroll wheels report tiny deltas (~1.0); scale to
+            // pixel-equivalents that libghostty expects.
+            let discreteScrollScale: Double = 10
+            x *= discreteScrollScale
+            y *= discreteScrollScale
         }
         var mods: Int32 = 0
         if event.hasPreciseScrollingDeltas { mods |= 1 }

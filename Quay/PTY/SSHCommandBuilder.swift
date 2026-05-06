@@ -159,7 +159,7 @@ enum SSHCommandBuilder {
             argv.append(contentsOf: hostFlags(target))
             installAskpass(askpass, into: &env)
 
-        case .password(_):
+        case .password:
             appendPasswordOnlyOptions(to: &argv)
             argv.append(contentsOf: hostFlags(target))
             installAskpass(askpass, into: &env)

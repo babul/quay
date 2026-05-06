@@ -76,7 +76,7 @@ private struct EncryptedEnvelope: Codable {
     let exportedAt: Date
     let appVersion: String?
     let encryption: EncryptionMetadata
-    let payload: String
+    let payload: Data
 }
 
 // MARK: - SettingsBundle
@@ -165,7 +165,7 @@ enum SettingsBundle {
                 exportedAt: Date(),
                 appVersion: appVersion,
                 encryption: encMeta,
-                payload: ciphertextPlusTag.base64EncodedString()
+                payload: ciphertextPlusTag
             )
             return try enc.encode(envelope)
         } else {
@@ -202,9 +202,7 @@ enum SettingsBundle {
             guard let pw = password else { throw BundleError.missingPassword }
             let envelope: EncryptedEnvelope = try mapMalformed { try dec.decode(EncryptedEnvelope.self, from: data) }
 
-            guard let ciphertextPlusTag = Data(base64Encoded: envelope.payload) else {
-                throw BundleError.malformedFile
-            }
+            let ciphertextPlusTag = envelope.payload
             let nonce: AES.GCM.Nonce = try mapMalformed { try AES.GCM.Nonce(data: encMeta.nonce) }
 
             let payloadData: Data

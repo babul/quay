@@ -500,15 +500,12 @@ struct ConnectionEditor: View {
 private struct LoginScriptStepRow: View {
     @Binding var step: LoginScriptStep
     let onDelete: () -> Void
-    @State private var matchIsRevealed = false
-    @State private var sendIsRevealed = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             FormTextField(
                 title: "Match",
                 text: $step.match,
-                isRevealed: $matchIsRevealed,
                 prompt: "Visible text",
                 width: 170,
                 labelWidth: 46
@@ -516,7 +513,6 @@ private struct LoginScriptStepRow: View {
             FormTextField(
                 title: "Send",
                 text: $step.send,
-                isRevealed: $sendIsRevealed,
                 prompt: "Command",
                 width: 210,
                 labelWidth: 38

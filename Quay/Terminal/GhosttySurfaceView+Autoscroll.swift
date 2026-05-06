@@ -42,11 +42,10 @@ extension GhosttySurfaceView {
         let belowBottom = max(0, -local.y)
         let aboveTop = max(0, local.y - bounds.height)
         guard belowBottom > 0 || aboveTop > 0 else { return }
-        // Lines per tick scales with how far past the edge the cursor is.
-        // ~16 px ≈ one terminal row; cap so a flick at full velocity doesn't
-        // teleport across the whole scrollback.
         let pixels = max(belowBottom, aboveTop)
-        let lines = max(1, min(8, Int(pixels / 16)))
+        let approxRowHeightPx: CGFloat = 16  // ~1 terminal row
+        let maxLinesPerTick = 8
+        let lines = max(1, min(maxLinesPerTick, Int(pixels / approxRowHeightPx)))
         // scroll_page_lines:+N scrolls toward newer content (down/bottom);
         // scroll_page_lines:-N scrolls toward older content (up/top).
         let signedLines = belowBottom > 0 ? lines : -lines
