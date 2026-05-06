@@ -28,6 +28,12 @@
 	<string>Quay connects to SSH servers on your local and private networks.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://babul.github.io/quay/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>x35nHbgxnJg4dlg7Mu4y04qaIeiV4o4d0L6jR9iZ8AY=</string>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>

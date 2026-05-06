@@ -10,6 +10,7 @@ struct QuayApp: App {
     @NSApplicationDelegateAdaptor(AppTerminationDelegate.self) private var appDelegate
 
     let store = Store(initialState: AppFeature.State()) { AppFeature() }
+    @State private var updater = UpdaterViewModel()
 
     var body: some Scene {
         WindowGroup("Quay") {
@@ -53,6 +54,8 @@ struct QuayApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .help) {
+                CheckForUpdatesMenuItem(model: updater)
+                Divider()
                 Button("Quay on GitHub") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/babul/quay")!)
                 }
@@ -67,7 +70,7 @@ struct QuayApp: App {
         }
 
         Settings {
-            AppSettingsView()
+            AppSettingsView(updater: updater.controller.updater)
         }
         .modelContainer(PersistenceContainer.shared)
     }

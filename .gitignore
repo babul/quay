@@ -38,6 +38,9 @@ vendor/ghostty/zig-out/
 vendor/ghostty/.zig-cache/
 .build-ghostty.cache
 
+# Sparkle CLI tools (downloaded on demand by scripts/release.sh)
+vendor/sparkle/
+
 # macOS
 .DS_Store
 .AppleDouble

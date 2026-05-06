@@ -46,6 +46,9 @@ packages:
   ComposableArchitecture:
     url: https://github.com/pointfreeco/swift-composable-architecture
     from: "1.17.0"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
 
 targets:
   Quay:
@@ -61,6 +64,9 @@ targets:
         NSLocalNetworkUsageDescription: "Quay connects to SSH servers on your local and private networks."
         NSPrincipalClass: NSApplication
         LSApplicationCategoryType: public.app-category.developer-tools
+        SUFeedURL: "https://babul.github.io/quay/appcast.xml"
+        SUPublicEDKey: "x35nHbgxnJg4dlg7Mu4y04qaIeiV4o4d0L6jR9iZ8AY="
+        SUEnableInstallerLauncherService: false
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: io.github.babul.quay.bundle
             UTTypeDescription: Quay Settings Bundle
@@ -116,6 +122,8 @@ targets:
       - target: QuayAskpass
         copy:
           destination: executables
+      - package: Sparkle
+        product: Sparkle
       - framework: Frameworks/GhosttyKit.xcframework
         embed: false
       - sdk: Metal.framework

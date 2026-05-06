@@ -38,6 +38,13 @@ private struct PreferencesDTO: Codable {
     let confirmCloseActiveSessions: Bool?
     let sftpClient: String?
     let sftpDefaultLocalDirectory: String?
+    let automaticallyChecksForUpdates: Bool?
+    let automaticallyDownloadsUpdates: Bool?
+}
+
+private enum UpdatesDefaultsKeys {
+    static let checksForUpdates = "SUEnableAutomaticChecks"
+    static let downloadsUpdates = "SUAutomaticallyUpdate"
 }
 
 private struct SettingsPayload: Codable {
@@ -144,7 +151,9 @@ enum SettingsBundle {
             showTabColorBars: UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool,
             confirmCloseActiveSessions: UserDefaults.standard.object(forKey: AppDefaultsKeys.confirmCloseActiveSessions) as? Bool,
             sftpClient: UserDefaults.standard.string(forKey: SFTPClient.defaultsKey),
-            sftpDefaultLocalDirectory: UserDefaults.standard.string(forKey: AppDefaultsKeys.sftpDefaultLocalDirectory)
+            sftpDefaultLocalDirectory: UserDefaults.standard.string(forKey: AppDefaultsKeys.sftpDefaultLocalDirectory),
+            automaticallyChecksForUpdates: UserDefaults.standard.object(forKey: UpdatesDefaultsKeys.checksForUpdates) as? Bool,
+            automaticallyDownloadsUpdates: UserDefaults.standard.object(forKey: UpdatesDefaultsKeys.downloadsUpdates) as? Bool
         )
         let payload = SettingsPayload(folders: folderDTOs, connections: connectionDTOs, preferences: prefs)
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -262,6 +271,8 @@ enum SettingsBundle {
         if let v = prefs.confirmCloseActiveSessions { defaults.set(v, forKey: AppDefaultsKeys.confirmCloseActiveSessions) }
         if let v = prefs.sftpClient { defaults.set(v, forKey: SFTPClient.defaultsKey) }
         if let v = prefs.sftpDefaultLocalDirectory { defaults.set(v, forKey: AppDefaultsKeys.sftpDefaultLocalDirectory) }
+        if let v = prefs.automaticallyChecksForUpdates { defaults.set(v, forKey: UpdatesDefaultsKeys.checksForUpdates) }
+        if let v = prefs.automaticallyDownloadsUpdates { defaults.set(v, forKey: UpdatesDefaultsKeys.downloadsUpdates) }
     }
 
     private static func mapMalformed<T>(_ body: () throws -> T) throws -> T {
