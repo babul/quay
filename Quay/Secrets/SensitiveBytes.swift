@@ -35,7 +35,8 @@ final class SensitiveBytes: @unchecked Sendable {
     /// Convenience: the bytes as a `Data` snapshot. Caller is responsible
     /// for not retaining the resulting `Data` longer than needed.
     func unsafeData() -> Data {
-        Data(bytes: buffer.baseAddress!, count: buffer.count)
+        guard let base = buffer.baseAddress, buffer.count > 0 else { return Data() }
+        return Data(bytes: base, count: buffer.count)
     }
 
     /// Convenience: UTF-8 decode. Returns `nil` if the bytes aren't valid

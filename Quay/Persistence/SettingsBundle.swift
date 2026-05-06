@@ -190,9 +190,7 @@ enum SettingsBundle {
     ) throws -> ImportSummary {
         let dec = makeDecoder()
 
-        let header: EnvelopeHeader
-        do { header = try dec.decode(EnvelopeHeader.self, from: data) }
-        catch { throw BundleError.malformedFile }
+        let header: EnvelopeHeader = try mapMalformed { try dec.decode(EnvelopeHeader.self, from: data) }
 
         guard header.magic == magic else { throw BundleError.malformedFile }
         guard header.formatVersion <= formatVersion else {
@@ -202,16 +200,12 @@ enum SettingsBundle {
         let settingsPayload: SettingsPayload
         if let encMeta = header.encryption {
             guard let pw = password else { throw BundleError.missingPassword }
-            let envelope: EncryptedEnvelope
-            do { envelope = try dec.decode(EncryptedEnvelope.self, from: data) }
-            catch { throw BundleError.malformedFile }
+            let envelope: EncryptedEnvelope = try mapMalformed { try dec.decode(EncryptedEnvelope.self, from: data) }
 
             guard let ciphertextPlusTag = Data(base64Encoded: envelope.payload) else {
                 throw BundleError.malformedFile
             }
-            let nonce: AES.GCM.Nonce
-            do { nonce = try AES.GCM.Nonce(data: encMeta.nonce) }
-            catch { throw BundleError.malformedFile }
+            let nonce: AES.GCM.Nonce = try mapMalformed { try AES.GCM.Nonce(data: encMeta.nonce) }
 
             let payloadData: Data
             do {
@@ -228,12 +222,9 @@ enum SettingsBundle {
                 throw BundleError.malformedFile
             }
 
-            do { settingsPayload = try dec.decode(SettingsPayload.self, from: payloadData) }
-            catch { throw BundleError.malformedFile }
+            settingsPayload = try mapMalformed { try dec.decode(SettingsPayload.self, from: payloadData) }
         } else {
-            let envelope: PlaintextEnvelope
-            do { envelope = try dec.decode(PlaintextEnvelope.self, from: data) }
-            catch { throw BundleError.malformedFile }
+            let envelope: PlaintextEnvelope = try mapMalformed { try dec.decode(PlaintextEnvelope.self, from: data) }
             settingsPayload = envelope.payload
         }
 
@@ -250,6 +241,10 @@ enum SettingsBundle {
     }
 
     // MARK: - Private helpers
+
+    private static func mapMalformed<T>(_ body: () throws -> T) throws -> T {
+        do { return try body() } catch { throw BundleError.malformedFile }
+    }
 
     private static func aadData(version: Int) -> Data {
         Data("\(magic)|v\(version)".utf8)

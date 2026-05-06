@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os
 
 /// One-shot Unix-domain-socket server that hands a single secret to the
 /// bundled `quay-askpass` helper, then shuts down.
@@ -16,14 +17,14 @@ import Foundation
 /// invoked multiple times by OpenSSH (e.g. retry after wrong password),
 /// callers may opt to keep the server alive longer — currently we serve
 /// exactly once.
-final class AskpassServer: @unchecked Sendable {
+final class AskpassServer: Sendable {
     /// Closure that produces the bytes to hand to the helper. Async because
     /// real resolution may shell out (1Password) or hit Touch ID (Keychain).
     typealias Resolver = @Sendable () async throws -> SensitiveBytes
 
     let socketPath: String
     private let resolve: Resolver
-    private var listenerFD: Int32 = -1
+    private let listenerFD = OSAllocatedUnfairLock<Int32>(initialState: -1)
 
     /// General-purpose constructor — the resolution closure picks the secret.
     init(resolve: @escaping @Sendable () async throws -> SensitiveBytes) {
@@ -88,7 +89,7 @@ final class AskpassServer: @unchecked Sendable {
             throw IOError(errno: err)
         }
 
-        listenerFD = fd
+        listenerFD.withLock { $0 = fd }
 
         Task.detached { [self] in
             await self.serveOnce()
@@ -101,16 +102,17 @@ final class AskpassServer: @unchecked Sendable {
     }
 
     private func teardown() {
-        if listenerFD >= 0 {
-            close(listenerFD)
-            listenerFD = -1
+        let fd = listenerFD.withLock { state -> Int32 in
+            let old = state; state = -1; return old
         }
+        if fd >= 0 { close(fd) }
         unlink(socketPath)
     }
 
     private func serveOnce() async {
-        guard listenerFD >= 0 else { return }
-        let client = accept(listenerFD, nil, nil)
+        let fd = listenerFD.withLock { $0 }
+        guard fd >= 0 else { return }
+        let client = accept(fd, nil, nil)
         defer { teardown() }
         guard client >= 0 else { return }
 

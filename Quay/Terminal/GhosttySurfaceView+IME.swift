@@ -179,14 +179,12 @@ extension GhosttySurfaceView: @preconcurrency NSTextInputClient {
         defer { ghostty_surface_free_text(surface, &text) }
         var attrs: [NSAttributedString.Key: Any] = [:]
         if let fontRaw = ghostty_surface_quicklook_font(surface) {
-            let font = Unmanaged<CTFont>.fromOpaque(fontRaw)
-            attrs[.font] = font.takeUnretainedValue()
-            font.release()
+            attrs[.font] = Unmanaged<CTFont>.fromOpaque(fontRaw).takeRetainedValue()
         }
         return NSAttributedString(string: String(cString: text.text), attributes: attrs)
     }
 
-    func characterIndex(for point: NSPoint) -> Int { 0 }
+    func characterIndex(for point: NSPoint) -> Int { NSNotFound }
 
     func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         guard let surface else {
