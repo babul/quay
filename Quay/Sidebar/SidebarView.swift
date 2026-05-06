@@ -27,6 +27,7 @@ struct SidebarView: View {
     @State private var renameTarget: Folder?
     @State private var renameText: String = ""
     @State private var collapsedFolderIDs = SidebarCollapseState.load()
+    @State private var lastConnectionClick: (id: UUID, time: Date)?
     @FocusState private var searchFocused: Bool
 
     enum EditorTarget: Identifiable {
@@ -232,10 +233,7 @@ struct SidebarView: View {
         }
         .tag(profile.id)
         .contentShape(Rectangle())
-        .onTapGesture {
-            selection = profile.id
-            onOpenConnection(profile)
-        }
+        .onTapGesture { handleConnectionClick(profile) }
         .contextMenu {
             Button("Connect New Tab") {
                 selection = profile.id
@@ -246,6 +244,20 @@ struct SidebarView: View {
             Button("Delete", role: .destructive) {
                 ctx.delete(profile)
             }
+        }
+    }
+
+    private func handleConnectionClick(_ profile: ConnectionProfile) {
+        let now = Date()
+        let isSecondClick = lastConnectionClick?.id == profile.id
+            && now.timeIntervalSince(lastConnectionClick?.time ?? .distantPast) <= NSEvent.doubleClickInterval
+
+        selection = profile.id
+        lastConnectionClick = (profile.id, now)
+
+        if isSecondClick {
+            lastConnectionClick = nil
+            onOpenConnection(profile)
         }
     }
 
