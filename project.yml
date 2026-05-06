@@ -14,8 +14,6 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    ARCHS: arm64
-    VALID_ARCHS: arm64
     EXCLUDED_ARCHS[sdk=macosx*]: x86_64
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     DEAD_CODE_STRIPPING: YES
