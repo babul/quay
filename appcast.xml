@@ -10,7 +10,7 @@
         <item>
             <title>Version 0.2.0</title>
             <pubDate>Wed, 06 May 2026 20:38:07 +0000</pubDate>
-            <sparkle:version>1</sparkle:version>
+            <sparkle:version>3</sparkle:version>
             <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/babul/quay/releases/download/v0.2.0/Quay-0.2.0.zip"
