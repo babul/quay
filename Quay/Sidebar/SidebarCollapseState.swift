@@ -3,6 +3,16 @@ import Foundation
 
 enum SidebarCollapseState {
     static let storageKey = "sidebar.collapsedFolderIDs"
+    static let sshConfigExpandedKey = "sidebar.sshConfigExpanded"
+
+    static func loadSSHConfigExpanded(from defaults: UserDefaults = .standard) -> Bool {
+        guard defaults.object(forKey: sshConfigExpandedKey) != nil else { return true }
+        return defaults.bool(forKey: sshConfigExpandedKey)
+    }
+
+    static func saveSSHConfigExpanded(_ expanded: Bool, to defaults: UserDefaults = .standard) {
+        defaults.set(expanded, forKey: sshConfigExpandedKey)
+    }
 
     static func load(from defaults: UserDefaults = .standard) -> Set<UUID> {
         let values = defaults.stringArray(forKey: storageKey) ?? []

@@ -27,6 +27,7 @@ struct SidebarView: View {
     @State private var query: String = ""
     @State private var groupEditTarget: Folder?
     @State private var collapsedFolderIDs = SidebarCollapseState.load()
+    @State private var sshConfigExpanded = SidebarCollapseState.loadSSHConfigExpanded()
     @State private var lastConnectionClick: (id: UUID, time: Date)?
     @State private var discoveredSSHHosts: [DiscoveredSSHHost] = []
     @FocusState private var searchFocused: Bool
@@ -77,6 +78,9 @@ struct SidebarView: View {
                 &collapsedFolderIDs,
                 keeping: Set(ids)
             )
+        }
+        .onChange(of: sshConfigExpanded) { _, val in
+            SidebarCollapseState.saveSSHConfigExpanded(val)
         }
     }
 
@@ -282,9 +286,10 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sshConfigHostsSection: some View {
-        if !visibleDiscoveredSSHHosts.isEmpty {
-            DisclosureGroup {
-                ForEach(visibleDiscoveredSSHHosts, id: \.id) { host in
+        let visibleHosts = visibleDiscoveredSSHHosts
+        if !visibleHosts.isEmpty {
+            DisclosureGroup(isExpanded: $sshConfigExpanded) {
+                ForEach(visibleHosts, id: \.id) { host in
                     sshConfigHostRow(host)
                 }
             } label: {
@@ -295,7 +300,7 @@ struct SidebarView: View {
                     Text("SSH Config")
                         .lineLimit(1)
                     Spacer()
-                    Text("\(visibleDiscoveredSSHHosts.count)")
+                    Text("\(visibleHosts.count)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
