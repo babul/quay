@@ -102,6 +102,9 @@ if [[ "$BUILD" != "$CURRENT_BUILD" ]]; then
   CHANGED_YML=1
 fi
 
+command -v xcodegen >/dev/null || fail "xcodegen not found — run: brew install xcodegen"
+xcodegen generate --quiet
+
 if [[ "$CHANGED_YML" -eq 1 ]]; then
   git add project.yml
   git commit -m "chore(release): bump to ${TAG}"
