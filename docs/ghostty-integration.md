@@ -4,7 +4,7 @@ How Quay embeds [Ghostty](https://ghostty.org)'s terminal core, and how to keep 
 
 ## Why we vendor + build
 
-There is no public Swift Package distribution of `libghostty`. The C ABI is alpha (Mitchell Hashimoto's [Sept 2025 blog](https://mitchellh.com/writing/libghostty-is-coming): *"public alpha (not promising API stability)"*). All known embedders compile from source and pin to a specific commit.
+There is no public Swift Package distribution of `libghostty`. The C API is alpha (Mitchell Hashimoto's [Sept 2025 blog](https://mitchellh.com/writing/libghostty-is-coming): *"public alpha (not promising API stability)"*). All known embedders compile from source and pin to a specific commit.
 
 We do the same: `vendor/ghostty` is a git submodule pinned to a known-good SHA, and `scripts/build-ghostty.sh` compiles it into `Frameworks/GhosttyKit.xcframework`.
 

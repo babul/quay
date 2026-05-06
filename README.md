@@ -1,50 +1,56 @@
-# Quay
-
 <p align="center">
-  <img src="quay.svg" width="128" alt="Quay logo">
+  <img src="quay.svg" width="96" alt="Quay logo">
 </p>
 
-<!-- TODO: hero screenshot — drop a GIF or PNG here once the UI stabilises (docs/screenshots/) -->
+<h1 align="center">Quay</h1>
 
-*A quay (/kiː/, "key") is a solid structure built along the edge of a harbor where ships come alongside to moor and unload — the place where vessels meet the shore. A fitting name for an app that's your Mac's edge, where remote hosts tie up. (Some say "kay." You do you.)*
+<p align="center">
+  Native macOS SSH &amp; SFTP connection manager — free, no subscription.<br>
+  <sub>Built on <a href="https://ghostty.org">Ghostty</a>'s terminal core &nbsp;·&nbsp; macOS 14+ &nbsp;·&nbsp; Apple Silicon</sub>
+</p>
 
-A native macOS connection manager for SSH, built on [Ghostty](https://ghostty.org)'s terminal core (`libghostty`).
+<p align="center">
+  <img src="screenshot.png" width="1280" alt="Quay — SSH connection manager with sidebar groups and tabbed terminals">
+</p>
 
-[Ghostty](https://ghostty.org) is a fantastic terminal but has no connection manager. [Tabby](https://tabby.sh) has connection management but is Electron-based — slow, heavy, and cumbersome. Quay grafts connection management onto Ghostty's terminal core: a native Swift app that stays out of the way of your CPU and battery while keeping your SSH sessions alive.
+---
 
-> **Status:** v0.1 in development. Multi-tab SSH sessions, login scripts, SFTP, and ssh.config host discovery are all wired end-to-end.
+*A quay (/kiː/, "key") is a solid structure built along the edge of a harbor where ships come alongside to moor and unload — the place where vessels meet the shore. A fitting name for an app that's your Mac's edge, where remote hosts tie up. (Some say "kay." You do you!)*
+
+## Why Quay?
+
+- **Free.** No subscription, no account, no telemetry.
+- **Native.** Built in Swift on Ghostty's terminal core — no Electron, no background Chromium process eating your CPU or battery.
+- **Stays out of your way.** Your existing `~/.ssh/config`, SSH keys, macOS Keychain, and 1Password SSH agent all work without any Quay-specific setup.
+
+If you're managing remote hosts and don't want to pay a monthly fee for it, Quay is worth a look.
+
+## Install
+
+1. Download the latest **Quay.dmg** from [Releases](https://github.com/babul/quay/releases/latest).
+2. Drag **Quay** to `/Applications`.
+3. Launch. Future updates arrive automatically via Sparkle.
+
+**Requirements:** macOS 14 (Sonoma) or newer · Apple Silicon (arm64)
+
+> Want to build from source? See [Building from source](#building-from-source) below.
+
+## Features
+
+- **Multi-tab SSH sessions** (one per tab)
+- **Login scripts** (run commands after the shell opens; step values can be locked into macOS Keychain so no password ever touches the on-disk store)
+- **SFTP** (easy file transfer with macOS built-in sftp, OpenSSH, or lftp)
+- **`~/.ssh/config` integration** — your existing config hosts appear in the sidebar automatically, no re-entry
+- **Color tags** (for easy identification of different hosts)
+- **Keychain auth** (no more typing passwords — for SSH credentials and locked login-script steps)
+- **Import/Export Settings** (save and load multiple connections; password-encrypt the bundle to transfer securely to a new Mac or a colleague)
+- **Light/Dark mode** (built-in)
+- **Automatic updates** (via Sparkle)
+- **Saved state** (window positions, search, etc. all saved and restored on app launch)
 
 ## Privacy
 
-Quay makes no network calls except the SSH connections you explicitly open. There is no telemetry, no analytics, no auto-update beacon, and no crash reporting. The only data that ever leaves your machine is what `/usr/bin/ssh` sends to hosts you configure.
-
-## Requirements
-
-- macOS 14 (Sonoma) or newer
-- Apple Silicon (arm64) — Intel Macs are not supported. Ghostty's upstream build system (`GhosttyXCFramework.zig`) only offers `native` (host arch) and `universal` (arm64 + iOS slices) xcframework targets — there is no mac-fat arm64+x86_64 option, so producing a dual-arch `GhosttyKit.xcframework` would require an upstream Ghostty patch or a manual `lipo` step. PRs welcome.
-- Xcode 16+ (Swift 6)
-- [Zig 0.15](https://ziglang.org) (`brew install zig@0.15` — Ghostty 1.3.x requires this exact line)
-- [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
-
-## First-time setup
-
-> **v0.1 — build from source only.** There are no signed or notarized builds yet. Xcode is the only install path.
-
-```sh
-git clone --recurse-submodules <this-repo> quay
-cd quay
-./scripts/bootstrap.sh
-open Quay.xcodeproj
-```
-
-`bootstrap.sh` will:
-
-1. Verify `zig@0.15` and `xcodegen` are installed.
-2. Initialize the `vendor/ghostty` submodule (≈300 MB).
-3. Build `libghostty` from source into `Frameworks/GhosttyKit.xcframework` (5–10 min on a fresh box; instant after that thanks to the cache).
-4. Generate `Quay.xcodeproj` from `project.yml`.
-
-Then ⌘R inside Xcode launches the app.
+Quay makes no network calls except the SSH connections you explicitly open. There is no telemetry, no analytics, and no crash reporting. The only data that ever leaves your machine is what `/usr/bin/ssh` sends to hosts you configure. Sparkle is used to deliver updates hosted from GitHub.
 
 ## Adding your first connection
 
@@ -60,7 +66,7 @@ Then ⌘R inside Xcode launches the app.
    | **Password** | Reads the password from your Mac's Keychain — no typing required |
    | **ssh.config alias** | Delegates entirely to a `Host` block in `~/.ssh/config` |
 
-   **Quay never stores your passwords or keys.** Authentication is handled by your Mac — via SSH keys on disk, the system SSH agent, macOS Keychain, or 1Password if you have its [SSH agent](https://developer.1password.com/docs/ssh/agent/) enabled. The `keychain://service/account` secret reference just tells Quay where on your Mac to look; the credential itself lives in Keychain, not in Quay.
+   **Quay never stores your passwords or keys.** Your Mac handles authentication — via SSH keys on disk, the system SSH agent, macOS Keychain, or 1Password if you have its [SSH agent](https://developer.1password.com/docs/ssh/agent/) enabled. The `keychain://service/account` secret reference just tells Quay where on your Mac to look; the credential itself lives in Keychain, not in Quay.
 
 4. Hit **Save**, click the connection, terminal opens.
 
@@ -128,7 +134,7 @@ Configure steps in the connection editor under **Login script**.
 | 2 | `password` | `mysudopassword` |
 | 3 | `#` | |
 
-> **Security note:** Text in the `send` field is stored as-is in Quay's local database. Do not store passwords here if you consider them sensitive — prefer `NOPASSWD` in sudoers, an SSH certificate with forced command, or another mechanism that doesn't require embedding a password in a config file.
+> **Securing send values:** Text in the `send` field is stored in Quay's local database by default. If the step needs to send a password, tap the **lock icon** (🔒) next to the Send field, enter the value, and confirm — Quay writes it to macOS Keychain and stores only a `keychain://com.quay.scripts/<step-id>` URI on disk. Touch ID unlocks it at connect time. For sudo specifically, `NOPASSWD` in sudoers or an SSH certificate with forced command is still the better approach; for everything else, the lock action keeps the secret out of your backups and exports.
 
 **Example: tail a log on connect**
 
@@ -157,7 +163,7 @@ Quay opens SFTP sessions using whichever client you select in **Settings → SFT
 | **Scripting / automation** | No | No | Yes |
 | **Colors & rich UI** | No | No | Yes |
 
-lftp is the better choice. It mirrors directories, resumes interrupted transfers, runs jobs in parallel, and has a proper interactive shell. The built-in `sftp` client does none of that. Quay configures lftp colors automatically.
+`lftp` is the better choice. It mirrors directories, resumes interrupted transfers, runs jobs in parallel, and has a proper interactive shell. The built-in `sftp` client does none of that. Quay configures `lftp` colors automatically.
 
 ## Exporting and importing settings
 
@@ -165,26 +171,56 @@ Use **File → Export Settings** to save all your connection profiles and folder
 
 Two common uses: moving to a new Mac (export on the old one, import on the new), or handing a set of connections to a teammate.
 
-The bundle contains connection names, hostnames, usernames, auth methods, and folder structure — but **never your actual passwords or keys**. Those stay in your Mac's Keychain (or wherever you keep them). If you share a bundle with someone else, they'll need to add their own credentials for any connections that use Keychain auth.
+The bundle contains connection names, hostnames, usernames, auth methods, and folder structure. SSH passwords and key passphrases stay in your Mac's Keychain — the bundle holds only their reference URIs, so sharing a bundle with someone else doesn't leak those credentials (the recipient will need to add their own). Locked login-script step values are the exception: they're resolved to plaintext inside the bundle so it can be used on a different machine. If the bundle might be read by someone else, set a bundle password.
 
-Bundles can be encrypted with a password (AES-256) on export — worth doing if you're sending one to someone else or storing it outside your machine.
+Bundles can be encrypted with a password (AES-256) on export. The export sheet reminds you when locked login-script values are present — that's the case where the password matters most.
 
-## Running tests
+---
+
+## Building from source
+
+### Requirements
+
+- macOS 14 (Sonoma) or newer, Apple Silicon (arm64) — Intel Macs are not supported. Ghostty's upstream build system (`GhosttyXCFramework.zig`) only offers `native` (host arch) and `universal` (arm64 + iOS slices) xcframework targets — there is no mac-fat arm64+x86_64 option, so producing a dual-arch `GhosttyKit.xcframework` would require an upstream Ghostty patch or a manual `lipo` step. PRs welcome.
+- Xcode 16+ (Swift 6)
+- [Zig 0.15](https://ziglang.org) (`brew install zig@0.15` — Ghostty 1.3.x requires this exact version)
+- [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
+
+### Setup
+
+```sh
+git clone --recurse-submodules <this-repo> quay
+cd quay
+./scripts/bootstrap.sh
+open Quay.xcodeproj
+```
+
+`bootstrap.sh` will:
+
+1. Verify `zig@0.15` and `xcodegen` are installed.
+2. Initialize the `vendor/ghostty` submodule (≈300 MB).
+3. Build `libghostty` from source into `Frameworks/GhosttyKit.xcframework` (5–10 min on a fresh box; instant after that thanks to the cache).
+4. Generate `Quay.xcodeproj` from `project.yml`.
+
+Then ⌘R inside Xcode launches the app.
+
+### Running tests
 
 ```sh
 xcodebuild -project Quay.xcodeproj -scheme Quay -configuration Debug -destination 'platform=macOS' test
 ```
 
-Currently 26 tests across 6 suites:
+Currently 130+ tests across 7 suites:
 
-- `SSHCommandBuilder` — argv assembly, shell quoting, askpass env wiring (10 tests)
-- `Persistence` — SwiftData round-trips, auth reconstruction (5 tests)
-- `SecretReference` — URI parsing (3 tests)
-- `AskpassServer + helper` — actually invokes the bundled `quay-askpass` binary against a server with a fake resolver and asserts on stdout (2 tests)
-- `FuzzySearch` — sidebar search ranking (5 tests)
-- `Smoke` (1 test)
+- `SSHCommandBuilder` — argv assembly, shell quoting, askpass env wiring
+- `Persistence` — SwiftData round-trips, auth reconstruction, login-script step locked/unlocked states
+- `SecretReference` — URI parsing, login-script step URI format
+- `KeychainStore write / delete` — upsert, idempotent update, delete-non-existent tolerance
+- `AskpassServer + helper` — actually invokes the bundled `quay-askpass` binary against a server with a fake resolver and asserts on stdout
+- `FuzzySearch` — sidebar search ranking
+- `Smoke`
 
-## Layout
+### Layout
 
 ```
 Quay/             App target sources
@@ -201,14 +237,16 @@ QuayAskpass/      SSH_ASKPASS helper CLI (bundled inside the .app)
 QuayTests/        Swift Testing suite
 Frameworks/       Built libghostty xcframework (gitignored)
 vendor/ghostty/   Pinned Ghostty source (git submodule)
-scripts/          build-ghostty.sh, bootstrap.sh
-docs/             ghostty-integration.md, secrets-architecture.md
+scripts/          build-ghostty.sh, bootstrap.sh, release.sh
+docs/             ghostty-integration.md, secrets-architecture.md, notarization.md, sparkle-updates.md
 ```
 
-## Design notes
+### Design notes
 
 - [`docs/ghostty-integration.md`](docs/ghostty-integration.md) — how libghostty is built, pinned, and embedded; how to bump the pin.
 - [`docs/secrets-architecture.md`](docs/secrets-architecture.md) — the askpass IPC, the URI scheme, the zeroing contract, and the threat model.
+- [`docs/notarization.md`](docs/notarization.md) — Developer ID signing and notarytool flow.
+- [`docs/sparkle-updates.md`](docs/sparkle-updates.md) — release pipeline, EdDSA keys, and appcast format.
 - [`SECURITY.md`](SECURITY.md) — vulnerability reporting, in-scope components, and how to reach maintainers privately.
 
 ## Acknowledgements
