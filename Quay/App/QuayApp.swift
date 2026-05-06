@@ -43,6 +43,18 @@ struct QuayApp: App {
                 }
                 .keyboardShortcut("l", modifiers: [.command])
             }
+            CommandGroup(replacing: .help) {
+                Button("Quay on GitHub") {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/babul/quay")!)
+                }
+                Button("Report an Issue") {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/babul/quay/issues/new")!)
+                }
+                Divider()
+                Button("Security Policy") {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/babul/quay/security/policy")!)
+                }
+            }
         }
 
         Settings {
