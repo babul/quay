@@ -54,7 +54,7 @@ xcrun notarytool log <submission-id> --keychain-profile notarytool-quay
 **Common rejection reasons:**
 - *Hardened Runtime not enabled* — check `ENABLE_HARDENED_RUNTIME: YES` is set in `project.yml` for all targets.
 - *Secure timestamp missing* — codesign must use `-o runtime` (hardened runtime implies this; `xcodebuild archive` sets it when `ENABLE_HARDENED_RUNTIME=YES`).
-- *Embedded binary not signed* — `QuayAskpass` (at `Quay.app/Contents/MacOS/quay-askpass`) must be signed with the same Developer ID. `xcodebuild archive` handles this automatically given `DEVELOPMENT_TEAM` and `CODE_SIGN_IDENTITY` are set correctly in `project.yml`.
+- *Embedded binary not signed / no secure timestamp* — all nested binaries (including Sparkle's `Updater.app`, `Autoupdate`, `Installer.xpc`, `Downloader.xpc`) must be re-signed with your Developer ID. This is handled by `xcodebuild -exportArchive`; it will **not** happen if you copy the `.app` directly from the `.xcarchive`. Always use the export step.
 
 **Signing identity missing** — confirm the Developer ID Application cert is installed:
 ```sh

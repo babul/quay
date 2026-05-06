@@ -52,10 +52,13 @@ if [[ "$SKIP_ARCHIVE" -eq 0 ]]; then
     -archivePath "$ARCHIVE" \
     archive
 
-  bold "==> Copying .app from archive"
+  bold "==> Exporting and re-signing with Developer ID"
   rm -rf "$EXPORT_DIR"
-  mkdir -p "$EXPORT_DIR"
-  cp -R "$ARCHIVE/Products/Applications/Quay.app" "$EXPORT_DIR/"
+  xcodebuild \
+    -exportArchive \
+    -archivePath "$ARCHIVE" \
+    -exportPath "$EXPORT_DIR" \
+    -exportOptionsPlist "$REPO_ROOT/ExportOptions.plist"
 else
   bold "==> Skipping archive (--skip-archive)"
   [[ -d "$APP" ]] || fail "export not found at $APP; run without --skip-archive first"
