@@ -26,7 +26,8 @@ struct TerminalTabBar: View {
                         onEdit: { onEditConnection(tab.profile) },
                         onDisconnect: { tabManager.disconnectTab(tab) },
                         onReconnect: { tabManager.reconnectTab(tab) },
-                        onClose: { requestClose(tab) }
+                        onClose: { requestClose(tab) },
+                        onContextClose: { tabManager.closeTab(tab) }
                     )
                     .onDrag {
                         NSItemProvider(object: tab.id.uuidString as NSString)
@@ -96,6 +97,7 @@ private struct TabButton: View {
     var onDisconnect: () -> Void
     var onReconnect: () -> Void
     var onClose: () -> Void
+    var onContextClose: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -140,7 +142,7 @@ private struct TabButton: View {
 
             Divider()
 
-            Button(action: onClose) {
+            Button(action: onContextClose) {
                 Label("Close Tab", systemImage: "xmark.circle")
             }
         }
