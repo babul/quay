@@ -21,7 +21,7 @@ Quay makes no network calls except the SSH connections you explicitly open. Ther
 ## Requirements
 
 - macOS 14 (Sonoma) or newer
-- Apple Silicon (Intel best-effort via Rosetta)
+- Apple Silicon (arm64) — Intel Macs are not supported. Ghostty's upstream build system (`GhosttyXCFramework.zig`) only offers `native` (host arch) and `universal` (arm64 + iOS slices) xcframework targets — there is no mac-fat arm64+x86_64 option, so producing a dual-arch `GhosttyKit.xcframework` would require an upstream Ghostty patch or a manual `lipo` step. PRs welcome.
 - Xcode 16+ (Swift 6)
 - [Zig 0.15](https://ziglang.org) (`brew install zig@0.15` — Ghostty 1.3.x requires this exact line)
 - [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
