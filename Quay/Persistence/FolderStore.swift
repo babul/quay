@@ -80,6 +80,39 @@ enum FolderStore {
     }
 
     @discardableResult
+    static func saveSSHConfigHost(
+        _ host: DiscoveredSSHHost,
+        in context: ModelContext
+    ) throws -> ConnectionProfile {
+        let folder = try ensureDefaultFolder(in: context)
+        let existingNames = Set(folder.connections.map(\.name))
+        let profile = ConnectionProfile(
+            name: uniqueConnectionName(
+                baseName: host.displayName,
+                existingNames: existingNames
+            ),
+            hostname: host.alias,
+            authMethod: .sshConfigAlias,
+            sshConfigAlias: host.alias,
+            sortIndex: nextConnectionSortIndex(in: folder),
+            parent: folder
+        )
+        context.insert(profile)
+        try context.save()
+        return profile
+    }
+
+    private static func uniqueConnectionName(baseName: String, existingNames: Set<String>) -> String {
+        guard existingNames.contains(baseName) else { return baseName }
+
+        var index = 2
+        while existingNames.contains("\(baseName) \(index)") {
+            index += 1
+        }
+        return "\(baseName) \(index)"
+    }
+
+    @discardableResult
     static func duplicateConnection(
         _ profile: ConnectionProfile,
         in context: ModelContext

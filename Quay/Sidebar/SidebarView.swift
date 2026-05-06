@@ -28,6 +28,7 @@ struct SidebarView: View {
     @State private var renameText: String = ""
     @State private var collapsedFolderIDs = SidebarCollapseState.load()
     @State private var lastConnectionClick: (id: UUID, time: Date)?
+    @State private var discoveredSSHHosts: [DiscoveredSSHHost] = []
     @FocusState private var searchFocused: Bool
 
     enum EditorTarget: Identifiable {
@@ -65,7 +66,10 @@ struct SidebarView: View {
                 .disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
             Button("Cancel", role: .cancel) { clearRenameState() }
         }
-        .onAppear { bootstrapFolders() }
+        .onAppear {
+            bootstrapFolders()
+            refreshDiscoveredSSHHosts()
+        }
         .onChange(of: folders.map(\.id)) { _, ids in
             SidebarCollapseState.prune(
                 &collapsedFolderIDs,
@@ -99,6 +103,25 @@ struct SidebarView: View {
     private var filtered: [ConnectionProfile] {
         FuzzySearch.rank(allConnections, query: query) { profile in
             [profile.name, profile.hostname]
+        }
+    }
+
+    private var visibleDiscoveredSSHHosts: [DiscoveredSSHHost] {
+        let savedAliases = Set(
+            allConnections.compactMap { profile -> String? in
+                guard profile.authMethod == .sshConfigAlias,
+                      let alias = profile.sshConfigAlias,
+                      !alias.isEmpty
+                else { return nil }
+                return alias.lowercased()
+            }
+        )
+        return discoveredSSHHosts.filter { !savedAliases.contains($0.alias.lowercased()) }
+    }
+
+    private var filteredDiscoveredSSHHosts: [DiscoveredSSHHost] {
+        FuzzySearch.rank(visibleDiscoveredSSHHosts, query: query) { host in
+            [host.displayName, host.alias]
         }
     }
 
@@ -141,9 +164,13 @@ struct SidebarView: View {
         List(selection: $selection) {
             if query.isEmpty {
                 groupedByFolder
+                sshConfigHostsSection
             } else {
                 ForEach(filtered, id: \.id) { profile in
                     connectionRow(profile)
+                }
+                ForEach(filteredDiscoveredSSHHosts, id: \.id) { host in
+                    sshConfigHostRow(host)
                 }
             }
         }
@@ -247,6 +274,60 @@ struct SidebarView: View {
         }
     }
 
+    @ViewBuilder
+    private var sshConfigHostsSection: some View {
+        if !visibleDiscoveredSSHHosts.isEmpty {
+            DisclosureGroup {
+                ForEach(visibleDiscoveredSSHHosts, id: \.id) { host in
+                    sshConfigHostRow(host)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "terminal")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text("SSH Config")
+                        .lineLimit(1)
+                    Spacer()
+                    Text("\(visibleDiscoveredSSHHosts.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func sshConfigHostRow(_ host: DiscoveredSSHHost) -> some View {
+        HStack {
+            Image(systemName: "terminal")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(host.displayName)
+                Text("~/.ssh/config")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .tag(host.id)
+        .contentShape(Rectangle())
+        .onTapGesture { handleSSHConfigHostClick(host) }
+        .contextMenu {
+            Button("Connect New Tab") {
+                selection = host.id
+                onOpenConnectionInNewTab(transientProfile(for: host))
+            }
+            Button("Save as Quay Connection") {
+                saveSSHConfigHost(host)
+            }
+            Button("Save and Edit…") {
+                saveSSHConfigHost(host, editAfterSave: true)
+            }
+        }
+        .help(sshConfigHostHelp(host))
+    }
+
     private func handleConnectionClick(_ profile: ConnectionProfile) {
         let now = Date()
         let isSecondClick = lastConnectionClick?.id == profile.id
@@ -258,6 +339,47 @@ struct SidebarView: View {
         if isSecondClick {
             lastConnectionClick = nil
             onOpenConnection(profile)
+        }
+    }
+
+    private func handleSSHConfigHostClick(_ host: DiscoveredSSHHost) {
+        let now = Date()
+        let isSecondClick = lastConnectionClick?.id == host.id
+            && now.timeIntervalSince(lastConnectionClick?.time ?? .distantPast) <= NSEvent.doubleClickInterval
+
+        selection = host.id
+        lastConnectionClick = (host.id, now)
+
+        if isSecondClick {
+            lastConnectionClick = nil
+            onOpenConnection(transientProfile(for: host))
+        }
+    }
+
+    private func transientProfile(for host: DiscoveredSSHHost) -> ConnectionProfile {
+        ConnectionProfile(
+            id: host.id,
+            name: host.displayName,
+            hostname: host.alias,
+            authMethod: .sshConfigAlias,
+            sshConfigAlias: host.alias
+        )
+    }
+
+    private func sshConfigHostHelp(_ host: DiscoveredSSHHost) -> String {
+        if let lineNumber = host.lineNumber {
+            return "\(host.sourceFile):\(lineNumber)"
+        }
+        return host.sourceFile
+    }
+
+    private func saveSSHConfigHost(_ host: DiscoveredSSHHost, editAfterSave: Bool = false) {
+        guard let profile = try? FolderStore.saveSSHConfigHost(host, in: ctx) else {
+            return
+        }
+        selection = profile.id
+        if editAfterSave {
+            onEditConnection(profile)
         }
     }
 
@@ -351,6 +473,10 @@ struct SidebarView: View {
 
     private func bootstrapFolders() {
         try? FolderStore.bootstrapDefaultFolder(in: ctx)
+    }
+
+    private func refreshDiscoveredSSHHosts() {
+        discoveredSSHHosts = SSHConfigHostProvider.loadHosts()
     }
 
     private var localHostname: String {

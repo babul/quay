@@ -259,6 +259,38 @@ struct PersistenceTests {
         #expect(next == "Prod Copy 3")
     }
 
+    @Test("save SSH config host creates alias profile in default folder")
+    func saveSSHConfigHostCreatesAliasProfileInDefaultFolder() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let host = DiscoveredSSHHost(alias: "prod-bastion", sourceFile: "/Users/me/.ssh/config")
+
+        let profile = try FolderStore.saveSSHConfigHost(host, in: ctx)
+
+        #expect(profile.name == "prod-bastion")
+        #expect(profile.hostname == "prod-bastion")
+        #expect(profile.auth == .sshConfigAlias(alias: "prod-bastion"))
+        #expect(profile.parent?.name == FolderStore.defaultFolderName)
+        #expect(profile.sortIndex == 0)
+    }
+
+    @Test("save SSH config host uniquifies display name within default folder")
+    func saveSSHConfigHostUniquifiesDisplayNameWithinDefaultFolder() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let hosts = try FolderStore.ensureDefaultFolder(in: ctx)
+        ctx.insert(ConnectionProfile(name: "prod-bastion", hostname: "manual", parent: hosts))
+        try ctx.save()
+
+        let profile = try FolderStore.saveSSHConfigHost(
+            DiscoveredSSHHost(alias: "prod-bastion", sourceFile: "/Users/me/.ssh/config"),
+            in: ctx
+        )
+
+        #expect(profile.name == "prod-bastion 2")
+        #expect(profile.sshConfigAlias == "prod-bastion")
+    }
+
     @Test("duplicate connection copies fields and appends to same folder")
     func duplicateConnectionCopiesFieldsAndAppendsToSameFolder() throws {
         let container = try Self.makeContainer()
