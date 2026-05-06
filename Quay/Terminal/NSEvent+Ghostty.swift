@@ -3,66 +3,113 @@ import Carbon
 import GhosttyKit
 
 extension NSEvent {
-    /// Build a `ghostty_input_key_s` for this event.
-    ///
-    /// Does NOT set `text` or `composing` — those are set by the IME path
-    /// in `GhosttySurfaceView+IME.swift`.
     func ghosttyKeyEvent(
         _ action: ghostty_input_action_e,
         translationMods: NSEvent.ModifierFlags? = nil
     ) -> ghostty_input_key_s {
-        var key_ev = ghostty_input_key_s()
-        key_ev.action = action
-        key_ev.keycode = UInt32(keyCode)
-        key_ev.text = nil
-        key_ev.composing = false
-
-        key_ev.mods = ghosttyMods(modifierFlags)
-        // macOS has no direct "consumed mods" API; approximate: ctrl and cmd
-        // never contribute to text translation, so subtract them.
-        key_ev.consumed_mods = ghosttyMods(
-            (translationMods ?? modifierFlags).subtracting([.control, .command])
-        )
-
-        // Unshifted codepoint: the codepoint with no modifiers applied.
-        key_ev.unshifted_codepoint = 0
-        if self.type == .keyDown || self.type == .keyUp {
-            if let chars = characters(byApplyingModifiers: []),
-               let scalar = chars.unicodeScalars.first {
-                key_ev.unshifted_codepoint = scalar.value
-            }
-        }
-
-        return key_ev
+        GhosttyKeyInput(event: self, action: action, translationMods: translationMods).make()
     }
 
-    /// Text suitable for the `text` field of `ghostty_input_key_s`.
-    ///
-    /// Returns `nil` for control characters (Ghostty handles those internally)
-    /// and for Private Use Area codepoints (function keys).
     var ghosttyCharacters: String? {
-        guard let characters else { return nil }
+        GhosttyEventText(event: self).terminalText
+    }
+}
 
-        if characters.count == 1,
-           let scalar = characters.unicodeScalars.first {
-            if scalar.value < 0x20 {
-                // Control char — return the uncontrolled version for encoding.
-                return self.characters(byApplyingModifiers: modifierFlags.subtracting(.control))
-            }
-            if scalar.value >= 0xF700 && scalar.value <= 0xF8FF {
-                // Function key PUA — don't forward as text.
-                return nil
-            }
+func currentKeyboardLayoutID() -> String? {
+    KeyboardLayoutIdentity.currentID()
+}
+
+private struct GhosttyKeyInput {
+    let event: NSEvent
+    let action: ghostty_input_action_e
+    let translationMods: NSEvent.ModifierFlags?
+
+    func make() -> ghostty_input_key_s {
+        ghostty_input_key_s(
+            action: action,
+            mods: ghosttyMods(event.modifierFlags),
+            consumed_mods: ghosttyMods(consumedTextModifiers),
+            keycode: UInt32(event.keyCode),
+            text: nil,
+            unshifted_codepoint: unshiftedCodepoint,
+            composing: false
+        )
+    }
+
+    private var consumedTextModifiers: NSEvent.ModifierFlags {
+        let flags = translationMods ?? event.modifierFlags
+        return flags.subtracting([.control, .command])
+    }
+
+    private var unshiftedCodepoint: UInt32 {
+        guard event.type == .keyDown || event.type == .keyUp,
+              let scalar = event.characters(byApplyingModifiers: [])?.firstUnicodeScalar
+        else { return 0 }
+        return scalar.value
+    }
+}
+
+private struct GhosttyEventText {
+    let event: NSEvent
+
+    var terminalText: String? {
+        guard let characters = event.characters else { return nil }
+        guard let scalar = characters.singleUnicodeScalar else { return characters }
+
+        if scalar.isAppKitFunctionKey {
+            return nil
         }
-
+        if scalar.isControlCharacter {
+            return event.characters(byApplyingModifiers: event.modifierFlags.subtracting(.control))
+        }
         return characters
     }
 }
 
-/// Current keyboard input source ID (TIS), used to detect IME layout switches.
-func currentKeyboardLayoutID() -> String? {
-    guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
-          let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID)
-    else { return nil }
-    return (unsafeBitCast(idPtr, to: CFString.self) as String)
+private enum KeyboardLayoutIdentity {
+    static func currentID() -> String? {
+        currentInputSourceID()
+            ?? keyboardLayoutSourceID()
+            ?? asciiCapableLayoutSourceID()
+    }
+
+    private static func currentInputSourceID() -> String? {
+        id(from: TISCopyCurrentKeyboardInputSource()?.takeRetainedValue())
+    }
+
+    private static func keyboardLayoutSourceID() -> String? {
+        id(from: TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue())
+    }
+
+    private static func asciiCapableLayoutSourceID() -> String? {
+        id(from: TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue())
+    }
+
+    private static func id(from source: TISInputSource?) -> String? {
+        guard let source,
+              let rawID = TISGetInputSourceProperty(source, kTISPropertyInputSourceID)
+        else { return nil }
+        return Unmanaged<CFString>.fromOpaque(rawID).takeUnretainedValue() as String
+    }
+}
+
+private extension String {
+    var firstUnicodeScalar: UnicodeScalar? {
+        unicodeScalars.first
+    }
+
+    var singleUnicodeScalar: UnicodeScalar? {
+        guard unicodeScalars.count == 1 else { return nil }
+        return unicodeScalars.first
+    }
+}
+
+private extension UnicodeScalar {
+    var isControlCharacter: Bool {
+        value < 0x20
+    }
+
+    var isAppKitFunctionKey: Bool {
+        (0xF700...0xF8FF).contains(value)
+    }
 }

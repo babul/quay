@@ -3,30 +3,16 @@ import GhosttyKit
 import OSLog
 import UserNotifications
 
-private let ghosttySurfaceBridgeLogger = Logger(
+private let surfaceBridgeLog = Logger(
     subsystem: "com.montopolis.quay",
     category: "bridge"
 )
 
-/// Per-surface action dispatcher and state coordinator.
-///
-/// Owns zero C memory. The runtime's `action_cb`, `read_clipboard_cb`, and
-/// `close_surface_cb` resolve a bridge from `ghostty_surface_userdata` and
-/// call into it. High-frequency surface state (title, cursor, progress) is
-/// written to `GhosttySurfaceState` — SwiftUI observes that directly without
-/// any reducer round-trip.
-///
-/// Cross-feature events (child exited, close request) are exposed as optional
-/// closures set by the owning tab item.
 @MainActor
 final class GhosttySurfaceBridge {
-    /// Observable state read by SwiftUI overlays and the tab bar.
     let state: GhosttySurfaceState
 
-    /// Weak back-reference to the view (for cursor updates and display-id).
     weak var view: GhosttySurfaceView?
-
-    // MARK: Cross-feature closures (set by the owning tab item)
 
     var onTitleChange: ((String) -> Void)?
     var onCloseRequest: (() -> Void)?
@@ -38,15 +24,48 @@ final class GhosttySurfaceBridge {
         self.state.updateBackground(from: config)
     }
 
-    // MARK: Action dispatch
-
-    /// Dispatch a `ghostty_action_s` arriving from the C callback. Called on
-    /// @MainActor. Returns `true` if the action was handled, `false` to let
-    /// libghostty fall back to its own default (e.g. forwarding to app level).
     func handleAction(_ action: ghostty_action_s) -> Bool {
+        if updateTerminalIdentity(action) { return true }
+        if updatePointerState(action) { return true }
+        if updateSessionState(action) { return true }
+        if updateVisualState(action) { return true }
+        if performHostSideEffect(action) { return true }
+        return false
+    }
+
+    func sendText(_ text: String) {
+        guard let surface = view?.surface, !text.isEmpty else { return }
+        let byteCount = text.lengthOfBytes(using: .utf8)
+        text.withCString { ptr in
+            ghostty_surface_text(surface, ptr, UInt(byteCount))
+        }
+    }
+
+    func sendReturnKey() {
+        sendKey(code: 36, codepoint: 13)
+    }
+
+    func visibleText() -> String {
+        guard let surface = view?.surface else { return "" }
+        let viewport = ghostty_selection_s(
+            top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
+            bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
+            rectangle: true
+        )
+
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, viewport, &text),
+              let bytes = text.text,
+              text.text_len > 0
+        else { return "" }
+        defer { ghostty_surface_free_text(surface, &text) }
+        return String(data: Data(bytes: bytes, count: Int(text.text_len)), encoding: .utf8) ?? ""
+    }
+
+    private func updateTerminalIdentity(_ action: ghostty_action_s) -> Bool {
         switch action.tag {
         case GHOSTTY_ACTION_SET_TITLE, GHOSTTY_ACTION_SET_TAB_TITLE:
-            let title = action.action.set_title.title.map { String(cString: $0) } ?? ""
+            let title = string(action.action.set_title.title) ?? ""
             state.title = title
             onTitleChange?(title)
             return true
@@ -57,6 +76,13 @@ final class GhosttySurfaceBridge {
             }
             return true
 
+        default:
+            return false
+        }
+    }
+
+    private func updatePointerState(_ action: ghostty_action_s) -> Bool {
+        switch action.tag {
         case GHOSTTY_ACTION_MOUSE_SHAPE:
             state.mouseCursor = NSCursor.from(ghosttyShape: action.action.mouse_shape)
             view?.resetCursorRects()
@@ -68,6 +94,13 @@ final class GhosttySurfaceBridge {
             if visible { NSCursor.unhide() } else { NSCursor.hide() }
             return true
 
+        default:
+            return false
+        }
+    }
+
+    private func updateSessionState(_ action: ghostty_action_s) -> Bool {
+        switch action.tag {
         case GHOSTTY_ACTION_SECURE_INPUT:
             switch action.action.secure_input {
             case GHOSTTY_SECURE_INPUT_ON:     state.secureInputActive = true
@@ -83,6 +116,13 @@ final class GhosttySurfaceBridge {
             onChildExited?(code)
             return true
 
+        default:
+            return false
+        }
+    }
+
+    private func updateVisualState(_ action: ghostty_action_s) -> Bool {
+        switch action.tag {
         case GHOSTTY_ACTION_PROGRESS_REPORT:
             let pr = action.action.progress_report
             switch pr.state {
@@ -114,14 +154,21 @@ final class GhosttySurfaceBridge {
             view?.applyResolvedBackground()
             return true
 
+        default:
+            return false
+        }
+    }
+
+    private func performHostSideEffect(_ action: ghostty_action_s) -> Bool {
+        switch action.tag {
         case GHOSTTY_ACTION_RING_BELL:
             NSSound.beep()
             return true
 
         case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
             let n = action.action.desktop_notification
-            let title = n.title.map { String(cString: $0) } ?? ""
-            let body = n.body.map { String(cString: $0) } ?? ""
+            let title = string(n.title) ?? ""
+            let body = string(n.body) ?? ""
             postDesktopNotification(title: title, body: body)
             return true
 
@@ -130,27 +177,17 @@ final class GhosttySurfaceBridge {
         }
     }
 
-    // MARK: Inject text
-
-    /// Send `text` as if pasted. Called by the owning tab item for reconnect
-    /// pre-fill or scripted initial input after the surface is live.
-    func sendText(_ text: String) {
-        guard let surface = view?.surface, !text.isEmpty else { return }
-        text.withCString { ptr in
-            ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
-        }
-    }
-
-    func sendReturnKey() {
+    private func sendKey(code: UInt16, codepoint: UInt32) {
         guard let surface = view?.surface else { return }
-        var press = ghostty_input_key_s()
-        press.action = GHOSTTY_ACTION_PRESS
-        press.keycode = 36
-        press.text = nil
-        press.composing = false
-        press.mods = GHOSTTY_MODS_NONE
-        press.consumed_mods = GHOSTTY_MODS_NONE
-        press.unshifted_codepoint = 13
+        let press = ghostty_input_key_s(
+            action: GHOSTTY_ACTION_PRESS,
+            mods: GHOSTTY_MODS_NONE,
+            consumed_mods: GHOSTTY_MODS_NONE,
+            keycode: UInt32(code),
+            text: nil,
+            unshifted_codepoint: codepoint,
+            composing: false
+        )
         _ = ghostty_surface_key(surface, press)
 
         var release = press
@@ -158,39 +195,12 @@ final class GhosttySurfaceBridge {
         _ = ghostty_surface_key(surface, release)
     }
 
-    /// Read the currently visible viewport text. Login scripts use this to
-    /// match prompts without intercepting raw PTY output.
-    func visibleText() -> String {
-        guard let surface = view?.surface else { return "" }
-        let selection = ghostty_selection_s(
-            top_left: ghostty_point_s(
-                tag: GHOSTTY_POINT_VIEWPORT,
-                coord: GHOSTTY_POINT_COORD_TOP_LEFT,
-                x: 0,
-                y: 0
-            ),
-            bottom_right: ghostty_point_s(
-                tag: GHOSTTY_POINT_VIEWPORT,
-                coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
-                x: 0,
-                y: 0
-            ),
-            rectangle: true
-        )
-        var text = ghostty_text_s()
-        guard ghostty_surface_read_text(surface, selection, &text),
-              let ptr = text.text,
-              text.text_len > 0 else {
-            return ""
-        }
-        defer { ghostty_surface_free_text(surface, &text) }
-        let data = Data(bytes: ptr, count: Int(text.text_len))
-        return String(data: data, encoding: .utf8) ?? ""
+    private func string(_ pointer: UnsafePointer<CChar>?) -> String? {
+        pointer.map(String.init(cString:))
     }
 
-    // MARK: Private
-
     private func postDesktopNotification(title: String, body: String) {
+        guard !title.isEmpty || !body.isEmpty else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
@@ -201,7 +211,7 @@ final class GhosttySurfaceBridge {
         )
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
-                ghosttySurfaceBridgeLogger.debug("notification error: \(error)")
+                surfaceBridgeLog.debug("notification error: \(error)")
             }
         }
     }
