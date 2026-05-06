@@ -229,7 +229,7 @@ struct ConnectionEditor: View {
     }
 
     private var topLevelFolders: [Folder] {
-        folders.filter { $0.parent == nil }
+        SidebarOrdering.foldersByName(folders.filter { $0.parent == nil })
     }
 
     private var selectedFolder: Folder? {

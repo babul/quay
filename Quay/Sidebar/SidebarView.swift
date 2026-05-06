@@ -128,7 +128,7 @@ struct SidebarView: View {
     }
 
     private var topLevelFolders: [Folder] {
-        folders.filter { $0.parent == nil }
+        SidebarOrdering.foldersByName(folders.filter { $0.parent == nil })
     }
 
     private var searchField: some View {
@@ -182,7 +182,7 @@ struct SidebarView: View {
     @ViewBuilder
     private var groupedByFolder: some View {
         let grouped: [(Folder, [ConnectionProfile])] = {
-            // Group connections by folder, preserving folder sort order.
+            // Group connections by folder, then render groups and hosts by display name.
             var byFolder: [UUID: [ConnectionProfile]] = [:]
             for c in allConnections {
                 if let f = c.parent {
@@ -195,7 +195,7 @@ struct SidebarView: View {
                 if shouldHideFolder(f, connectionCount: items.count) {
                     continue
                 }
-                out.append((f, items))
+                out.append((f, SidebarOrdering.connectionsByName(items)))
             }
             return out
         }()
@@ -507,6 +507,40 @@ enum SidebarDisplayText {
 
         var ipv6 = in6_addr()
         return candidate.withCString { inet_pton(AF_INET6, $0, &ipv6) } == 1
+    }
+}
+
+enum SidebarOrdering {
+    static func foldersByName(_ folders: [Folder]) -> [Folder] {
+        folders.sorted { lhs, rhs in
+            compare(lhs.name, rhs.name, lhsSortIndex: lhs.sortIndex, rhsSortIndex: rhs.sortIndex, lhsID: lhs.id, rhsID: rhs.id)
+        }
+    }
+
+    static func connectionsByName(_ connections: [ConnectionProfile]) -> [ConnectionProfile] {
+        connections.sorted { lhs, rhs in
+            compare(lhs.name, rhs.name, lhsSortIndex: lhs.sortIndex, rhsSortIndex: rhs.sortIndex, lhsID: lhs.id, rhsID: rhs.id)
+        }
+    }
+
+    private static func compare(
+        _ lhsName: String,
+        _ rhsName: String,
+        lhsSortIndex: Int,
+        rhsSortIndex: Int,
+        lhsID: UUID,
+        rhsID: UUID
+    ) -> Bool {
+        let nameComparison = lhsName.localizedStandardCompare(rhsName)
+        if nameComparison != .orderedSame {
+            return nameComparison == .orderedAscending
+        }
+
+        if lhsSortIndex != rhsSortIndex {
+            return lhsSortIndex < rhsSortIndex
+        }
+
+        return lhsID.uuidString < rhsID.uuidString
     }
 }
 
