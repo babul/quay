@@ -155,6 +155,21 @@ struct TerminalTabManagerTests {
         #expect(!TerminalTabManager.shouldConfirmClose(phase: .failed("Session ended"), confirmActiveSessions: false))
     }
 
+    @Test("Terminal title updates do not replace saved display name")
+    func terminalTitleDoesNotReplaceSavedDisplayName() {
+        let profile = ConnectionProfile(
+            name: "VPN Jumpbox",
+            hostname: "5.161.194.242",
+            username: "forge"
+        )
+        let tab = TerminalTabItem(profile: profile)
+
+        tab.updateFromTerminalTitle("forge@cac-ash-vpn-1:~")
+
+        #expect(tab.displayTitle == "VPN Jumpbox")
+        #expect(tab.displayHost == "forge@5.161.194.242")
+    }
+
     @Test("Login script runner waits for each matcher and sends rows in order")
     func loginScriptRunnerWaitsForMatchersAndSendsInOrder() async throws {
         var visibleText = ""

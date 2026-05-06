@@ -133,7 +133,7 @@ final class TerminalTabItem: Identifiable {
                 }
                 bridge.onTitleChange = { [weak self] title in
                     guard let self else { return }
-                    self.updateDisplayedTitle(title)
+                    self.updateFromTerminalTitle(title)
                 }
                 bridge.onChildExited = { [weak self] _ in
                     self?.markSessionEnded()
@@ -196,7 +196,7 @@ final class TerminalTabItem: Identifiable {
     // MARK: Display
 
     var displayTitle: String {
-        displayedTitle
+        profile.name
     }
 
     var displayHost: String {
@@ -210,9 +210,8 @@ final class TerminalTabItem: Identifiable {
         return "\(user)\(target.hostname)\(port)"
     }
 
-    private func updateDisplayedTitle(_ terminalTitle: String) {
+    func updateFromTerminalTitle(_ terminalTitle: String) {
         guard !terminalTitle.isEmpty else {
-            displayedTitle = profile.name
             displayedUsername = profile.username
             return
         }
@@ -220,18 +219,11 @@ final class TerminalTabItem: Identifiable {
         let promptPrefix = terminalTitle.split(separator: ":", maxSplits: 1).first
             .map(String.init)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let promptPrefix, !promptPrefix.isEmpty else {
-            displayedTitle = terminalTitle
-            return
-        }
+        guard let promptPrefix, !promptPrefix.isEmpty else { return }
 
         if let atIndex = promptPrefix.firstIndex(of: "@") {
             let username = String(promptPrefix[..<atIndex])
-            let host = String(promptPrefix[promptPrefix.index(after: atIndex)...])
             displayedUsername = username.isEmpty ? profile.username : username
-            displayedTitle = host.isEmpty ? profile.name : host
-        } else {
-            displayedTitle = promptPrefix
         }
     }
 }
