@@ -13,70 +13,74 @@ struct ContentView: View {
     @State private var ghosttyConfigChangeToken = 0
     @State private var exportRequested = false
     @State private var importRequested = false
+    @State private var searchQuery: String
+    @FocusState private var toolbarSearchFocused: Bool
     private let tabManager = TerminalTabManager.shared
 
     init(store: StoreOf<AppFeature>) {
         self.store = store
-        _columnVisibility = State(
-            initialValue: Self.savedColumnVisibility
-        )
+        _columnVisibility = State(initialValue: Self.savedColumnVisibility)
+        _searchQuery = State(initialValue: UserDefaults.standard.string(forKey: "sidebar.searchQuery") ?? "")
     }
 
     var body: some View {
+        splitView
+            .toolbar {
+                ToolbarItem(placement: .principal) { toolbarSearchField }
+                ToolbarItem(placement: .primaryAction) { newItemMenu }
+            }
+            .onAppear {
+                store.send(.onAppear)
+                restoreSavedSidebarVisibility()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+                let shouldShowSidebar = columnVisibility == .detailOnly
+                columnVisibility = shouldShowSidebar ? .all : .detailOnly
+                SidebarLayoutState.saveSidebarVisible(shouldShowSidebar)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in
+                ghosttyConfigChangeToken &+= 1
+            }
+            .onChange(of: columnVisibility) { _, visibility in
+                SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .startExportSettings)) { _ in
+                exportRequested = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .startImportSettings)) { _ in
+                importRequested = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
+                toolbarSearchFocused = true
+            }
+            .onChange(of: searchQuery) { _, query in
+                UserDefaults.standard.set(query, forKey: "sidebar.searchQuery")
+            }
+            .sheet(item: $editorTarget) { target in
+                ConnectionEditor(target: target) { editorTarget = nil }
+            }
+            .settingsImportExportFlow(
+                triggerExport: $exportRequested,
+                triggerImport: $importRequested
+            )
+    }
+
+    private var splitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(
+                searchQuery: $searchQuery,
                 selection: $selectedConnectionID,
-                onOpenConnection: { profile in
-                    tabManager.openOrSelectTab(for: profile)
-                },
-                onOpenConnectionInNewTab: { profile in
-                    tabManager.openNewTab(for: profile)
-                },
-                onOpenSFTPConnection: { profile in
-                    tabManager.openSFTPTab(for: profile)
-                },
-                onCreateConnection: { folder in
-                    editorTarget = .create(folderID: folder?.id)
-                },
-                onEditConnection: { profile in
-                    editorTarget = .edit(profile)
-                }
+                onOpenConnection: { tabManager.openOrSelectTab(for: $0) },
+                onOpenConnectionInNewTab: { tabManager.openNewTab(for: $0) },
+                onOpenSFTPConnection: { tabManager.openSFTPTab(for: $0) },
+                onCreateConnection: { editorTarget = .create(folderID: $0?.id) },
+                onEditConnection: { editorTarget = .edit($0) }
             )
         } detail: {
             detail
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
         .navigationSubtitle(tabManager.selectedTab?.displayHost ?? "")
-        .onAppear {
-            store.send(.onAppear)
-            restoreSavedSidebarVisibility()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
-            let shouldShowSidebar = columnVisibility == .detailOnly
-            columnVisibility = shouldShowSidebar ? .all : .detailOnly
-            SidebarLayoutState.saveSidebarVisible(shouldShowSidebar)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in
-            ghosttyConfigChangeToken &+= 1
-        }
-        .onChange(of: columnVisibility) { _, visibility in
-            SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .startExportSettings)) { _ in
-            exportRequested = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .startImportSettings)) { _ in
-            importRequested = true
-        }
-        .sheet(item: $editorTarget) { target in
-            ConnectionEditor(target: target) {
-                editorTarget = nil
-            }
-        }
-        .settingsImportExportFlow(
-            triggerExport: $exportRequested,
-            triggerImport: $importRequested
-        )
     }
 
     private static var savedColumnVisibility: NavigationSplitViewVisibility {
@@ -89,6 +93,40 @@ struct ContentView: View {
         }
     }
 
+    private var toolbarSearchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .imageScale(.small)
+            TextField("Search connections (⌘L)", text: $searchQuery)
+                .textFieldStyle(.plain)
+                .focused($toolbarSearchFocused)
+            if !searchQuery.isEmpty {
+                Button { searchQuery = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quinary, in: RoundedRectangle(cornerRadius: 7))
+        .frame(minWidth: 180, maxWidth: 300)
+    }
+
+    private var newItemMenu: some View {
+        Menu {
+            Button("New Connection…") { editorTarget = .create() }
+            Button("New Group Folder") {
+                NotificationCenter.default.post(name: .createFolder, object: nil)
+            }
+        } label: {
+            Image(systemName: "plus")
+        }
+        .help("New…")
+    }
+
     @ViewBuilder
     private var detail: some View {
         if tabManager.tabs.isEmpty {
@@ -98,29 +136,23 @@ struct ContentView: View {
                 Text("Or hit ⌘L to search.")
             }
         } else {
-            ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                TerminalTabBar(
+                    tabManager: tabManager,
+                    onEditConnection: { profile in
+                        editorTarget = .edit(profile)
+                    },
+                    onOpenSFTP: { tab in
+                        tabManager.openSFTPTab(
+                            for: tab.profile,
+                            localDirectoryOverride: tab.currentWorkingDirectory
+                        )
+                    }
+                )
+                .frame(height: Self.terminalTabBarHeight - 1)
+                Divider()
                 tabSurfaces
-                    .padding(.top, Self.terminalTabBarHeight)
-
-                VStack(spacing: 0) {
-                    TerminalTabBar(
-                        tabManager: tabManager,
-                        onEditConnection: { profile in
-                            editorTarget = .edit(profile)
-                        },
-                        onOpenSFTP: { tab in
-                            tabManager.openSFTPTab(
-                                for: tab.profile,
-                                localDirectoryOverride: tab.currentWorkingDirectory
-                            )
-                        }
-                    )
-                    .frame(height: Self.terminalTabBarHeight - 1)
-                    Divider()
-                }
-                .ignoresSafeArea(.container, edges: .top)
             }
-            .ignoresSafeArea(.container, edges: .top)
         }
     }
 

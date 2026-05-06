@@ -18,20 +18,18 @@ struct SidebarView: View {
     @Query(sort: [SortDescriptor(\ConnectionProfile.sortIndex), SortDescriptor(\ConnectionProfile.name)])
     private var allConnections: [ConnectionProfile]
 
+    @Binding var searchQuery: String
     @Binding var selection: UUID?
     var onOpenConnection: (ConnectionProfile) -> Void = { _ in }
     var onOpenConnectionInNewTab: (ConnectionProfile) -> Void = { _ in }
     var onOpenSFTPConnection: (ConnectionProfile) -> Void = { _ in }
     var onCreateConnection: (Folder?) -> Void = { _ in }
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
-
-    @State private var query: String = ""
     @State private var groupEditTarget: Folder?
     @State private var collapsedFolderIDs = SidebarCollapseState.load()
     @State private var sshConfigExpanded = SidebarCollapseState.loadSSHConfigExpanded()
     @State private var lastConnectionClick: (id: UUID, time: Date)?
     @State private var discoveredSSHHosts: [DiscoveredSSHHost] = []
-    @FocusState private var searchFocused: Bool
 
     enum EditorTarget: Identifiable {
         case create(folderID: UUID? = nil)
@@ -48,11 +46,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             identityHeader
             Divider()
-            searchField
-            Divider()
             list
-            Divider()
-            footer
         }
         .frame(minWidth: 240)
         .navigationSplitViewColumnWidth(
@@ -79,6 +73,9 @@ struct SidebarView: View {
                 &collapsedFolderIDs,
                 keeping: Set(ids)
             )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .createFolder)) { _ in
+            newFolder()
         }
         .onChange(of: sshConfigExpanded) { _, val in
             SidebarCollapseState.saveSSHConfigExpanded(val)
@@ -107,10 +104,8 @@ struct SidebarView: View {
         .padding(.vertical, 10)
     }
 
-    private var filtered: [ConnectionProfile] {
-        FuzzySearch.rank(allConnections, query: query) { profile in
-            [profile.name, profile.hostname]
-        }
+    private var searchIsActive: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var visibleDiscoveredSSHHosts: [DiscoveredSSHHost] {
@@ -127,7 +122,7 @@ struct SidebarView: View {
     }
 
     private var filteredDiscoveredSSHHosts: [DiscoveredSSHHost] {
-        FuzzySearch.rank(visibleDiscoveredSSHHosts, query: query) { host in
+        FuzzySearch.rank(visibleDiscoveredSSHHosts, query: searchQuery) { host in
             [host.displayName, host.alias]
         }
     }
@@ -136,50 +131,10 @@ struct SidebarView: View {
         SidebarOrdering.foldersByName(folders.filter { $0.parent == nil })
     }
 
-    private var searchField: some View {
-        HStack {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search hosts (⌘L)", text: $query)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .onAppear {
-                    NotificationCenter.default.addObserver(
-                        forName: .focusSearch, object: nil, queue: .main
-                    ) { _ in
-                        Task { @MainActor in
-                            searchFocused = true
-                        }
-                    }
-                }
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                    searchFocused = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
-
     private var list: some View {
         List(selection: $selection) {
-            if query.isEmpty {
-                groupedByFolder
-                sshConfigHostsSection
-            } else {
-                ForEach(filtered, id: \.id) { profile in
-                    connectionRow(profile)
-                }
-                ForEach(filteredDiscoveredSSHHosts, id: \.id) { host in
-                    sshConfigHostRow(host)
-                }
-            }
+            groupedByFolder
+            sshConfigHostsSection
         }
         .listStyle(.sidebar)
     }
@@ -187,7 +142,6 @@ struct SidebarView: View {
     @ViewBuilder
     private var groupedByFolder: some View {
         let grouped: [(Folder, [ConnectionProfile])] = {
-            // Group connections by folder, then render groups and hosts by display name.
             var byFolder: [UUID: [ConnectionProfile]] = [:]
             for c in allConnections {
                 if let f = c.parent {
@@ -196,22 +150,26 @@ struct SidebarView: View {
             }
             var out: [(Folder, [ConnectionProfile])] = []
             for f in topLevelFolders {
-                let items = byFolder[f.id] ?? []
-                if shouldHideFolder(f, connectionCount: items.count) {
-                    continue
+                var items = byFolder[f.id] ?? []
+                if searchIsActive {
+                    items = FuzzySearch.rank(items, query: searchQuery) { [$0.name, $0.hostname] }
+                    guard !items.isEmpty else { continue }
+                } else {
+                    guard !shouldHideFolder(f, connectionCount: items.count) else { continue }
+                    items = SidebarOrdering.connectionsByName(items)
                 }
-                out.append((f, SidebarOrdering.connectionsByName(items)))
+                out.append((f, items))
             }
             return out
         }()
 
-        if grouped.isEmpty {
+        if grouped.isEmpty && !searchIsActive {
             Text("No groups yet")
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 8)
         } else {
             ForEach(grouped, id: \.0.id) { folder, items in
-                DisclosureGroup(isExpanded: folderIsExpandedBinding(folder)) {
+                DisclosureGroup(isExpanded: searchExpandedBinding(for: folderIsExpandedBinding(folder))) {
                     ForEach(items, id: \.id) { connectionRow($0) }
                 } label: {
                     folderLabel(folder, count: items.count)
@@ -307,10 +265,10 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sshConfigHostsSection: some View {
-        let visibleHosts = visibleDiscoveredSSHHosts
-        if !visibleHosts.isEmpty {
-            DisclosureGroup(isExpanded: $sshConfigExpanded) {
-                ForEach(visibleHosts, id: \.id) { host in
+        let hosts = filteredDiscoveredSSHHosts
+        if !hosts.isEmpty {
+            DisclosureGroup(isExpanded: searchExpandedBinding(for: $sshConfigExpanded)) {
+                ForEach(hosts, id: \.id) { host in
                     sshConfigHostRow(host)
                 }
             } label: {
@@ -321,7 +279,7 @@ struct SidebarView: View {
                     Text("SSH Config")
                         .lineLimit(1)
                     Spacer()
-                    Text("\(visibleHosts.count)")
+                    Text("\(hosts.count)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -334,12 +292,7 @@ struct SidebarView: View {
             Image(systemName: "terminal")
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(SidebarDisplayText.sshConfigHostTitle(for: host))
-                Text("~/.ssh/config")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            Text(SidebarDisplayText.sshConfigHostTitle(for: host))
             Spacer()
         }
         .tag(host.id)
@@ -448,6 +401,15 @@ struct SidebarView: View {
                 expanded: isExpanded,
                 in: &collapsedFolderIDs
             )
+        }
+    }
+
+    private func searchExpandedBinding(for binding: Binding<Bool>) -> Binding<Bool> {
+        Binding {
+            searchIsActive || binding.wrappedValue
+        } set: { newValue in
+            guard !searchIsActive else { return }
+            binding.wrappedValue = newValue
         }
     }
 
@@ -642,6 +604,8 @@ extension Notification.Name {
     static let startExportSettings = Notification.Name("io.github.babul.quay.startExportSettings")
     /// Posted by the File menu "Import Settings…" item.
     static let startImportSettings = Notification.Name("io.github.babul.quay.startImportSettings")
+    /// Posted by the toolbar "+" menu to create a new group folder.
+    static let createFolder = Notification.Name("io.github.babul.quay.createFolder")
 }
 
 @MainActor
