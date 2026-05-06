@@ -21,7 +21,7 @@ struct SidebarView: View {
     @Binding var selection: UUID?
     var onOpenConnection: (ConnectionProfile) -> Void = { _ in }
     var onOpenConnectionInNewTab: (ConnectionProfile) -> Void = { _ in }
-    var onCreateConnection: () -> Void = {}
+    var onCreateConnection: (Folder?) -> Void = { _ in }
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
 
     @State private var query: String = ""
@@ -32,11 +32,11 @@ struct SidebarView: View {
     @FocusState private var searchFocused: Bool
 
     enum EditorTarget: Identifiable {
-        case create
+        case create(folderID: UUID? = nil)
         case edit(ConnectionProfile)
         var id: String {
             switch self {
-            case .create: return "create"
+            case .create(let folderID): return "create-\(folderID?.uuidString ?? "default")"
             case .edit(let p): return "edit-\(p.id)"
             }
         }
@@ -238,6 +238,8 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func folderContextMenu(_ folder: Folder) -> some View {
+        Button("New Connection…") { onCreateConnection(folder) }
+        Divider()
         Button("Edit…") { beginEditingGroup(folder) }
         Button("Delete", role: .destructive) {
             deleteFolder(folder)
@@ -390,7 +392,7 @@ struct SidebarView: View {
     private var footer: some View {
         HStack {
             Menu {
-                Button("New Connection…") { onCreateConnection() }
+                Button("New Connection…") { onCreateConnection(nil) }
                 Button("New Folder") { newFolder() }
             } label: {
                 Image(systemName: "plus")

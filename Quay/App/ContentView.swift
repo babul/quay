@@ -30,8 +30,8 @@ struct ContentView: View {
                 onOpenConnectionInNewTab: { profile in
                     tabManager.openNewTab(for: profile)
                 },
-                onCreateConnection: {
-                    editorTarget = .create
+                onCreateConnection: { folder in
+                    editorTarget = .create(folderID: folder?.id)
                 },
                 onEditConnection: { profile in
                     editorTarget = .edit(profile)

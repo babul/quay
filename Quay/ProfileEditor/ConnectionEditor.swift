@@ -340,7 +340,8 @@ struct ConnectionEditor: View {
             loginScriptSteps = p.loginScriptSteps
             selectedFolderID = p.parent?.id
             ensureDefaultFolderSelection()
-        } else {
+        } else if case .create(let folderID) = target {
+            if let folderID { selectedFolderID = folderID }
             ensureDefaultFolderSelection()
         }
     }
@@ -362,7 +363,7 @@ struct ConnectionEditor: View {
         let scripts = loginScriptSteps.normalizedLoginScriptSteps
 
         switch target {
-        case .create:
+        case .create(_):
             let profile = ConnectionProfile(
                 name: name.trimmingCharacters(in: .whitespaces),
                 hostname: hostname.trimmingCharacters(in: .whitespaces),
