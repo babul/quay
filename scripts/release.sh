@@ -97,7 +97,8 @@ info "version: $VERSION  build: $BUILD  tag: $TAG"
 bold "==> Drafting release notes"
 
 LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
-NOTES_TMP="$(mktemp /tmp/quay-release-notes-XXXXXX.md)"
+mkdir -p "$REPO_ROOT/build/release"
+NOTES_TMP="$REPO_ROOT/build/release-notes-${TAG}.md"
 
 {
   printf "## What's Changed\n\n"
@@ -127,7 +128,6 @@ APP="$REPO_ROOT/build/notarize/export/Quay.app"
 # ── zip for Sparkle ───────────────────────────────────────────────────────────
 ZIP_NAME="Quay-${VERSION}.zip"
 bold "==> Creating distribution zip"
-mkdir -p "$REPO_ROOT/build/release"
 ZIP_PATH="$REPO_ROOT/build/release/$ZIP_NAME"
 rm -f "$ZIP_PATH"
 ditto -c -k --keepParent "$APP" "$ZIP_PATH"
