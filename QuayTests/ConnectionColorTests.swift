@@ -20,9 +20,19 @@ struct ConnectionColorTests {
 
     @Test("connection icons resolve with default fallback")
     func connectionIconsResolve() {
+        #expect(AppearanceIcon.allNames.contains("server.rack"))
+        #expect(AppearanceIcon.isKnown("server.rack"))
         #expect(ConnectionIcon.systemName(for: nil) == "terminal.fill")
         #expect(ConnectionIcon.systemName(for: "server.rack") == "server.rack")
         #expect(ConnectionIcon.isKnown("server.rack"))
         #expect(!ConnectionIcon.isKnown("custom.symbol"))
+    }
+
+    @Test("folder icons use shared options with folder fallback")
+    func folderIconsResolve() {
+        #expect(FolderIcon.systemName(for: nil) == "folder")
+        #expect(FolderIcon.systemName(for: "server.rack") == "server.rack")
+        #expect(FolderIcon.isKnown("server.rack"))
+        #expect(!FolderIcon.isKnown("custom.symbol"))
     }
 }

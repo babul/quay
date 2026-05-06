@@ -169,6 +169,18 @@ struct PersistenceTests {
         #expect(fetched.iconName == "server.rack")
     }
 
+    @Test("folder appearance metadata round-trips through the store")
+    func folderAppearanceMetadataRoundTrip() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let folder = Folder(name: "Prod", iconName: "server.rack")
+        ctx.insert(folder)
+        try ctx.save()
+
+        let fetched = try #require(try ctx.fetch(FetchDescriptor<Folder>()).first)
+        #expect(fetched.iconName == "server.rack")
+    }
+
     @Test("login script steps round-trip through ConnectionProfile")
     func loginScriptStepsRoundTrip() throws {
         let container = try Self.makeContainer()

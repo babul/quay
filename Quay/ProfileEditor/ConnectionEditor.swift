@@ -113,7 +113,13 @@ struct ConnectionEditor: View {
             }
 
             Section("Appearance") {
-                iconPicker
+                AppearanceIconPicker(
+                    title: "Icon",
+                    defaultSystemName: ConnectionIcon.fallback,
+                    defaultHelp: "Default",
+                    accessibilityLabel: "Connection icon",
+                    selection: $iconName
+                )
                 colorPicker
             }
 
@@ -211,43 +217,6 @@ struct ConnectionEditor: View {
             }
             .accessibilityLabel("Connection color")
         }
-    }
-
-    private var iconPicker: some View {
-        LabeledContent("Icon") {
-            HStack(spacing: 8) {
-                Button {
-                    iconName = nil
-                } label: {
-                    Image(systemName: ConnectionIcon.fallback)
-                        .symbolVariant(iconName == nil ? .fill : .none)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .help("Default")
-
-                ForEach(ConnectionIcon.options) { option in
-                    Button {
-                        iconName = option.id
-                    } label: {
-                        ZStack {
-                            Image(systemName: option.id)
-                                .imageScale(.medium)
-                            if iconName == option.id {
-                                RoundedRectangle(cornerRadius: 5)
-                                    .strokeBorder(.primary, lineWidth: 1.5)
-                                    .frame(width: 26, height: 24)
-                            }
-                        }
-                    }
-                    .frame(width: 24, height: 24)
-                    .buttonStyle(.plain)
-                    .help(option.label)
-                }
-            }
-        }
-        .accessibilityLabel("Connection icon")
     }
 
     private var canSave: Bool {

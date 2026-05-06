@@ -39,13 +39,11 @@ enum ConnectionColor {
     }
 }
 
-enum ConnectionIcon {
+enum AppearanceIcon {
     struct Option: Identifiable, Equatable {
         let id: String
         let label: String
     }
-
-    static let fallback = "terminal.fill"
 
     static let options: [Option] = [
         Option(id: "terminal.fill", label: "Terminal"),
@@ -66,7 +64,7 @@ enum ConnectionIcon {
         options.map(\.id)
     }
 
-    static func systemName(for iconName: String?) -> String {
+    static func systemName(for iconName: String?, fallback: String) -> String {
         guard let iconName, !iconName.isEmpty else { return fallback }
         return iconName
     }
@@ -74,5 +72,74 @@ enum ConnectionIcon {
     static func isKnown(_ iconName: String?) -> Bool {
         guard let iconName else { return false }
         return options.contains { $0.id == iconName }
+    }
+}
+
+enum ConnectionIcon {
+    static let fallback = "terminal.fill"
+
+    static func systemName(for iconName: String?) -> String {
+        AppearanceIcon.systemName(for: iconName, fallback: fallback)
+    }
+
+    static func isKnown(_ iconName: String?) -> Bool {
+        AppearanceIcon.isKnown(iconName)
+    }
+}
+
+enum FolderIcon {
+    static let fallback = "folder"
+
+    static func systemName(for iconName: String?) -> String {
+        AppearanceIcon.systemName(for: iconName, fallback: fallback)
+    }
+
+    static func isKnown(_ iconName: String?) -> Bool {
+        AppearanceIcon.isKnown(iconName)
+    }
+}
+
+struct AppearanceIconPicker: View {
+    let title: String
+    let defaultSystemName: String
+    let defaultHelp: String
+    let accessibilityLabel: String
+    @Binding var selection: String?
+
+    var body: some View {
+        LabeledContent(title) {
+            HStack(spacing: 8) {
+                Button {
+                    selection = nil
+                } label: {
+                    Image(systemName: defaultSystemName)
+                        .symbolVariant(selection == nil ? .fill : .none)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help(defaultHelp)
+
+                ForEach(AppearanceIcon.options) { option in
+                    Button {
+                        selection = option.id
+                    } label: {
+                        ZStack {
+                            Image(systemName: option.id)
+                                .imageScale(.medium)
+                            if selection == option.id {
+                                RoundedRectangle(cornerRadius: 5)
+                                    .strokeBorder(.primary, lineWidth: 1.5)
+                                    .frame(width: 26, height: 24)
+                            }
+                        }
+                    }
+                    .frame(width: 24, height: 24)
+                    .buttonStyle(.plain)
+                    .help(option.label)
+                }
+            }
+        }
+        .accessibilityLabel(accessibilityLabel)
     }
 }

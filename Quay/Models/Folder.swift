@@ -9,6 +9,7 @@ import SwiftData
 final class Folder {
     @Attribute(.unique) var id: UUID
     var name: String
+    var iconName: String?
     var sortIndex: Int
 
     var parent: Folder?
@@ -22,11 +23,13 @@ final class Folder {
     init(
         id: UUID = UUID(),
         name: String,
+        iconName: String? = nil,
         parent: Folder? = nil,
         sortIndex: Int = 0
     ) {
         self.id = id
         self.name = name
+        self.iconName = iconName
         self.parent = parent
         self.sortIndex = sortIndex
     }

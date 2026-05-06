@@ -24,8 +24,7 @@ struct SidebarView: View {
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
 
     @State private var query: String = ""
-    @State private var renameTarget: Folder?
-    @State private var renameText: String = ""
+    @State private var groupEditTarget: Folder?
     @State private var collapsedFolderIDs = SidebarCollapseState.load()
     @State private var lastConnectionClick: (id: UUID, time: Date)?
     @State private var discoveredSSHHosts: [DiscoveredSSHHost] = []
@@ -60,11 +59,13 @@ struct SidebarView: View {
         )
         .background(SidebarWidthObserver())
         .navigationTitle("Quay")
-        .alert("Rename Group", isPresented: renameIsPresented) {
-            TextField("Group name", text: $renameText)
-            Button("Rename") { renameFolder() }
-                .disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
-            Button("Cancel", role: .cancel) { clearRenameState() }
+        .sheet(isPresented: groupEditorIsPresented) {
+            if let groupEditTarget {
+                GroupEditor(folder: groupEditTarget) {
+                    self.groupEditTarget = nil
+                }
+                .frame(minWidth: 440, minHeight: 220)
+            }
         }
         .onAppear {
             bootstrapFolders()
@@ -220,7 +221,7 @@ struct SidebarView: View {
 
     private func folderLabel(_ folder: Folder, count: Int) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "folder")
+            Image(systemName: FolderIcon.systemName(for: folder.iconName))
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
             Text(folder.name)
@@ -236,7 +237,7 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func folderContextMenu(_ folder: Folder) -> some View {
-        Button("Rename…") { beginRenaming(folder) }
+        Button("Edit…") { beginEditingGroup(folder) }
         Button("Delete", role: .destructive) {
             deleteFolder(folder)
         }
@@ -410,7 +411,7 @@ struct SidebarView: View {
         )
         ctx.insert(folder)
         try? ctx.save()
-        beginRenaming(folder)
+        beginEditingGroup(folder)
     }
 
     private func folderIsExpandedBinding(_ folder: Folder) -> Binding<Bool> {
@@ -425,32 +426,18 @@ struct SidebarView: View {
         }
     }
 
-    private var renameIsPresented: Binding<Bool> {
+    private var groupEditorIsPresented: Binding<Bool> {
         Binding {
-            renameTarget != nil
+            groupEditTarget != nil
         } set: { isPresented in
             if !isPresented {
-                clearRenameState()
+                groupEditTarget = nil
             }
         }
     }
 
-    private func beginRenaming(_ folder: Folder) {
-        renameTarget = folder
-        renameText = folder.name
-    }
-
-    private func renameFolder() {
-        let trimmed = renameText.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        renameTarget?.name = trimmed
-        try? ctx.save()
-        clearRenameState()
-    }
-
-    private func clearRenameState() {
-        renameTarget = nil
-        renameText = ""
+    private func beginEditingGroup(_ folder: Folder) {
+        groupEditTarget = folder
     }
 
     private func deleteFolder(_ folder: Folder) {
@@ -481,6 +468,79 @@ struct SidebarView: View {
 
     private var localHostname: String {
         Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+    }
+}
+
+private struct GroupEditor: View {
+    @Environment(\.modelContext) private var ctx
+    @Environment(\.dismiss) private var dismiss
+
+    let folder: Folder
+    let onClose: () -> Void
+
+    @State private var name: String = ""
+    @State private var iconName: String?
+    @State private var didLoad = false
+
+    var body: some View {
+        Form {
+            Section("Group") {
+                HStack(alignment: .center, spacing: 12) {
+                    Text("Name")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 128, alignment: .leading)
+                    TextField("Group name", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.regular)
+                        .accessibilityLabel("Group name")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                AppearanceIconPicker(
+                    title: "Icon",
+                    defaultSystemName: FolderIcon.fallback,
+                    defaultHelp: "Default",
+                    accessibilityLabel: "Group icon",
+                    selection: $iconName
+                )
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.bottom, 12)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { close() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }
+                    .disabled(!canSave)
+            }
+        }
+        .onAppear { loadIfNeeded() }
+    }
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func loadIfNeeded() {
+        guard !didLoad else { return }
+        didLoad = true
+        name = folder.name
+        iconName = folder.iconName
+    }
+
+    private func save() {
+        folder.name = name.trimmingCharacters(in: .whitespaces)
+        folder.iconName = iconName
+        try? ctx.save()
+        close()
+    }
+
+    private func close() {
+        onClose()
+        dismiss()
     }
 }
 
