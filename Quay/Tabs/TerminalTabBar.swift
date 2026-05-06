@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -8,6 +9,7 @@ struct TerminalTabBar: View {
     var tabManager: TerminalTabManager
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
     @AppStorage("appearance.showTabColorBars") private var showTabColorBars = true
+    @AppStorage("tabs.confirmCloseActiveSessions") private var confirmCloseActiveSessions = true
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -24,7 +26,7 @@ struct TerminalTabBar: View {
                         onEdit: { onEditConnection(tab.profile) },
                         onDisconnect: { tabManager.disconnectTab(tab) },
                         onReconnect: { tabManager.reconnectTab(tab) },
-                        onClose: { tabManager.closeTab(tab) }
+                        onClose: { requestClose(tab) }
                     )
                     .onDrag {
                         NSItemProvider(object: tab.id.uuidString as NSString)
@@ -51,6 +53,33 @@ struct TerminalTabBar: View {
         .background(.bar)
         .frame(height: 36)
     }
+
+    private func requestClose(_ tab: TerminalTabItem) {
+        if !TerminalTabManager.shouldConfirmClose(
+            phase: tab.phase,
+            confirmActiveSessions: confirmCloseActiveSessions
+        ) {
+            tabManager.closeTab(tab)
+            return
+        }
+
+        if confirmClosingTab(tab) {
+            tabManager.closeTab(tab)
+        }
+    }
+
+    private func confirmClosingTab(_ tab: TerminalTabItem) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Close Active Tab?"
+        alert.informativeText = """
+        "\(tab.displayTitle)" is still active. Closing the tab will disconnect this session.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Close Tab")
+        alert.addButton(withTitle: "Cancel")
+
+        return alert.runModal() == .alertFirstButtonReturn
+    }
 }
 
 private struct TabButton: View {
@@ -67,32 +96,32 @@ private struct TabButton: View {
     var onClose: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 6) {
-                phaseDot
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(title)
-                        .font(.system(size: 12, weight: isSelected ? .medium : .regular))
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        HStack(spacing: 6) {
+            Button(action: onSelect) {
+                HStack(spacing: 6) {
+                    phaseDot
+                    titleStack
                 }
-                .frame(minWidth: 56, maxWidth: 220, alignment: .leading)
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .imageScale(.small)
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(tabBackground)
+            .buttonStyle(.plain)
+            .accessibilityLabel(accessibilityTitle)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .imageScale(.small)
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 28, height: 26)
             .contentShape(Rectangle())
+            .accessibilityLabel("Close Tab")
         }
-        .buttonStyle(.plain)
+        .padding(.leading, 10)
+        .padding(.trailing, 2)
+        .padding(.vertical, 5)
+        .background(tabBackground)
         .contextMenu {
             Button(action: onEdit) {
                 Label("Edit…", systemImage: "pencil")
@@ -106,6 +135,12 @@ private struct TabButton: View {
             Button(action: onReconnect) {
                 Label("Reconnect", systemImage: "arrow.clockwise.circle")
             }
+
+            Divider()
+
+            Button(action: onClose) {
+                Label("Close Tab", systemImage: "xmark.circle")
+            }
         }
         .overlay(alignment: .top) {
             Rectangle()
@@ -113,6 +148,23 @@ private struct TabButton: View {
                 .foregroundStyle(tabAccent)
                 .opacity(showColorBar || isSelected ? 1 : 0)
         }
+    }
+
+    private var accessibilityTitle: String {
+        subtitle.isEmpty ? title : "\(title), \(subtitle)"
+    }
+
+    private var titleStack: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 12, weight: isSelected ? .medium : .regular))
+                .lineLimit(1)
+            Text(subtitle)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(minWidth: 56, maxWidth: 220, alignment: .leading)
     }
 
     private var tabAccent: Color {

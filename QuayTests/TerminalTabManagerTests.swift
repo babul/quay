@@ -122,4 +122,36 @@ struct TerminalTabManagerTests {
         #expect(manager.tabs.map(\.id) == [second.id, first.id, third.id])
         #expect(manager.selectedTabID == second.id)
     }
+
+    @Test("Closing selected tab removes it and selects the last remaining tab")
+    func closingSelectedTabSelectsLastRemainingTab() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let first = manager.openNewTab(for: ConnectionProfile(name: "prod", hostname: "prod.example.com"))
+        let second = manager.openNewTab(for: ConnectionProfile(name: "stage", hostname: "stage.example.com"))
+        let third = manager.openNewTab(for: ConnectionProfile(name: "dev", hostname: "dev.example.com"))
+        manager.select(second)
+
+        manager.closeTab(second)
+
+        #expect(manager.tabs.map(\.id) == [first.id, third.id])
+        #expect(manager.selectedTabID == third.id)
+    }
+
+    @Test("Close confirmation is required only for active phases when enabled")
+    func closeConfirmationRequiredOnlyForActivePhasesWhenEnabled() {
+        #expect(TerminalTabManager.shouldConfirmClose(phase: .starting, confirmActiveSessions: true))
+        #expect(TerminalTabManager.shouldConfirmClose(phase: .running, confirmActiveSessions: true))
+        #expect(!TerminalTabManager.shouldConfirmClose(phase: .idle, confirmActiveSessions: true))
+        #expect(!TerminalTabManager.shouldConfirmClose(phase: .disconnected, confirmActiveSessions: true))
+        #expect(!TerminalTabManager.shouldConfirmClose(phase: .failed("Session ended"), confirmActiveSessions: true))
+    }
+
+    @Test("Close confirmation setting disabled bypasses all phases")
+    func closeConfirmationDisabledBypassesAllPhases() {
+        #expect(!TerminalTabManager.shouldConfirmClose(phase: .starting, confirmActiveSessions: false))
+        #expect(!TerminalTabManager.shouldConfirmClose(phase: .running, confirmActiveSessions: false))
+        #expect(!TerminalTabManager.shouldConfirmClose(phase: .idle, confirmActiveSessions: false))
+        #expect(!TerminalTabManager.shouldConfirmClose(phase: .disconnected, confirmActiveSessions: false))
+        #expect(!TerminalTabManager.shouldConfirmClose(phase: .failed("Session ended"), confirmActiveSessions: false))
+    }
 }

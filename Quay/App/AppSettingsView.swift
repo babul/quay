@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppSettingsView: View {
     @AppStorage("appearance.showTabColorBars") private var showTabColorBars = true
+    @AppStorage("tabs.confirmCloseActiveSessions") private var confirmCloseActiveSessions = true
 
     var body: some View {
         Form {
@@ -23,9 +24,13 @@ struct AppSettingsView: View {
                 }
                 .padding(.top, 2)
             }
+
+            Section("Tabs") {
+                Toggle("Confirm before closing active tabs", isOn: $confirmCloseActiveSessions)
+            }
         }
         .formStyle(.grouped)
         .padding(20)
-        .frame(width: 520, height: 260)
+        .frame(width: 520, height: 320)
     }
 }

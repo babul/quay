@@ -24,6 +24,29 @@ final class TerminalTabManager {
         return tabs.first { $0.id == id }
     }
 
+    static func shouldConfirmClose(
+        phase: TerminalTabItem.Phase,
+        confirmActiveSessions: Bool
+    ) -> Bool {
+        guard confirmActiveSessions else { return false }
+
+        switch phase {
+        case .starting, .running:
+            return true
+        case .idle, .disconnected, .failed:
+            return false
+        }
+    }
+
+    func tabsRequiringCloseConfirmation(confirmActiveSessions: Bool) -> [TerminalTabItem] {
+        tabs.filter {
+            Self.shouldConfirmClose(
+                phase: $0.phase,
+                confirmActiveSessions: confirmActiveSessions
+            )
+        }
+    }
+
     // MARK: Commands
 
     /// Select an existing tab for `profile`, or open/connect the first one.

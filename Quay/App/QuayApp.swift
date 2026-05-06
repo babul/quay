@@ -7,6 +7,8 @@ private let quayAppLogger = Logger(subsystem: "com.montopolis.quay", category: "
 
 @main
 struct QuayApp: App {
+    @NSApplicationDelegateAdaptor(AppTerminationDelegate.self) private var appDelegate
+
     let store = Store(initialState: AppFeature.State()) { AppFeature() }
 
     init() {
@@ -41,6 +43,49 @@ struct QuayApp: App {
         Settings {
             AppSettingsView()
         }
+    }
+}
+
+@MainActor
+private final class AppTerminationDelegate: NSObject, NSApplicationDelegate {
+    private static let confirmCloseActiveSessionsKey = "tabs.confirmCloseActiveSessions"
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let tabs = TerminalTabManager.shared.tabsRequiringCloseConfirmation(
+            confirmActiveSessions: confirmCloseActiveSessions
+        )
+        guard !tabs.isEmpty else { return .terminateNow }
+
+        for tab in tabs {
+            TerminalTabManager.shared.select(tab)
+            guard confirmQuitClosingTab(tab) else {
+                return .terminateCancel
+            }
+        }
+
+        return .terminateNow
+    }
+
+    private var confirmCloseActiveSessions: Bool {
+        guard let storedValue = UserDefaults.standard.object(
+            forKey: Self.confirmCloseActiveSessionsKey
+        ) as? Bool else {
+            return true
+        }
+        return storedValue
+    }
+
+    private func confirmQuitClosingTab(_ tab: TerminalTabItem) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Close Active Tab?"
+        alert.informativeText = """
+        "\(tab.displayTitle)" is still active. Closing Quay will disconnect this session.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Close Tab and Quit")
+        alert.addButton(withTitle: "Cancel Quit")
+
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 
