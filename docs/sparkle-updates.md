@@ -7,8 +7,8 @@ Quay.app (Sparkle)
     ↓ checks
 https://babul.github.io/quay/appcast.xml     (gh-pages branch)
     ↓ download URL inside appcast
-https://github.com/babul/quay/releases/download/vX.Y.Z/Quay-X.Y.Z.zip
-    ↓ verified with EdDSA, installed by Sparkle
+https://github.com/babul/quay/releases/download/vX.Y.Z/Quay-X.Y.Z.dmg
+    ↓ verified with EdDSA, mounted and installed by Sparkle
 ```
 
 ## One-time setup (do once per developer machine releasing builds)
@@ -78,10 +78,11 @@ The script:
 1. Reads `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` from `project.yml`.
 2. Checks that the version tag doesn't already exist and the tree is clean.
 3. Calls `scripts/notarize.sh` → produces a notarized, stapled `Quay.app`.
-4. Zips the app with `ditto` → `build/release/Quay-X.Y.Z.zip`.
-5. Calls `sign_update` to generate an EdDSA signature (reads the private key from your Keychain).
-6. Checks out the `gh-pages` branch in a git worktree, prepends a new `<item>` to `appcast.xml`, commits, and pushes.
-7. Creates a GitHub Release with the zip attached, tagged `vX.Y.Z`.
+4. Creates a DMG with `hdiutil` → `build/release/Quay-X.Y.Z.dmg` (includes an `/Applications` symlink for drag-to-install).
+5. Notarizes and staples the DMG separately (required for Gatekeeper to accept the container).
+6. Calls `sign_update` to generate an EdDSA signature over the DMG (reads the private key from your Keychain).
+7. Checks out the `gh-pages` branch in a git worktree, prepends a new `<item>` to `appcast.xml`, commits, and pushes.
+8. Creates a GitHub Release with the DMG attached, tagged `vX.Y.Z`.
 
 If you omit `--notes`, GitHub auto-generates release notes from merged PRs.
 
@@ -107,10 +108,10 @@ GitHub Pages takes 1–2 minutes to deploy after the `gh-pages` push — install
             <sparkle:version>2</sparkle:version>           <!-- CURRENT_PROJECT_VERSION -->
             <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/babul/quay/releases/download/v0.1.1/Quay-0.1.1.zip"
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.1.1/Quay-0.1.1.dmg"
                        sparkle:edSignature="<base64>"
                        length="12345678"
-                       type="application/octet-stream" />
+                       type="application/x-apple-diskimage" />
         </item>
     </channel>
 </rss>

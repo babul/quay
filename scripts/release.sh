@@ -17,6 +17,8 @@ cd "$REPO_ROOT"
 bold()         { printf "\033[1m%s\033[0m\n" "$*"; }
 info()         { printf "  %s\n" "$*"; }
 fail()         { printf "\033[31merror:\033[0m %s\n" "$*" >&2; exit 1; }
+json_get()     { printf '%s' "$1" | python3 -c "import sys,json; print(json.load(sys.stdin).get(sys.argv[1],''))" "$2"; }
+extract_sig()  { grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2; }
 
 # Read key from project.yml
 read_yml_key() {
@@ -39,6 +41,8 @@ elif [[ -x "/Applications/Sparkle/bin/sign_update" ]]; then
 else
   fail "sign_update not found.\n\nRun ./scripts/bootstrap-sparkle.sh to download Sparkle CLI tools,\nor install via: brew install --cask sparkle"
 fi
+
+NOTARIZE_PROFILE="notarytool-quay"  # must match the profile used in notarize.sh
 
 # ── early preflight (before any prompts) ─────────────────────────────────────
 bold "==> Preflight checks"
@@ -138,21 +142,51 @@ bold "==> Notarizing"
 APP="$REPO_ROOT/build/notarize/export/Quay.app"
 [[ -d "$APP" ]] || fail "notarize.sh did not produce $APP"
 
-# ── zip for Sparkle ───────────────────────────────────────────────────────────
-ZIP_NAME="Quay-${VERSION}.zip"
-bold "==> Creating distribution zip"
-ZIP_PATH="$REPO_ROOT/build/release/$ZIP_NAME"
-rm -f "$ZIP_PATH"
-ditto -c -k --keepParent "$APP" "$ZIP_PATH"
-info "archive: $ZIP_PATH"
+# ── DMG for Sparkle ───────────────────────────────────────────────────────────
+DMG_NAME="Quay-${VERSION}.dmg"
+bold "==> Creating distribution DMG"
+DMG_PATH="$REPO_ROOT/build/release/$DMG_NAME"
+rm -f "$DMG_PATH"
+
+STAGING="$(mktemp -d)"
+cp -R "$APP" "$STAGING/"
+ln -s /Applications "$STAGING/Applications"
+hdiutil create -fs HFS+ -volname "Quay" -srcfolder "$STAGING" -ov -format UDZO -o "$DMG_PATH" >/dev/null
+rm -rf "$STAGING"
+info "image: $DMG_PATH"
+
+# ── notarize + staple DMG ─────────────────────────────────────────────────────
+bold "==> Notarizing DMG"
+DMG_NOTARY_OUTPUT="$(xcrun notarytool submit "$DMG_PATH" \
+  --keychain-profile "$NOTARIZE_PROFILE" \
+  --wait \
+  --output-format json)"
+
+DMG_NOTARY_STATUS="$(json_get "$DMG_NOTARY_OUTPUT" status)"
+DMG_NOTARY_ID="$(json_get "$DMG_NOTARY_OUTPUT" id)"
+
+if [[ "$DMG_NOTARY_STATUS" != "Accepted" ]]; then
+  printf "\033[31mDMG notarization rejected (status: %s, id: %s)\033[0m\n" \
+    "$DMG_NOTARY_STATUS" "$DMG_NOTARY_ID" >&2
+  [[ -n "$DMG_NOTARY_ID" ]] && \
+    xcrun notarytool log "$DMG_NOTARY_ID" --keychain-profile "$NOTARIZE_PROFILE" >&2 || true
+  exit 1
+fi
+
+info "DMG notarized (id: $DMG_NOTARY_ID)"
+xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
+info "DMG stapled"
 
 # ── EdDSA signature ───────────────────────────────────────────────────────────
 bold "==> Signing with EdDSA"
-SIGN_OUTPUT="$("$SIGN_UPDATE" "$ZIP_PATH")"
-ED_SIG="$(echo "$SIGN_OUTPUT" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)"
+SIGN_OUTPUT="$("$SIGN_UPDATE" "$DMG_PATH")"
+ED_SIG="$(echo "$SIGN_OUTPUT" | extract_sig)"
 ED_LEN="$(echo "$SIGN_OUTPUT" | grep -o 'length="[^"]*"' | cut -d'"' -f2)"
+
 [[ -n "$ED_SIG" ]] || fail "sign_update produced no EdDSA signature — is the private key in your login Keychain?"
 [[ -n "$ED_LEN" ]] || fail "sign_update produced no length"
+
 info "signature: ${ED_SIG:0:24}…  length: $ED_LEN"
 
 # ── update appcast on gh-pages ────────────────────────────────────────────────
@@ -163,7 +197,7 @@ git worktree add "$WORKTREE" gh-pages
 
 APPCAST="$WORKTREE/appcast.xml"
 PUB_DATE="$(date -u '+%a, %d %b %Y %H:%M:%S +0000')"
-RELEASE_URL="https://github.com/babul/quay/releases/download/${TAG}/${ZIP_NAME}"
+RELEASE_URL="https://github.com/babul/quay/releases/download/${TAG}/${DMG_NAME}"
 
 NEW_ITEM="$(cat <<XMLEOF
         <item>
@@ -175,7 +209,7 @@ NEW_ITEM="$(cat <<XMLEOF
             <enclosure url="${RELEASE_URL}"
                        sparkle:edSignature="${ED_SIG}"
                        length="${ED_LEN}"
-                       type="application/octet-stream" />
+                       type="application/x-apple-diskimage" />
         </item>
 XMLEOF
 )"
@@ -222,7 +256,7 @@ info "appcast.xml updated on gh-pages"
 # ── GitHub release ────────────────────────────────────────────────────────────
 bold "==> Creating GitHub release ${TAG}"
 gh release create "$TAG" \
-  "$ZIP_PATH" \
+  "$DMG_PATH" \
   --title "Quay ${VERSION}" \
   --notes-file "$NOTES_TMP"
 rm -f "$NOTES_TMP"
