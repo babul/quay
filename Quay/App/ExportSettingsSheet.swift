@@ -48,6 +48,10 @@ struct ExportSettingsSheet: View {
                     .foregroundStyle(.red)
             }
 
+            Text("Locked login-script step values will be included as plaintext inside the bundle. Set a password above to encrypt them.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Spacer()
 
             HStack {

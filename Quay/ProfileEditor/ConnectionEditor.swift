@@ -30,6 +30,9 @@ struct ConnectionEditor: View {
     @State private var iconName: String?
     @State private var notes: String = ""
     @State private var loginScriptSteps: [LoginScriptStep] = []
+    @State private var pendingLocks: [UUID: SensitiveBytes] = [:]
+    @State private var pendingDeletes: Set<String> = []
+    @State private var saveError: String?
     @State private var selectedFolderID: UUID?
     @State private var didLoad = false
     @State private var hostnameIsRevealed = false
@@ -81,6 +84,18 @@ struct ConnectionEditor: View {
         .frame(minHeight: 420)
         .fixedSize(horizontal: true, vertical: false)
         .onAppear { loadIfNeeded() }
+        .onDisappear {
+            pendingLocks = [:]
+            pendingDeletes = []
+        }
+        .alert(
+            "Could not save",
+            isPresented: Binding(get: { saveError != nil }, set: { _ in saveError = nil })
+        ) {
+            Button("OK") { saveError = nil }
+        } message: {
+            Text(saveError ?? "")
+        }
     }
 
     @ViewBuilder
@@ -213,7 +228,13 @@ struct ConnectionEditor: View {
                 ForEach($loginScriptSteps) { $step in
                     LoginScriptStepRow(
                         step: $step,
-                        onDelete: { removeLoginScriptStep(id: step.id) }
+                        pendingBytes: pendingLocks[step.id],
+                        onDelete: { removeLoginScriptStep(id: step.id) },
+                        onLockConfirmed: { id, bytes in pendingLocks[id] = bytes },
+                        onScheduleUnlock: { id, uri in
+                            pendingLocks.removeValue(forKey: id)
+                            pendingDeletes.insert(uri)
+                        }
                     )
                     if step.id != loginScriptSteps.last?.id {
                         Divider()
@@ -381,6 +402,27 @@ struct ConnectionEditor: View {
     }
 
     private func save() {
+        // Apply Keychain mutations first — abort if a write fails so the
+        // on-disk profile can never reference a missing Keychain entry.
+        for uri in pendingDeletes {
+            guard let pair = SecretReference.keychainPair(forURI: uri) else { continue }
+            try? KeychainStore.delete(service: pair.service, account: pair.account)
+        }
+        for (stepID, value) in pendingLocks {
+            do {
+                try KeychainStore.write(
+                    service: SecretReference.loginScriptKeychainService,
+                    account: stepID.uuidString,
+                    value: value
+                )
+            } catch {
+                saveError = "Could not lock step: \(error.localizedDescription)"
+                return
+            }
+        }
+        pendingLocks = [:]
+        pendingDeletes = []
+
         let portInt = Int(port.trimmingCharacters(in: .whitespaces))
         let user = username.isEmpty ? nil : username
         let secret = secretRef.isEmpty ? nil : secretRef
@@ -485,6 +527,14 @@ struct ConnectionEditor: View {
     }
 
     private func removeLoginScriptStep(id: UUID) {
+        // Drop any pending in-memory lock for this step. If the step had a
+        // *saved* lock (no pending bytes), schedule its Keychain entry for
+        // deletion on save.
+        if let step = loginScriptSteps.first(where: { $0.id == id }), let uri = step.sendRef {
+            if pendingLocks.removeValue(forKey: id) == nil {
+                pendingDeletes.insert(uri)
+            }
+        }
         loginScriptSteps.removeAll { $0.id == id }
         renumberLoginScriptSteps()
     }
@@ -498,7 +548,15 @@ struct ConnectionEditor: View {
 
 private struct LoginScriptStepRow: View {
     @Binding var step: LoginScriptStep
+    /// Non-nil while the lock is pending save (bytes held in memory, not yet in Keychain).
+    let pendingBytes: SensitiveBytes?
     let onDelete: () -> Void
+    let onLockConfirmed: (UUID, SensitiveBytes) -> Void
+    let onScheduleUnlock: (UUID, String) -> Void
+
+    @State private var showingLockSheet = false
+    @State private var showingUnlockConfirm = false
+    @State private var lockInputText = ""
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -509,13 +567,26 @@ private struct LoginScriptStepRow: View {
                 width: 170,
                 labelWidth: 46
             )
-            FormTextField(
-                title: "Send",
-                text: $step.send,
-                prompt: "Command",
-                width: 210,
-                labelWidth: 38
-            )
+
+            if step.sendRef != nil {
+                lockedSendView
+            } else {
+                FormTextField(
+                    title: "Send",
+                    text: $step.send,
+                    prompt: "Command",
+                    width: 210,
+                    labelWidth: 38
+                )
+            }
+
+            Button(action: handleLockTap) {
+                Image(systemName: step.sendRef != nil ? "lock.fill" : "lock.open")
+            }
+            .buttonStyle(.borderless)
+            .frame(width: 20, height: 28)
+            .help(step.sendRef != nil ? "Unlock step" : "Lock step value in Keychain")
+
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
             }
@@ -524,6 +595,120 @@ private struct LoginScriptStepRow: View {
             .help("Remove script step")
             .accessibilityLabel("Remove login script step")
         }
+        .sheet(isPresented: $showingLockSheet) {
+            LockStepSheet(inputText: $lockInputText) {
+                commitLock(text: lockInputText)
+                showingLockSheet = false
+            } onCancel: {
+                lockInputText = ""
+                showingLockSheet = false
+            }
+        }
+        .confirmationDialog(
+            "Unlock this step?",
+            isPresented: $showingUnlockConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reveal & Edit") { revealAndEdit() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("The value will be retrieved from your Keychain.")
+        }
+    }
+
+    private var lockedSendView: some View {
+        HStack(spacing: 12) {
+            Text("Send")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 38, alignment: .leading)
+            Text("Stored in Keychain")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .italic()
+                .frame(width: 160, alignment: .leading)
+        }
+        .frame(width: 210, alignment: .leading)
+    }
+
+    private func handleLockTap() {
+        if step.sendRef != nil {
+            showingUnlockConfirm = true
+        } else if step.send.isEmpty {
+            lockInputText = ""
+            showingLockSheet = true
+        } else {
+            commitLock(text: step.send)
+        }
+    }
+
+    private func commitLock(text: String) {
+        guard !text.isEmpty else { return }
+        let value = SensitiveBytes(Data(text.utf8))
+        let uri = SecretReference.loginScriptStepURI(stepID: step.id)
+        step.send = ""
+        step.sendRef = uri
+        lockInputText = ""
+        onLockConfirmed(step.id, value)
+    }
+
+    private func revealAndEdit() {
+        guard let uri = step.sendRef else { return }
+
+        // Pending lock: bytes are still in memory — no Keychain read needed.
+        if let bytes = pendingBytes, let text = bytes.unsafeUTF8String() {
+            onScheduleUnlock(step.id, uri)
+            step.send = text
+            step.sendRef = nil
+            return
+        }
+
+        // Saved lock: resolve from Keychain (Touch ID prompt).
+        Task { @MainActor in
+            do {
+                let bytes = try await ReferenceResolver().resolve(uri)
+                if let text = bytes.unsafeUTF8String() {
+                    onScheduleUnlock(step.id, uri)
+                    step.send = text
+                    step.sendRef = nil
+                }
+            } catch {
+                // Touch ID cancelled or item missing — leave step locked.
+            }
+        }
+    }
+}
+
+private struct LockStepSheet: View {
+    @Binding var inputText: String
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Lock Step")
+                .font(.headline)
+
+            SecureField("Secret value", text: $inputText)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { if !inputText.isEmpty { onConfirm() } }
+
+            Text("The value will be stored in your Keychain and resolved when Quay runs this script.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.escape, modifiers: [])
+                Spacer()
+                Button("Lock", action: onConfirm)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(inputText.isEmpty)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 300)
     }
 }
 

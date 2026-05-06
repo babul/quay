@@ -38,6 +38,55 @@ struct SecretReferenceTests {
             _ = try SecretReference("keychain://")
         }
     }
+
+    @Test("loginScriptStepURI builds a parseable keychain URI")
+    func loginScriptStepURIFormat() throws {
+        let id = UUID()
+        let uri = SecretReference.loginScriptStepURI(stepID: id)
+        #expect(uri == "keychain://com.quay.scripts/\(id.uuidString)")
+        let ref = try SecretReference(uri)
+        #expect(ref.keychainService == SecretReference.loginScriptKeychainService)
+        #expect(ref.keychainAccount == id.uuidString)
+    }
+}
+
+@Suite("KeychainStore write / delete", .serialized)
+struct KeychainStoreWriteTests {
+
+    private static func randomService() -> String {
+        "com.quay.tests.\(UUID().uuidString)"
+    }
+
+    @Test("write creates an item that can subsequently be deleted")
+    func writeAndDelete() throws {
+        let service = Self.randomService()
+        let account = UUID().uuidString
+        let value = SensitiveBytes(Data("secret-value".utf8))
+
+        try KeychainStore.write(service: service, account: account, value: value)
+        // Clean up — must not throw.
+        try KeychainStore.delete(service: service, account: account)
+    }
+
+    @Test("delete of a non-existent item does not throw")
+    func deleteNonExistent() throws {
+        let service = Self.randomService()
+        let account = UUID().uuidString
+        // Should succeed without throwing even though the item doesn't exist.
+        try KeychainStore.delete(service: service, account: account)
+    }
+
+    @Test("write is idempotent — updating the same item does not throw")
+    func writeIdempotent() throws {
+        let service = Self.randomService()
+        let account = UUID().uuidString
+        let v1 = SensitiveBytes(Data("first".utf8))
+        let v2 = SensitiveBytes(Data("second".utf8))
+
+        try KeychainStore.write(service: service, account: account, value: v1)
+        try KeychainStore.write(service: service, account: account, value: v2)
+        try KeychainStore.delete(service: service, account: account)
+    }
 }
 
 @Suite("AskpassServer + helper", .serialized)

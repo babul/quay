@@ -149,6 +149,8 @@ private func bundleErrorMessage(_ error: Error) -> String {
         return "This file is encrypted. A password is required."
     case .cyclicFolderGraph:
         return "The bundle contains a circular folder reference and could not be imported."
+    case .lockedStepResolutionFailed:
+        return bundleError.errorDescription ?? bundleError.localizedDescription
     }
 }
 

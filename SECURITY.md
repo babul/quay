@@ -15,7 +15,7 @@ Use [GitHub Security Advisories](https://github.com/babul/quay/security/advisori
 **In scope** — vulnerabilities in Quay's own code:
 
 - `AskpassServer` Unix domain socket IPC (secret delivery to SSH_ASKPASS helper)
-- `KeychainStore` / `ReferenceResolver` — Keychain credential retrieval
+- `KeychainStore` / `ReferenceResolver` — Keychain credential read/write (login-script step lock action writes; SSH credentials remain user-managed)
 - `SSHCommandBuilder` — SSH argv assembly that could expose secrets via process listing
 - `SettingsBundle` export/import — AES-GCM-256 + PBKDF2 encryption
 - `SecretReference` URI parsing — schemes that could allow unintended data exposure

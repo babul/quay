@@ -205,12 +205,19 @@ struct PersistenceTests {
     func loginScriptStepsRoundTrip() throws {
         let container = try Self.makeContainer()
         let ctx = container.mainContext
+        let lockedID = UUID()
         let profile = ConnectionProfile(
             name: "n",
             hostname: "h",
             loginScriptSteps: [
                 LoginScriptStep(match: ":~#", send: "su - babul", sortIndex: 0),
-                LoginScriptStep(match: "Password:", send: "opensesame", sortIndex: 1)
+                LoginScriptStep(
+                    id: lockedID,
+                    match: "Password:",
+                    send: "",
+                    sendRef: SecretReference.loginScriptStepURI(stepID: lockedID),
+                    sortIndex: 1
+                )
             ]
         )
         ctx.insert(profile)
@@ -218,23 +225,53 @@ struct PersistenceTests {
 
         let fetched = try #require(try ctx.fetch(FetchDescriptor<ConnectionProfile>()).first)
         #expect(fetched.loginScriptSteps.map(\.match) == [":~#", "Password:"])
-        #expect(fetched.loginScriptSteps.map(\.send) == ["su - babul", "opensesame"])
+        #expect(fetched.loginScriptSteps[0].send == "su - babul")
+        #expect(fetched.loginScriptSteps[0].sendRef == nil)
+        #expect(fetched.loginScriptSteps[1].send == "")
+        #expect(fetched.loginScriptSteps[1].sendRef == SecretReference.loginScriptStepURI(stepID: lockedID))
         #expect(fetched.loginScriptSteps.map(\.sortIndex) == [0, 1])
+    }
+
+    @Test("sendRef nil when decoded from JSON without sendRef key (backward compat)")
+    func loginScriptStepSendRefDefaultsToNil() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let profile = ConnectionProfile(name: "n", hostname: "h")
+        // Raw JSON without a sendRef key — simulates data written by an older build.
+        profile.loginScriptStepsJSON = #"[{"id":"00000000-0000-0000-0000-000000000042","match":"ready","send":"go","sortIndex":0}]"#
+        ctx.insert(profile)
+        try ctx.save()
+
+        let fetched = try #require(try ctx.fetch(FetchDescriptor<ConnectionProfile>()).first)
+        let step = try #require(fetched.loginScriptSteps.first)
+        #expect(step.match == "ready")
+        #expect(step.send == "go")
+        #expect(step.sendRef == nil)
     }
 
     @Test("login script steps normalize empty rows and order")
     func loginScriptStepsNormalizeEmptyRowsAndOrder() {
         let profile = ConnectionProfile(name: "n", hostname: "h")
+        let lockedID = UUID()
         profile.loginScriptSteps = [
             LoginScriptStep(match: "  second  ", send: "  two  ", sortIndex: 2),
             LoginScriptStep(match: "", send: "ignored", sortIndex: 0),
             LoginScriptStep(match: "first", send: "one", sortIndex: 1),
-            LoginScriptStep(match: "ignored", send: "   ", sortIndex: 3)
+            LoginScriptStep(match: "ignored", send: "   ", sortIndex: 3),
+            LoginScriptStep(
+                id: lockedID,
+                match: "locked",
+                send: "",
+                sendRef: SecretReference.loginScriptStepURI(stepID: lockedID),
+                sortIndex: 4
+            )
         ]
 
-        #expect(profile.loginScriptSteps.map(\.match) == ["first", "second"])
-        #expect(profile.loginScriptSteps.map(\.send) == ["one", "two"])
-        #expect(profile.loginScriptSteps.map(\.sortIndex) == [0, 1])
+        #expect(profile.loginScriptSteps.map(\.match) == ["first", "second", "locked"])
+        #expect(profile.loginScriptSteps[0].send == "one")
+        #expect(profile.loginScriptSteps[1].send == "two")
+        #expect(profile.loginScriptSteps[2].sendRef != nil)
+        #expect(profile.loginScriptSteps.map(\.sortIndex) == [0, 1, 2])
     }
 
     @Test("default Hosts folder is created once")

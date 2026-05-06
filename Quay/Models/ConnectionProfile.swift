@@ -5,21 +5,28 @@ import SwiftData
 ///
 /// Steps are processed in `sortIndex` order. When `match` appears in the
 /// visible terminal text, `send` is written to the PTY and the runner advances.
+/// If `sendRef` is set it is a `keychain://` URI resolved at run time; `send` is empty.
 struct LoginScriptStep: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var match: String
+    /// Plaintext value to send. Empty when `sendRef` is set.
     var send: String
+    /// Keychain URI (`keychain://com.quay.scripts/<stepUUID>`). When non-nil the
+    /// step's value is resolved from the Keychain instead of `send`.
+    var sendRef: String?
     var sortIndex: Int
 
     init(
         id: UUID = UUID(),
         match: String,
         send: String,
+        sendRef: String? = nil,
         sortIndex: Int
     ) {
         self.id = id
         self.match = match
         self.send = send
+        self.sendRef = sendRef
         self.sortIndex = sortIndex
     }
 }
@@ -32,10 +39,11 @@ extension Array where Element == LoginScriptStep {
                     id: $0.id,
                     match: $0.match.trimmingCharacters(in: .whitespacesAndNewlines),
                     send: $0.send.trimmingCharacters(in: .whitespacesAndNewlines),
+                    sendRef: $0.sendRef,
                     sortIndex: $0.sortIndex
                 )
             }
-            .filter { !$0.match.isEmpty && !$0.send.isEmpty }
+            .filter { !$0.match.isEmpty && (!$0.send.isEmpty || $0.sendRef != nil) }
             .sorted { lhs, rhs in
                 if lhs.sortIndex == rhs.sortIndex {
                     return lhs.id.uuidString < rhs.id.uuidString
@@ -48,6 +56,7 @@ extension Array where Element == LoginScriptStep {
                     id: step.id,
                     match: step.match,
                     send: step.send,
+                    sendRef: step.sendRef,
                     sortIndex: offset
                 )
             }

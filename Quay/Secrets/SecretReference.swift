@@ -24,6 +24,26 @@ struct SecretReference: Sendable, Equatable {
 }
 
 extension SecretReference {
+    /// Service name used for all login-script Keychain entries.
+    static let loginScriptKeychainService = "com.quay.scripts"
+
+    /// Build the `keychain://` URI for a login-script step stored by Quay.
+    static func loginScriptStepURI(stepID: UUID) -> String {
+        "keychain://\(loginScriptKeychainService)/\(stepID.uuidString)"
+    }
+
+    /// Parse a URI and return the `(service, account)` pair if it's a valid
+    /// `keychain://` reference. Used to bridge between the URI form stored in
+    /// profiles and `KeychainStore`'s service/account API.
+    static func keychainPair(forURI uri: String) -> (service: String, account: String)? {
+        guard let ref = try? SecretReference(uri),
+              let service = ref.keychainService,
+              let account = ref.keychainAccount else { return nil }
+        return (service, account)
+    }
+}
+
+extension SecretReference {
     enum ParseError: Error, Equatable {
         case empty
         case missingScheme

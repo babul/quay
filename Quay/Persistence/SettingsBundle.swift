@@ -101,12 +101,24 @@ enum SettingsBundle {
     static let formatVersion = 1
     static let magic = "quay.bundle"
 
-    enum BundleError: Error, Equatable {
+    enum BundleError: LocalizedError, Equatable {
         case malformedFile
         case unsupportedVersion(found: Int)
         case wrongPassword
         case missingPassword
         case cyclicFolderGraph
+        /// A login-script step's Keychain value could not be read during export
+        /// (e.g. Touch ID was cancelled or the entry no longer exists).
+        case lockedStepResolutionFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .lockedStepResolutionFailed:
+                return "A locked login-script step could not be read from your Keychain. Make sure Touch ID succeeds and try again."
+            default:
+                return nil
+            }
+        }
     }
 
     // MARK: Encode
@@ -124,7 +136,7 @@ enum SettingsBundle {
                 parentID: f.parent?.id
             )
         }
-        let connectionDTOs = allConnections.map { c in
+        let connectionDTOs = try allConnections.map { c in
             ConnectionDTO(
                 id: c.id,
                 name: c.name,
@@ -141,7 +153,7 @@ enum SettingsBundle {
                 colorTag: c.colorTag,
                 iconName: c.iconName,
                 notes: c.notes,
-                loginScriptStepsJSON: c.loginScriptStepsJSON,
+                loginScriptStepsJSON: try exportLoginScriptStepsJSON(c.loginScriptStepsJSON),
                 sortIndex: c.sortIndex,
                 parentFolderID: c.parent?.id
             )
@@ -281,6 +293,41 @@ enum SettingsBundle {
 
     private static func aadData(version: Int) -> Data {
         Data("\(magic)|v\(version)".utf8)
+    }
+
+    /// Resolves any Keychain-backed step values in `loginScriptStepsJSON` to
+    /// plaintext so the exported bundle is self-contained. Bundle-level
+    /// encryption is the caller's responsibility.
+    ///
+    /// Returns the input unchanged when it cannot be decoded or contains no
+    /// locked steps.
+    private static func exportLoginScriptStepsJSON(_ json: String?) throws -> String? {
+        guard let json,
+              let data = json.data(using: .utf8),
+              var steps = try? makeDecoder().decode([LoginScriptStep].self, from: data),
+              steps.contains(where: { $0.sendRef != nil }) else {
+            return json
+        }
+
+        for i in steps.indices {
+            guard let uri = steps[i].sendRef else { continue }
+            guard let pair = SecretReference.keychainPair(forURI: uri) else {
+                throw BundleError.malformedFile
+            }
+            do {
+                let bytes = try KeychainStore.read(service: pair.service, account: pair.account)
+                steps[i].send = bytes.unsafeUTF8String() ?? ""
+                steps[i].sendRef = nil
+            } catch {
+                throw BundleError.lockedStepResolutionFailed
+            }
+        }
+
+        guard let resolved = try? makeEncoder().encode(steps),
+              let resolvedJSON = String(data: resolved, encoding: .utf8) else {
+            throw BundleError.malformedFile
+        }
+        return resolvedJSON
     }
 
     private static func makeEncoder() -> JSONEncoder {

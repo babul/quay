@@ -16,7 +16,7 @@ A `ConnectionProfile` stores secret references as URI strings. One scheme is rec
 
 `SecretReference` parses the URI; `ReferenceResolver` dispatches to `KeychainStore`.
 
-The reference goes in `ConnectionProfile.secretRef`. For password auth that's the password; for `.privateKeyWithPassphrase` it's the passphrase.
+The reference goes in `ConnectionProfile.secretRef`. For password auth that's the password; for `.privateKeyWithPassphrase` it's the passphrase. Login-script steps also store a reference in `LoginScriptStep.sendRef` — the fixed service `com.quay.scripts` with the step's UUID as the account, e.g. `keychain://com.quay.scripts/550E8400-E29B-41D4-A716-446655440000`. These are the only Keychain entries Quay writes itself (see below).
 
 ## Resolution flow
 
@@ -94,10 +94,21 @@ Plaintext lifetime is bounded by the time between step 2 and step 5 — typicall
 
 The only escape is the OS Keychain returning data that *we* don't choose how to free — `SensitiveBytes(_ data: Data)` copies into our heap and the temporary `Data` goes through Swift's normal arena.
 
+## Writes to Keychain (login-script step locks)
+
+The only place Quay writes to Keychain is when the user locks a login-script step in the connection editor. The write is deferred: `pendingLocks: [UUID: SensitiveBytes]` and `pendingDeletes: Set<String>` accumulate mutations in the editor, and are applied to Keychain — in that order — only when the user taps **Save**. Dismissing the editor without saving discards the in-memory state and creates no Keychain entries.
+
+Each locked step stores its value under:
+- **Service**: `com.quay.scripts` (constant)
+- **Account**: the step's UUID (minted at row creation)
+
+On properly-signed builds the item gets a `kSecAttrAccessControl` with `.userPresence` (Touch ID gate). On ad-hoc or test-runner builds where `errSecMissingEntitlement` (-34018) is returned, `KeychainStore.write` retries without the ACL flag using `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+
+SSH credentials and key passphrases remain user-managed — Quay only reads them.
+
 ## What we deliberately don't do (yet)
 
 - **Cache secrets across resolutions.** Every call to the helper triggers a fresh Keychain hit. Cleaner threat model; more biometric prompts. v1.x candidate.
-- **Write to Keychain.** Quay only reads. Users create/rotate via their existing vault tooling.
 - **Other backends.** HashiCorp Vault, AWS Secrets Manager, Bitwarden, Doppler — all are post-v1 candidates that plug into the `ReferenceResolver` dispatcher.
 
 ## Audit trail
@@ -115,3 +126,4 @@ The only escape is the OS Keychain returning data that *we* don't choose how to 
 | Compromised Quay binary exfiltrates secrets | Out of scope — code-signing + notarization (v1.0) raise the cost of a malicious binary swap. |
 | Swap-file leaks | macOS encrypts the swap; FileVault tightens it further. We don't add anything beyond what the OS provides. |
 | Secret rotation in Keychain | Quay re-reads the URI on every connect — no cache, no staleness. |
+| Locked-step value leaks via exported bundle | Bundle is optionally encrypted (PBKDF2-HMAC-SHA256 + AES-GCM-256). The export sheet warns: "Locked login-script step values will be included as plaintext inside the bundle. Set a password above to encrypt them." |

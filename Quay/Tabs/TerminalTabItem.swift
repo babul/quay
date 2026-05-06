@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 final class LoginScriptRunner {
     private let steps: [LoginScriptStep]
+    private let resolver: ReferenceResolver
     private let readVisibleText: () -> String
     private let sendText: (String) -> Void
     private let pollInterval: TimeInterval
@@ -15,12 +16,14 @@ final class LoginScriptRunner {
 
     init(
         steps: [LoginScriptStep],
+        resolver: ReferenceResolver = ReferenceResolver(),
         pollInterval: TimeInterval = 0.25,
         stepTimeout: TimeInterval = 30,
         readVisibleText: @escaping () -> String,
         sendText: @escaping (String) -> Void
     ) {
         self.steps = steps.normalizedLoginScriptSteps
+        self.resolver = resolver
         self.pollInterval = pollInterval
         self.stepTimeout = stepTimeout
         self.readVisibleText = readVisibleText
@@ -41,11 +44,25 @@ final class LoginScriptRunner {
     }
 
     private func run() async {
+        // Resolve any Keychain-backed steps before entering the match loop so
+        // Touch ID (if required) appears as a single burst at connect time.
+        var resolvedSends: [UUID: String] = [:]
+        for step in steps where step.sendRef != nil {
+            guard let uri = step.sendRef else { continue }
+            do {
+                let bytes = try await resolver.resolve(uri)
+                resolvedSends[step.id] = bytes.unsafeUTF8String() ?? ""
+            } catch {
+                return  // Touch ID cancelled or item missing — abort the script
+            }
+        }
+
         for step in steps {
+            let send = resolvedSends[step.id] ?? step.send
             let deadline = Date().addingTimeInterval(stepTimeout)
             while !Task.isCancelled {
                 if readVisibleText().contains(step.match) {
-                    sendText(Self.terminalText(for: step.send))
+                    sendText(Self.terminalText(for: send))
                     break
                 }
 
