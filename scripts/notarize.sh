@@ -52,13 +52,38 @@ if [[ "$SKIP_ARCHIVE" -eq 0 ]]; then
     -archivePath "$ARCHIVE" \
     archive
 
-  bold "==> Exporting and re-signing with Developer ID"
+  bold "==> Copying .app from archive"
   rm -rf "$EXPORT_DIR"
-  xcodebuild \
-    -exportArchive \
-    -archivePath "$ARCHIVE" \
-    -exportPath "$EXPORT_DIR" \
-    -exportOptionsPlist "$REPO_ROOT/ExportOptions.plist"
+  mkdir -p "$EXPORT_DIR"
+  cp -R "$ARCHIVE/Products/Applications/Quay.app" "$EXPORT_DIR/"
+
+  bold "==> Re-signing Sparkle nested code with Developer ID"
+  SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+
+  # Re-sign Sparkle components with Developer ID certificate
+  if [[ -d "$SPARKLE/Versions/B" ]]; then
+    local base="$SPARKLE/Versions/B"
+    # XPC services and helpers to re-sign
+    local -a binaries=(
+      "$base/XPCServices/Installer.xpc"
+      "$base/XPCServices/Downloader.xpc"
+      "$base/Autoupdate"
+      "$base/Updater.app"
+    )
+
+    for binary in "${binaries[@]}"; do
+      if [[ -e "$binary" ]]; then
+        codesign -f -s "$DEV_ID_HASH" -o runtime "$binary"
+      fi
+    done
+
+    # Re-sign framework root (should preserve entitlements from Downloader.xpc)
+    codesign -f -s "$DEV_ID_HASH" -o runtime "$SPARKLE"
+  fi
+
+  # Re-sign main app bundle
+  codesign -f -s "$DEV_ID_HASH" -o runtime \
+    --preserve-metadata=entitlements "$APP"
 else
   bold "==> Skipping archive (--skip-archive)"
   [[ -d "$APP" ]] || fail "export not found at $APP; run without --skip-archive first"

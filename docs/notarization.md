@@ -32,7 +32,7 @@ Credentials are stored in your login keychain — never in the repo.
 
 The script:
 1. Archives Quay (Release configuration) via `xcodebuild archive`
-2. Exports `Quay.app` via `xcodebuild -exportArchive` using `ExportOptions.plist`
+2. Copies `Quay.app` from the archive and manually re-signs Sparkle's nested XPC services and helper binaries with the Developer ID certificate (per Sparkle's recommended distribution workflow)
 3. Verifies the Developer ID + Hardened Runtime signature locally
 4. Submits a zip to `notarytool submit --wait`
 5. Staples the ticket and validates with `xcrun stapler validate`
@@ -54,7 +54,7 @@ xcrun notarytool log <submission-id> --keychain-profile notarytool-quay
 **Common rejection reasons:**
 - *Hardened Runtime not enabled* — check `ENABLE_HARDENED_RUNTIME: YES` is set in `project.yml` for all targets.
 - *Secure timestamp missing* — codesign must use `-o runtime` (hardened runtime implies this; `xcodebuild archive` sets it when `ENABLE_HARDENED_RUNTIME=YES`).
-- *Embedded binary not signed / no secure timestamp* — all nested binaries (including Sparkle's `Updater.app`, `Autoupdate`, `Installer.xpc`, `Downloader.xpc`) must be re-signed with your Developer ID. This is handled by `xcodebuild -exportArchive`; it will **not** happen if you copy the `.app` directly from the `.xcarchive`. Always use the export step.
+- *Embedded binary not signed / no secure timestamp* — Sparkle's framework ships pre-signed with ad-hoc signatures, which Apple rejects. The script re-signs `Updater.app`, `Autoupdate`, `Installer.xpc`, and `Downloader.xpc` with your Developer ID certificate. If notarization still rejects these, confirm the Developer ID certificate is installed via `security find-identity -v -p codesigning`.
 
 **Signing identity missing** — confirm the Developer ID Application cert is installed:
 ```sh
