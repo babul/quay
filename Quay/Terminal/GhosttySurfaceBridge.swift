@@ -33,8 +33,9 @@ final class GhosttySurfaceBridge {
     var onChildExited: ((UInt32) -> Void)?
     var onProgressReport: ((Double?) -> Void)?
 
-    init() {
+    init(config: ghostty_config_t? = nil) {
         self.state = GhosttySurfaceState()
+        self.state.updateBackground(from: config)
     }
 
     // MARK: Action dispatch
@@ -98,6 +99,19 @@ final class GhosttySurfaceBridge {
         case GHOSTTY_ACTION_CELL_SIZE:
             let cs = action.action.cell_size
             state.cellSize = CGSize(width: CGFloat(cs.width), height: CGFloat(cs.height))
+            return true
+
+        case GHOSTTY_ACTION_COLOR_CHANGE:
+            let change = action.action.color_change
+            if change.kind == GHOSTTY_ACTION_COLOR_KIND_BACKGROUND {
+                state.backgroundColor = GhosttyResolvedAppearance.backgroundColor(from: change)
+                view?.applyResolvedBackground()
+            }
+            return true
+
+        case GHOSTTY_ACTION_CONFIG_CHANGE:
+            state.updateBackground(from: action.action.config_change.config)
+            view?.applyResolvedBackground()
             return true
 
         case GHOSTTY_ACTION_RING_BELL:

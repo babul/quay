@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var selectedConnectionID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility
     @State private var editorTarget: SidebarView.EditorTarget?
+    @State private var ghosttyConfigChangeToken = 0
     private let tabManager = TerminalTabManager.shared
 
     init(store: StoreOf<AppFeature>) {
@@ -47,6 +48,9 @@ struct ContentView: View {
             let shouldShowSidebar = columnVisibility == .detailOnly
             columnVisibility = shouldShowSidebar ? .all : .detailOnly
             SidebarLayoutState.saveSidebarVisible(shouldShowSidebar)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in
+            ghosttyConfigChangeToken &+= 1
         }
         .onChange(of: columnVisibility) { _, visibility in
             SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
@@ -97,13 +101,17 @@ struct ContentView: View {
 
     private var tabSurfaces: some View {
         ZStack {
+            terminalBackgroundColor
+
             // Single container that keeps every surface view as a direct NSView
             // subview at all times. Visibility is toggled via isHidden rather
             // than removing from the hierarchy, so libghostty never loses its
             // render target and background sessions stay alive.
             TerminalSurfaceHostsView(
                 tabs: tabManager.tabs,
-                selectedTabID: tabManager.selectedTabID
+                selectedTabID: tabManager.selectedTabID,
+                backgroundColor: selectedTerminalBackgroundColor,
+                backgroundOpacity: selectedTerminalBackgroundOpacity
             )
 
             // Status overlay for the selected tab only.
@@ -111,22 +119,46 @@ struct ContentView: View {
                 statusOverlay(for: tab)
             }
         }
+        .background(terminalBackgroundColor)
+        .background(
+            TerminalWindowBackgroundSync(
+                color: selectedTerminalBackgroundColor,
+                opacity: selectedTerminalBackgroundOpacity
+            )
+        )
+    }
+
+    private var selectedTerminalBackgroundColor: NSColor {
+        _ = ghosttyConfigChangeToken
+        return tabManager.selectedTab?.terminalBackgroundColor
+            ?? GhosttyResolvedAppearance.backgroundColor(from: GhosttyRuntime.shared.config)
+    }
+
+    private var selectedTerminalBackgroundOpacity: Double {
+        _ = ghosttyConfigChangeToken
+        return tabManager.selectedTab?.terminalBackgroundOpacity
+            ?? GhosttyResolvedAppearance.backgroundOpacity(from: GhosttyRuntime.shared.config)
+    }
+
+    private var terminalBackgroundColor: Color {
+        Color(nsColor: selectedTerminalBackgroundColor)
+            .opacity(selectedTerminalBackgroundOpacity)
     }
 
     @ViewBuilder
     private func statusOverlay(for tab: TerminalTabItem) -> some View {
         switch tab.phase {
         case .idle:
-            Color(nsColor: .windowBackgroundColor)
+            terminalBackgroundColor
         case .starting:
-            Color(nsColor: .windowBackgroundColor)
+            terminalBackgroundColor
                 .overlay { ProgressView("Connecting…") }
         case .running:
             EmptyView()
         case .disconnected:
             EmptyView()
         case .failed(let message):
-            Color(nsColor: .windowBackgroundColor)
+            terminalBackgroundColor
                 .overlay {
                     ContentUnavailableView {
                         Label("Connection lost", systemImage: "exclamationmark.triangle")
@@ -141,6 +173,23 @@ struct ContentView: View {
     }
 }
 
+private struct TerminalWindowBackgroundSync: NSViewRepresentable {
+    let color: NSColor
+    let opacity: Double
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.isHidden = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let window = nsView.window else { return }
+        window.isOpaque = GhosttyResolvedAppearance.isOpaque(opacity)
+        window.backgroundColor = GhosttyResolvedAppearance.color(color, with: opacity)
+    }
+}
+
 /// Manages all live `GhosttySurfaceView` instances as direct NSView subviews
 /// of a single container. The selected surface is ordered frontmost instead of
 /// hiding non-selected Metal-backed views, avoiding synchronous renderer churn
@@ -148,6 +197,8 @@ struct ContentView: View {
 private struct TerminalSurfaceHostsView: NSViewRepresentable {
     let tabs: [TerminalTabItem]
     let selectedTabID: UUID?
+    let backgroundColor: NSColor
+    let backgroundOpacity: Double
 
     func makeNSView(context: Context) -> NSView {
         let v = NSView()
@@ -156,6 +207,10 @@ private struct TerminalSurfaceHostsView: NSViewRepresentable {
     }
 
     func updateNSView(_ container: NSView, context: Context) {
+        container.layer?.backgroundColor = GhosttyResolvedAppearance
+            .color(backgroundColor, with: backgroundOpacity)
+            .cgColor
+
         let existing = container.subviews.compactMap { $0 as? GhosttySurfaceView }
         let existingIDs = Set(existing.map { ObjectIdentifier($0) })
 

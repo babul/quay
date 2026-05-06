@@ -11,14 +11,11 @@ struct QuayApp: App {
 
     let store = Store(initialState: AppFeature.State()) { AppFeature() }
 
-    init() {
-        quayAppLogger.debug("QuayApp initialized")
-    }
-
     var body: some Scene {
         WindowGroup("Quay") {
             ContentView(store: store)
                 .frame(minWidth: 900, minHeight: 600)
+                .modifier(GhosttyColorSchemeSyncModifier())
                 .background(WindowConfigurator())
         }
         .windowStyle(.titleBar)
@@ -43,6 +40,20 @@ struct QuayApp: App {
         Settings {
             AppSettingsView()
         }
+    }
+}
+
+private struct GhosttyColorSchemeSyncModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .task {
+                GhosttyRuntime.shared.setColorScheme(colorScheme)
+            }
+            .onChange(of: colorScheme) { _, newValue in
+                GhosttyRuntime.shared.setColorScheme(newValue)
+            }
     }
 }
 
@@ -115,7 +126,6 @@ private struct WindowConfigurator: NSViewRepresentable {
         func configureWindow() {
             guard !didConfigureWindow, let window else { return }
             didConfigureWindow = true
-            quayAppLogger.debug("Configuring main window")
             window.setFrameAutosaveName("Quay.MainWindow.Frame")
 
             let center = NotificationCenter.default
@@ -147,7 +157,6 @@ private struct WindowConfigurator: NSViewRepresentable {
 
         private func restoreSavedFrameAfterSwiftUIPlacement() {
             guard UserDefaults.standard.string(forKey: Self.savedFrameKey) != nil else { return }
-            quayAppLogger.debug("Restoring saved main window frame")
             isRestoringFrame = true
 
             Task { @MainActor in

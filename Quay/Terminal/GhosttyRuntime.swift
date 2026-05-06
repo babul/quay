@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import GhosttyKit
 import OSLog
+import SwiftUI
 
 /// One-per-process wrapper around `ghostty_app_t` and the global config.
 ///
@@ -18,7 +19,8 @@ final class GhosttyRuntime {
     private static var didBootstrap = false
 
     let app: ghostty_app_t
-    let config: ghostty_config_t
+    private(set) var config: ghostty_config_t
+    private var lastColorScheme: ghostty_color_scheme_e?
 
     /// Weak set of live surface bridges — used to fan out config and theme
     /// changes to every running surface without strong-reference cycles.
@@ -26,6 +28,10 @@ final class GhosttyRuntime {
 
     func registerSurface(_ bridge: GhosttySurfaceBridge) {
         surfaceRefs.add(bridge)
+        if let scheme = lastColorScheme,
+           let surface = bridge.view?.surface {
+            ghostty_surface_set_color_scheme(surface, scheme)
+        }
     }
 
     func unregisterSurface(_ bridge: GhosttySurfaceBridge) {
@@ -34,17 +40,31 @@ final class GhosttyRuntime {
 
     /// Reload the shared config and push it to every live surface.
     func reloadConfig() {
-        ghostty_config_load_default_files(config)
+        Self.loadConfig(config)
         ghostty_config_finalize(config)
         ghostty_app_update_config(app, config)
         for bridge in surfaceRefs.allObjects {
             guard let surface = bridge.view?.surface else { continue }
             ghostty_surface_update_config(surface, config)
+            bridge.state.updateBackground(from: config)
+            bridge.view?.applyResolvedBackground()
+        }
+        if let scheme = lastColorScheme {
+            ghostty_app_set_color_scheme(app, scheme)
+            applyColorSchemeToSurfaces(scheme)
         }
         NotificationCenter.default.post(
             name: .ghosttyRuntimeConfigDidChange,
             object: self
         )
+    }
+
+    func setColorScheme(_ colorScheme: ColorScheme) {
+        let scheme = colorScheme == .dark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+        guard scheme != lastColorScheme else { return }
+        lastColorScheme = scheme
+        ghostty_app_set_color_scheme(app, scheme)
+        applyColorSchemeToSurfaces(scheme)
     }
 
     private init() {
@@ -53,8 +73,7 @@ final class GhosttyRuntime {
         guard let config = ghostty_config_new() else {
             fatalError("ghostty_config_new returned nil")
         }
-        Self.logger.debug("Created Ghostty config")
-        ghostty_config_load_default_files(config)
+        Self.loadConfig(config)
         ghostty_config_finalize(config)
 
         var runtime = ghostty_runtime_config_s(
@@ -72,37 +91,65 @@ final class GhosttyRuntime {
             ghostty_config_free(config)
             fatalError("ghostty_app_new returned nil")
         }
-        Self.logger.debug("Created Ghostty app runtime")
 
         self.config = config
         self.app = app
+    }
+
+    isolated deinit {
+        ghostty_app_free(app)
+        ghostty_config_free(config)
     }
 
     func tick() {
         ghostty_app_tick(app)
     }
 
+    private func applyColorSchemeToSurfaces(_ scheme: ghostty_color_scheme_e) {
+        for bridge in surfaceRefs.allObjects {
+            guard let surface = bridge.view?.surface else { continue }
+            ghostty_surface_set_color_scheme(surface, scheme)
+        }
+    }
+
+    private func replaceConfig(with newConfig: ghostty_config_t) {
+        ghostty_config_free(config)
+        config = newConfig
+        for bridge in surfaceRefs.allObjects {
+            bridge.state.updateBackground(from: newConfig)
+            bridge.view?.applyResolvedBackground()
+        }
+    }
+
     private static func bootstrapIfNeeded() {
         guard !didBootstrap else { return }
         configureBundledResources()
-        logger.debug("Bootstrapping libghostty")
         let rc = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
         precondition(rc == GHOSTTY_SUCCESS, "ghostty_init failed (\(rc))")
         didBootstrap = true
-        logger.debug("Bootstrapped libghostty")
     }
 
     private static func configureBundledResources() {
         guard let resourcesURL = Bundle.main.resourceURL else { return }
 
         let terminfoURL = resourcesURL.appending(path: "terminfo/78/xterm-ghostty")
-        let ghosttyURL = resourcesURL.appending(path: "ghostty")
+        let ghosttyResourcesURL = resourcesURL.appending(path: "ghostty")
         guard FileManager.default.fileExists(atPath: terminfoURL.path),
-              FileManager.default.fileExists(atPath: ghosttyURL.path)
+              FileManager.default.fileExists(atPath: ghosttyResourcesURL.path)
         else { return }
 
-        setenv("GHOSTTY_RESOURCES_DIR", ghosttyURL.path, 1)
-        logger.debug("Configured Ghostty resources dir: \(ghosttyURL.path, privacy: .public)")
+        let bundledThemesURL = ghosttyResourcesURL.appending(path: "themes")
+
+        setenv("GHOSTTY_RESOURCES_DIR", ghosttyResourcesURL.path, 1)
+        if !FileManager.default.fileExists(atPath: bundledThemesURL.path) {
+            logger.warning("Configured partial Ghostty resources dir with no bundled themes: \(ghosttyResourcesURL.path, privacy: .public)")
+        }
+    }
+
+    private static func loadConfig(_ config: ghostty_config_t) {
+        ghostty_config_load_default_files(config)
+        ghostty_config_load_cli_args(config)
+        ghostty_config_load_recursive_files(config)
     }
 }
 
@@ -145,8 +192,28 @@ extension GhosttyRuntime {
         ghostty_target_s,
         ghostty_action_s
     ) -> Bool = { _, target, action in
-        // Only surface-targeted actions can be routed to a bridge; app-level
-        // actions (quit, new window) are handled in commit 8 via AppFeature.
+        if target.tag == GHOSTTY_TARGET_APP {
+            return MainActor.assumeIsolated {
+                switch action.tag {
+                case GHOSTTY_ACTION_CONFIG_CHANGE:
+                    let source = action.action.config_change.config
+                    guard let clone = ghostty_config_clone(source) else { return false }
+                    GhosttyRuntime.shared.replaceConfig(with: clone)
+                    NotificationCenter.default.post(
+                        name: .ghosttyRuntimeConfigDidChange,
+                        object: GhosttyRuntime.shared
+                    )
+                    return false
+                case GHOSTTY_ACTION_RELOAD_CONFIG:
+                    GhosttyRuntime.shared.reloadConfig()
+                    return true
+                default:
+                    return false
+                }
+            }
+        }
+
+        // Only surface-targeted actions can be routed to a bridge.
         guard target.tag == GHOSTTY_TARGET_SURFACE,
               let surfacePtr = target.target.surface,
               let userdataPtr = ghostty_surface_userdata(surfacePtr)
@@ -159,6 +226,10 @@ extension GhosttyRuntime {
             let bridge = Unmanaged<GhosttySurfaceBridge>
                 .fromOpaque(ptr)
                 .takeUnretainedValue()
+            if action.tag == GHOSTTY_ACTION_RELOAD_CONFIG {
+                GhosttyRuntime.shared.reloadConfig()
+                return true
+            }
             return bridge.handleAction(action)
         }
     }

@@ -57,11 +57,10 @@ final class GhosttySurfaceView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil, surface == nil else { return }
-        GhosttyRuntime.logger.debug("Creating Ghostty surface")
 
         // Bridge must exist before ghostty_surface_new so that userdata is
         // valid for the very first callback libghostty may fire during creation.
-        let newBridge = GhosttySurfaceBridge()
+        let newBridge = GhosttySurfaceBridge(config: runtime.config)
         newBridge.view = self
         bridge = newBridge
 
@@ -72,8 +71,6 @@ final class GhosttySurfaceView: NSView {
         }
         if surface == nil {
             GhosttyRuntime.logger.error("ghostty_surface_new returned nil")
-        } else {
-            GhosttyRuntime.logger.debug("Created Ghostty surface")
         }
 
         if let scale = window?.backingScaleFactor, let surface {
@@ -84,6 +81,7 @@ final class GhosttySurfaceView: NSView {
 
         runtime.registerSurface(newBridge)
         installWindowObservers()
+        applyResolvedBackground()
         window?.makeFirstResponder(self)
         onBridgeCreated?(newBridge)
         onBridgeCreated = nil
@@ -93,6 +91,11 @@ final class GhosttySurfaceView: NSView {
         guard let window else { return }
         let center = NotificationCenter.default
         windowObservers = [
+            center.addObserver(
+                forName: .ghosttyRuntimeConfigDidChange,
+                object: runtime,
+                queue: .main
+            ) { [weak self] _ in MainActor.assumeIsolated { self?.applyResolvedBackground() } },
             center.addObserver(
                 forName: NSWindow.didChangeOcclusionStateNotification,
                 object: window,
@@ -104,6 +107,19 @@ final class GhosttySurfaceView: NSView {
                 queue: .main
             ) { [weak self] _ in MainActor.assumeIsolated { self?.pushDisplayID() } },
         ]
+    }
+
+    func applyResolvedBackground() {
+        guard let bridge else { return }
+        let color = GhosttyResolvedAppearance.color(
+            bridge.state.backgroundColor,
+            with: bridge.state.backgroundOpacity
+        )
+        layer?.backgroundColor = color.cgColor
+
+        guard let window else { return }
+        window.isOpaque = GhosttyResolvedAppearance.isOpaque(bridge.state.backgroundOpacity)
+        window.backgroundColor = color
     }
 
     private func pushDisplayID() {

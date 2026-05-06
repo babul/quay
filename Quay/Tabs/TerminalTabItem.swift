@@ -210,6 +210,16 @@ final class TerminalTabItem: Identifiable {
         return "\(user)\(target.hostname)\(port)"
     }
 
+    var terminalBackgroundColor: NSColor {
+        surfaceView?.bridge?.state.backgroundColor
+            ?? GhosttyResolvedAppearance.backgroundColor(from: GhosttyRuntime.shared.config)
+    }
+
+    var terminalBackgroundOpacity: Double {
+        surfaceView?.bridge?.state.backgroundOpacity
+            ?? GhosttyResolvedAppearance.backgroundOpacity(from: GhosttyRuntime.shared.config)
+    }
+
     func updateFromTerminalTitle(_ terminalTitle: String) {
         guard !terminalTitle.isEmpty else {
             displayedUsername = profile.username
