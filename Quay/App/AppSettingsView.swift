@@ -3,6 +3,7 @@ import SwiftUI
 struct AppSettingsView: View {
     @AppStorage("appearance.showTabColorBars") private var showTabColorBars = true
     @AppStorage("tabs.confirmCloseActiveSessions") private var confirmCloseActiveSessions = true
+    @AppStorage(SFTPClient.defaultsKey) private var sftpClientRaw = SFTPClient.macOSOpenSSH.rawValue
 
     var body: some View {
         Form {
@@ -28,9 +29,25 @@ struct AppSettingsView: View {
             Section("Tabs") {
                 Toggle("Confirm before closing active tabs", isOn: $confirmCloseActiveSessions)
             }
+
+            Section("SFTP") {
+                Picker("Client", selection: $sftpClientRaw) {
+                    ForEach(SFTPClient.allCases) { client in
+                        Text(client.label).tag(client.rawValue)
+                    }
+                }
+
+                Text(selectedSFTPClient.helpText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding(20)
         .frame(width: 520, height: 320)
+    }
+
+    private var selectedSFTPClient: SFTPClient {
+        SFTPClient(rawValue: sftpClientRaw) ?? .macOSOpenSSH
     }
 }

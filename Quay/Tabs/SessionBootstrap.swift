@@ -38,6 +38,7 @@ enum SessionBootstrap {
 
         var askpass: AskpassServer?
         var askpassEnv: SSHCommandBuilder.AskpassEnv?
+        let sftpClient = SFTPClient.preferred
 
         if let secretURI = secretRef(for: target) {
             guard let helperPath = bundledHelperPath() else {
@@ -53,7 +54,11 @@ enum SessionBootstrap {
         case .ssh:
             SSHCommandBuilder.build(target, askpass: askpassEnv)
         case .sftp:
-            SSHCommandBuilder.buildSFTP(target, askpass: askpassEnv)
+            SSHCommandBuilder.buildSFTP(
+                target,
+                askpass: askpassEnv,
+                client: sftpClient
+            )
         }
         var cfg = GhosttySurfaceConfig()
         cfg.command = wrapInLoginShell(cmd.command, askpassEnv: cmd.environment)

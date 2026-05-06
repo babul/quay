@@ -167,6 +167,15 @@ struct SSHCommandBuilderTests {
         #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
 
+    @Test("homebrew OpenSSH sftp uses Homebrew binary")
+    func homebrewOpenSSHSFTPBinary() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(hostname: "host.internal", port: nil, username: nil, auth: .sshAgent),
+            client: .homebrewOpenSSH
+        )
+        #expect(cmd.command == "/opt/homebrew/bin/sftp -o BatchMode=no host.internal")
+    }
+
     @Test("sftp private key path containing spaces is quoted")
     func sftpKeyPathQuoted() {
         let cmd = SSHCommandBuilder.buildSFTP(
@@ -233,5 +242,63 @@ struct SSHCommandBuilderTests {
             )
         )
         #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no 'deploy@[2001:db8::1]:/srv'")
+    }
+
+    @Test("lftp uses lftp binary and OpenSSH connect program")
+    func lftpClientCommand() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(
+                hostname: "host.internal",
+                port: 2222,
+                username: "deploy",
+                auth: .sshAgent
+            ),
+            client: .lftp
+        )
+        #expect(cmd.command.hasPrefix("/opt/homebrew/bin/lftp -e "))
+        #expect(cmd.command.contains("set sftp:connect-program"))
+        #expect(!cmd.command.contains("--user"))
+        #expect(cmd.command.contains("/usr/bin/ssh -a -x -o BatchMode=no -l deploy -p 2222"))
+        #expect(cmd.command.hasSuffix(" sftp://host.internal"))
+        #expect(cmd.environment == ["TERM": "xterm-256color"])
+    }
+
+    @Test("lftp encodes remote directory in URL")
+    func lftpRemoteDirectory() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(
+                hostname: "host.internal",
+                port: nil,
+                username: "deploy",
+                auth: .sshAgent,
+                remoteDirectory: "/var/www/site assets/"
+            ),
+            client: .lftp
+        )
+        #expect(!cmd.command.contains("--user"))
+        #expect(cmd.command.contains("-l deploy"))
+        #expect(cmd.command.hasSuffix(" sftp://host.internal/var/www/site%20assets/"))
+    }
+
+    @Test("lftp password auth wires askpass and password-only ssh options")
+    func lftpPasswordWithAskpass() {
+        let askpass = SSHCommandBuilder.AskpassEnv(
+            helperPath: "/p/quay-askpass",
+            socketPath: "/tmp/q.sock"
+        )
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(hostname: "h", port: nil, username: "u",
+                      auth: .password(passwordRef: "keychain://quay/h")),
+            askpass: askpass,
+            client: .lftp
+        )
+        #expect(cmd.environment["SSH_ASKPASS"] == "/p/quay-askpass")
+        #expect(cmd.environment["SSH_ASKPASS_REQUIRE"] == "force")
+        #expect(cmd.environment["QUAY_ASKPASS_SOCKET"] == "/tmp/q.sock")
+        #expect(cmd.command.contains("PreferredAuthentications=password,keyboard-interactive"))
+        #expect(cmd.command.contains("PubkeyAuthentication=no"))
+        #expect(!cmd.command.contains("--user"))
+        #expect(cmd.command.contains("-l u"))
+        #expect(cmd.command.hasSuffix(" sftp://h"))
     }
 }

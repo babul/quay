@@ -25,6 +25,48 @@ enum TerminalSessionKind: String, Sendable, Equatable {
     case sftp
 }
 
+enum SFTPClient: String, CaseIterable, Identifiable, Sendable {
+    case macOSOpenSSH
+    case homebrewOpenSSH
+    case lftp
+
+    static let defaultsKey = "sftp.client"
+
+    static var preferred: Self {
+        let raw = UserDefaults.standard.string(forKey: defaultsKey)
+        return raw.flatMap(Self.init(rawValue:)) ?? .macOSOpenSSH
+    }
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .macOSOpenSSH: return "macOS built-in sftp"
+        case .homebrewOpenSSH: return "Homebrew OpenSSH sftp"
+        case .lftp: return "Homebrew lftp"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .macOSOpenSSH:
+            return "/usr/bin/sftp"
+        case .homebrewOpenSSH:
+            return "/opt/homebrew/bin/sftp from brew install openssh"
+        case .lftp:
+            return "/opt/homebrew/bin/lftp from brew install lftp"
+        }
+    }
+
+    var binaryPath: String {
+        switch self {
+        case .macOSOpenSSH: return "/usr/bin/sftp"
+        case .homebrewOpenSSH: return "/opt/homebrew/bin/sftp"
+        case .lftp: return "/opt/homebrew/bin/lftp"
+        }
+    }
+}
+
 /// Remote terminal type sent by OpenSSH when allocating a pseudo-terminal.
 enum RemoteTerminalType: String, Codable, CaseIterable, Identifiable, Sendable {
     case xterm256Color = "xterm-256color"
@@ -95,7 +137,6 @@ enum SSHCommandBuilder {
     }
 
     static let sshBinary = "/usr/bin/ssh"
-    static let sftpBinary = "/usr/bin/sftp"
 
     static func build(_ target: SSHTarget, askpass: AskpassEnv? = nil) -> SSHCommand {
         var argv: [String] = [sshBinary]
@@ -110,20 +151,16 @@ enum SSHCommandBuilder {
             argv.append(contentsOf: hostFlags(target))
 
         case .privateKey(let path):
-            argv.append(contentsOf: ["-i", path])
-            argv.append(contentsOf: ["-o", "IdentitiesOnly=yes"])
+            appendIdentity(path, to: &argv)
             argv.append(contentsOf: hostFlags(target))
 
         case .privateKeyWithPassphrase(let path, _):
-            argv.append(contentsOf: ["-i", path])
-            argv.append(contentsOf: ["-o", "IdentitiesOnly=yes"])
+            appendIdentity(path, to: &argv)
             argv.append(contentsOf: hostFlags(target))
             installAskpass(askpass, into: &env)
 
         case .password(_):
-            // Disable pubkey so ssh prompts via askpass.
-            argv.append(contentsOf: ["-o", "PreferredAuthentications=password,keyboard-interactive"])
-            argv.append(contentsOf: ["-o", "PubkeyAuthentication=no"])
+            appendPasswordOnlyOptions(to: &argv)
             argv.append(contentsOf: hostFlags(target))
             installAskpass(askpass, into: &env)
 
@@ -145,8 +182,25 @@ enum SSHCommandBuilder {
         )
     }
 
-    static func buildSFTP(_ target: SSHTarget, askpass: AskpassEnv? = nil) -> SSHCommand {
-        var argv: [String] = [sftpBinary]
+    static func buildSFTP(
+        _ target: SSHTarget,
+        askpass: AskpassEnv? = nil,
+        client: SFTPClient = .macOSOpenSSH
+    ) -> SSHCommand {
+        switch client {
+        case .macOSOpenSSH, .homebrewOpenSSH:
+            return buildOpenSSHSFTP(target, askpass: askpass, binary: client.binaryPath)
+        case .lftp:
+            return buildLFTP(target, askpass: askpass)
+        }
+    }
+
+    private static func buildOpenSSHSFTP(
+        _ target: SSHTarget,
+        askpass: AskpassEnv?,
+        binary: String
+    ) -> SSHCommand {
+        var argv: [String] = [binary]
         var env: [String: String] = ["TERM": target.remoteTerminalType.rawValue]
 
         argv.append(contentsOf: ["-o", "BatchMode=no"])
@@ -156,19 +210,16 @@ enum SSHCommandBuilder {
             argv.append(contentsOf: sftpHostOptions(target))
 
         case .privateKey(let path):
-            argv.append(contentsOf: ["-i", path])
-            argv.append(contentsOf: ["-o", "IdentitiesOnly=yes"])
+            appendIdentity(path, to: &argv)
             argv.append(contentsOf: sftpHostOptions(target))
 
         case .privateKeyWithPassphrase(let path, _):
-            argv.append(contentsOf: ["-i", path])
-            argv.append(contentsOf: ["-o", "IdentitiesOnly=yes"])
+            appendIdentity(path, to: &argv)
             argv.append(contentsOf: sftpHostOptions(target))
             installAskpass(askpass, into: &env)
 
         case .password:
-            argv.append(contentsOf: ["-o", "PreferredAuthentications=password,keyboard-interactive"])
-            argv.append(contentsOf: ["-o", "PubkeyAuthentication=no"])
+            appendPasswordOnlyOptions(to: &argv)
             argv.append(contentsOf: sftpHostOptions(target))
             installAskpass(askpass, into: &env)
 
@@ -181,6 +232,30 @@ enum SSHCommandBuilder {
         }
 
         argv.append(sftpDestination(target))
+
+        return SSHCommand(
+            command: argv.map(shellQuote).joined(separator: " "),
+            environment: env
+        )
+    }
+
+    private static func buildLFTP(_ target: SSHTarget, askpass: AskpassEnv?) -> SSHCommand {
+        var argv: [String] = [SFTPClient.lftp.binaryPath]
+        var env: [String: String] = ["TERM": target.remoteTerminalType.rawValue]
+
+        let connectProgram = lftpSSHConnectProgram(target)
+        argv.append(contentsOf: [
+            "-e",
+            "set sftp:connect-program \(lftpDoubleQuote(connectProgram))",
+            lftpURL(target)
+        ])
+
+        switch target.auth {
+        case .password, .privateKeyWithPassphrase:
+            installAskpass(askpass, into: &env)
+        case .sshAgent, .privateKey, .sshConfigAlias:
+            break
+        }
 
         return SSHCommand(
             command: argv.map(shellQuote).joined(separator: " "),
@@ -231,6 +306,92 @@ enum SSHCommandBuilder {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func lftpSSHConnectProgram(_ target: SSHTarget) -> String {
+        var argv: [String] = [
+            "/usr/bin/ssh",
+            "-a",
+            "-x",
+            "-o",
+            "BatchMode=no"
+        ]
+
+        switch target.auth {
+        case .sshAgent, .sshConfigAlias:
+            break
+        case .privateKey(let path), .privateKeyWithPassphrase(let path, _):
+            appendIdentity(path, to: &argv)
+        case .password:
+            appendPasswordOnlyOptions(to: &argv)
+        }
+
+        if case .sshConfigAlias = target.auth {
+            return argv.map(shellQuote).joined(separator: " ")
+        }
+
+        if let username = target.username {
+            argv.append(contentsOf: ["-l", username])
+        }
+
+        if let port = target.port {
+            argv.append(contentsOf: ["-p", String(port)])
+        }
+
+        for (k, v) in target.extraOptions.sorted(by: { $0.key < $1.key }) {
+            argv.append(contentsOf: ["-o", "\(k)=\(v)"])
+        }
+
+        return argv.map(shellQuote).joined(separator: " ")
+    }
+
+    private static func lftpURL(_ target: SSHTarget) -> String {
+        let base: String
+        switch target.auth {
+        case .sshConfigAlias(let alias):
+            base = "sftp://\(urlUserOrHostEncode(alias))"
+        default:
+            base = "sftp://\(lftpHostForURL(target.hostname))"
+        }
+
+        guard let remoteDirectory = normalizedRemoteDirectory(target.remoteDirectory) else {
+            return base
+        }
+
+        return "\(base)\(urlPathEncode(remoteDirectory))"
+    }
+
+    private static func lftpHostForURL(_ hostname: String) -> String {
+        if hostname.hasPrefix("[") && hostname.hasSuffix("]") {
+            return hostname
+        }
+        return hostname.contains(":") ? "[\(hostname)]" : urlUserOrHostEncode(hostname)
+    }
+
+    private static func urlUserOrHostEncode(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? value
+    }
+
+    private static func urlPathEncode(_ value: String) -> String {
+        let prefixed = value.hasPrefix("/") ? value : "/\(value)"
+        return prefixed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? prefixed
+    }
+
+    private static func lftpDoubleQuote(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
+    private static func appendIdentity(_ path: String, to argv: inout [String]) {
+        argv.append(contentsOf: ["-i", path])
+        argv.append(contentsOf: ["-o", "IdentitiesOnly=yes"])
+    }
+
+    private static func appendPasswordOnlyOptions(to argv: inout [String]) {
+        argv.append(contentsOf: ["-o", "PreferredAuthentications=password,keyboard-interactive"])
+        argv.append(contentsOf: ["-o", "PubkeyAuthentication=no"])
     }
 
     private static func installAskpass(_ a: AskpassEnv?, into env: inout [String: String]) {
