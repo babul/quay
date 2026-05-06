@@ -20,18 +20,6 @@ struct SecretReferenceTests {
         #expect(ref.keychainAccount == "host/sudo_password")
     }
 
-    @Test("op:// parses but parseV01 rejects it")
-    func opSchemeRejectedInV01() {
-        // Bare parse succeeds (we'll accept it in v0.2):
-        #expect(throws: Never.self) {
-            _ = try SecretReference("op://Personal/cac-ash-dev-db1/password")
-        }
-        // parseV01 rejects:
-        #expect(throws: SecretReference.ParseError.unsupportedSchemeForVersion(.op)) {
-            _ = try SecretReference.parseV01("op://Personal/x/password")
-        }
-    }
-
     @Test("empty / malformed inputs throw the right errors")
     func parseErrors() {
         #expect(throws: SecretReference.ParseError.empty) {
@@ -42,6 +30,9 @@ struct SecretReferenceTests {
         }
         #expect(throws: SecretReference.ParseError.unknownScheme("vault")) {
             _ = try SecretReference("vault://x/y")
+        }
+        #expect(throws: SecretReference.ParseError.unknownScheme("op")) {
+            _ = try SecretReference("op://Personal/x/password")
         }
         #expect(throws: SecretReference.ParseError.missingPath) {
             _ = try SecretReference("keychain://")

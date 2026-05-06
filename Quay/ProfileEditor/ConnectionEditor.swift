@@ -3,9 +3,8 @@ import SwiftUI
 
 /// Modal sheet for creating or editing a `ConnectionProfile`.
 ///
-/// Auth picker swaps the visible secondary fields. v0.1 doesn't ship the
-/// "Pick from Keychain" sheet — users paste the URI directly, which keeps
-/// the editor scope tight while we validate the rest of the flow.
+/// Auth picker swaps the visible secondary fields. Users paste the Keychain
+/// URI directly — no inline picker sheet.
 struct ConnectionEditor: View {
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
@@ -292,7 +291,7 @@ struct ConnectionEditor: View {
     private func secretRefField(label: String, placeholder: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             FormTextField(title: label, text: $secretRef, prompt: placeholder)
-            Text("URI to the secret in your vault. v0.1 supports keychain://")
+            Text("Keychain URI — e.g. keychain://service/account")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

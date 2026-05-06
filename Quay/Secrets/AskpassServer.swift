@@ -34,7 +34,7 @@ final class AskpassServer: Sendable {
         self.socketPath = "\(normalized)quay-askpass-\(UUID().uuidString).sock"
     }
 
-    /// Convenience: serve the secret behind a `keychain://` / `op://` URI.
+    /// Convenience: serve the secret behind a `keychain://` URI.
     convenience init(secretURI: String, resolver: ReferenceResolver = ReferenceResolver()) {
         self.init(resolve: { try await resolver.resolve(secretURI) })
     }

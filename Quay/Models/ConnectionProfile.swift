@@ -57,7 +57,7 @@ extension Array where Element == LoginScriptStep {
 /// One saved SSH connection.
 ///
 /// Stores zero plaintext secrets — only references to entries in the user's
-/// vault (Keychain in v0.1, 1Password in v0.2). The `auth` computed property
+/// Keychain. The `auth` computed property
 /// reconstructs an `SSHAuth` from the stored fields for the command builder.
 @Model
 final class ConnectionProfile {

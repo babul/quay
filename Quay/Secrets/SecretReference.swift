@@ -2,15 +2,12 @@ import Foundation
 
 /// A typed view over a secret-reference URI stored in `ConnectionProfile`.
 ///
-/// Quay never stores plaintext — only references. Two schemes are recognized
-/// (1Password lands in v0.2):
+/// Quay never stores plaintext — only references. One scheme is recognized:
 ///
 ///   keychain://service/account     macOS Keychain Services
-///   op://vault/item/field          1Password CLI (v0.2; throws in v0.1)
 struct SecretReference: Sendable, Equatable {
     enum Scheme: String, Sendable, Equatable {
         case keychain
-        case op
     }
 
     let scheme: Scheme
@@ -32,7 +29,6 @@ extension SecretReference {
         case missingScheme
         case unknownScheme(String)
         case missingPath
-        case unsupportedSchemeForVersion(Scheme)
     }
 
     init(_ uri: String) throws {
@@ -55,11 +51,4 @@ extension SecretReference {
         self.path = parts
     }
 
-    /// Parse a URI and reject schemes not yet implemented in this milestone.
-    /// `keychain://` ✅ since v0.1; `op://` lands in v0.2.
-    static func parseV01(_ uri: String) throws -> SecretReference {
-        let ref = try SecretReference(uri)
-        if ref.scheme == .op { throw ParseError.unsupportedSchemeForVersion(.op) }
-        return ref
-    }
 }

@@ -8,14 +8,13 @@ How Quay reaches into the user's vault for SSH passwords and key passphrases wit
 
 ## The reference URI
 
-A `ConnectionProfile` stores secret references as URI strings. Two schemes are recognized; v0.1 implements only the first:
+A `ConnectionProfile` stores secret references as URI strings. One scheme is recognized:
 
 | Scheme | Example | Backend |
 |---|---|---|
 | `keychain://service/account` | `keychain://quay/cac-ash-dev-db1` | macOS Keychain Services |
-| `op://vault/item/field` | `op://Personal/cac-ash-dev-db1/password` | 1Password CLI (v0.2) |
 
-`SecretReference.parseV01` accepts the first and rejects the second with a typed error.
+`SecretReference` parses the URI; `ReferenceResolver` dispatches to `KeychainStore`.
 
 The reference goes in `ConnectionProfile.secretRef`. For password auth that's the password; for `.privateKeyWithPassphrase` it's the passphrase.
 
@@ -98,14 +97,12 @@ The only escape is the OS Keychain returning data that *we* don't choose how to 
 ## What we deliberately don't do (yet)
 
 - **Cache secrets across resolutions.** Every call to the helper triggers a fresh Keychain hit. Cleaner threat model; more biometric prompts. v1.x candidate.
-- **Write to Keychain or 1Password.** Quay only reads. Users create/rotate via their existing vault tooling.
+- **Write to Keychain.** Quay only reads. Users create/rotate via their existing vault tooling.
 - **Other backends.** HashiCorp Vault, AWS Secrets Manager, Bitwarden, Doppler — all are post-v1 candidates that plug into the `ReferenceResolver` dispatcher.
-- **`op://` resolution.** Lands in v0.2.
 
 ## Audit trail
 
 - macOS Keychain accesses are visible via `log show --predicate 'subsystem contains "securityd"'`.
-- 1Password (when v0.2 lands) writes to its own audit log under `~/Library/Group Containers/2BUA8C4S2C.com.1password/Library/Caches/...`.
 - Quay itself does not log secret access. Adding a per-connection access log is a v1.x candidate.
 
 ## Threat model

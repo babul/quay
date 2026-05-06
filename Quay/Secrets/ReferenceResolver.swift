@@ -1,9 +1,6 @@
 import Foundation
 
 /// Dispatcher that turns a `SecretReference` into plaintext bytes.
-///
-/// One method, dispatch on scheme. Async only because v0.2 will add
-/// `op://` resolution which shells out to the `op` CLI.
 struct ReferenceResolver: Sendable {
     enum ResolveError: Error, Equatable {
         case parseError(SecretReference.ParseError)
@@ -14,7 +11,7 @@ struct ReferenceResolver: Sendable {
     func resolve(_ uri: String) async throws -> SensitiveBytes {
         let ref: SecretReference
         do {
-            ref = try SecretReference.parseV01(uri)
+            ref = try SecretReference(uri)
         } catch let e as SecretReference.ParseError {
             throw ResolveError.parseError(e)
         }
@@ -30,10 +27,6 @@ struct ReferenceResolver: Sendable {
             } catch let e as KeychainStore.KeychainError {
                 throw ResolveError.keychain(e)
             }
-
-        case .op:
-            // parseV01 already rejects this, but the switch must be exhaustive.
-            throw ResolveError.parseError(.unsupportedSchemeForVersion(.op))
         }
     }
 }
