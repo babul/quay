@@ -82,6 +82,7 @@ Press **⌘L** to focus the search field and filter connections by name — resu
 |---|---|
 | **⌃Tab** | Switch to next tab (wraps) |
 | **⌃⇧Tab** | Switch to previous tab (wraps) |
+| **⌘1**…**⌘9** | Switch to tab 1–9 |
 | **⌘L** | Focus sidebar search |
 | **⌘B** | Toggle sidebar |
 | **⌘⇧R** | Reload Ghostty config |

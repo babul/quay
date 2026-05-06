@@ -323,6 +323,35 @@ struct TerminalTabManagerTests {
         #expect(LoginScriptRunner.terminalText(for: "whoami\r") == "whoami")
     }
 
+    // MARK: Direct tab selection by index
+
+    @Test("select(at:) switches to the correct tab by index")
+    func selectAtIndex() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let tabs = (0..<3).map { i in
+            manager.openNewTab(for: ConnectionProfile(name: "tab\(i)", hostname: "tab\(i).example.com"))
+        }
+
+        for (index, tab) in tabs.enumerated() {
+            manager.select(at: index)
+            #expect(manager.selectedTabID == tab.id)
+        }
+    }
+
+    @Test("select(at:) ignores out-of-range or negative indices")
+    func selectAtInvalidIndex() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let tab = manager.openNewTab(for: ConnectionProfile(name: "only", hostname: "only.example.com"))
+        manager.select(tab)
+        let originalID = manager.selectedTabID
+
+        manager.select(at: 5)
+        #expect(manager.selectedTabID == originalID)
+
+        manager.select(at: -1)
+        #expect(manager.selectedTabID == originalID)
+    }
+
     // MARK: Tab cycling
 
     @Test("selectNextTab cycles forward through tabs")

@@ -112,6 +112,11 @@ final class TerminalTabManager {
         // after the selected surface is ordered frontmost.
     }
 
+    func select(at index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        select(tabs[index])
+    }
+
     func selectNextTab() { cycleTab(offset: 1) }
     func selectPreviousTab() { cycleTab(offset: -1) }
 

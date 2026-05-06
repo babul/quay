@@ -53,6 +53,14 @@ struct QuayApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             }
+            CommandMenu("Tabs") {
+                ForEach(1...9, id: \.self) { number in
+                    Button("Tab \(number)") {
+                        TerminalTabManager.shared.select(at: number - 1)
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: [.command])
+                }
+            }
             CommandGroup(replacing: .help) {
                 CheckForUpdatesMenuItem(model: updater)
                 Divider()
