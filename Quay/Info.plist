@@ -38,7 +38,7 @@
 			<key>UTTypeDescription</key>
 			<string>Quay Settings Bundle</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.montopolis.quay.bundle</string>
+			<string>io.github.babul.quay.bundle</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

@@ -8,7 +8,7 @@ import SwiftUI
 @MainActor
 final class GhosttyRuntime {
     static let shared = GhosttyRuntime()
-    static let logger = Logger(subsystem: "com.montopolis.quay", category: "ghostty")
+    static let logger = Logger(subsystem: "io.github.babul.quay", category: "ghostty")
 
     private static var didInitializeGhostty = false
 
@@ -167,7 +167,7 @@ final class GhosttyRuntime {
 }
 
 extension Notification.Name {
-    static let ghosttyRuntimeConfigDidChange = Notification.Name("com.montopolis.quay.ghosttyRuntimeConfigDidChange")
+    static let ghosttyRuntimeConfigDidChange = Notification.Name("io.github.babul.quay.ghosttyRuntimeConfigDidChange")
 }
 
 private extension GhosttyRuntime {

@@ -3,7 +3,7 @@ import ComposableArchitecture
 import OSLog
 import SwiftUI
 
-private let quayAppLogger = Logger(subsystem: "com.montopolis.quay", category: "app")
+private let quayAppLogger = Logger(subsystem: "io.github.babul.quay", category: "app")
 
 @main
 struct QuayApp: App {

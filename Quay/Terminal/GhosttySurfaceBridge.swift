@@ -4,7 +4,7 @@ import OSLog
 import UserNotifications
 
 private let surfaceBridgeLog = Logger(
-    subsystem: "com.montopolis.quay",
+    subsystem: "io.github.babul.quay",
     category: "bridge"
 )
 

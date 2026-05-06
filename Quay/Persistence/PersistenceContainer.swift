@@ -28,7 +28,7 @@ enum PersistenceContainer {
     /// Returns the on-disk store URL, creating intermediate directories.
     ///
     /// The folder is derived from the bundle identifier so Debug
-    /// (`com.montopolis.quay.debug`) and Release (`com.montopolis.quay`)
+    /// (`io.github.babul.quay.debug`) and Release (`io.github.babul.quay`)
     /// maintain separate stores and cannot corrupt each other's schema.
     static func storeLocation() throws -> URL {
         let appSupport = try FileManager.default.url(
@@ -37,12 +37,12 @@ enum PersistenceContainer {
             appropriateFor: nil,
             create: true
         )
-        let folder = Bundle.main.bundleIdentifier ?? "com.montopolis.quay"
+        let folder = Bundle.main.bundleIdentifier ?? "io.github.babul.quay"
         let dir = appSupport.appending(path: folder, directoryHint: .isDirectory)
-        // One-time migration from the legacy hardcoded "Quay" folder (pre-isolation).
+        let newStore = dir.appending(path: "Quay.store", directoryHint: .notDirectory)
+        // Migration 1: legacy hardcoded "Quay" folder (pre-isolation).
         let legacyDir = appSupport.appending(path: "Quay", directoryHint: .isDirectory)
         let legacyStore = legacyDir.appending(path: "Quay.store", directoryHint: .notDirectory)
-        let newStore = dir.appending(path: "Quay.store", directoryHint: .notDirectory)
         if FileManager.default.fileExists(atPath: legacyStore.path),
            !FileManager.default.fileExists(atPath: newStore.path) {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -51,6 +51,23 @@ enum PersistenceContainer {
                 let dst = dir.appending(path: "Quay.store\(suffix)")
                 if FileManager.default.fileExists(atPath: src.path) {
                     try? FileManager.default.moveItem(at: src, to: dst)
+                }
+            }
+        }
+        // Migration 2: prior bundle prefix (com.montopolis → io.github.babul).
+        let priorId = folder.replacingOccurrences(of: "io.github.babul.quay", with: "com.montopolis.quay")
+        if priorId != folder {
+            let priorDir = appSupport.appending(path: priorId, directoryHint: .isDirectory)
+            let priorStore = priorDir.appending(path: "Quay.store", directoryHint: .notDirectory)
+            if FileManager.default.fileExists(atPath: priorStore.path),
+               !FileManager.default.fileExists(atPath: newStore.path) {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                for suffix in ["", "-shm", "-wal"] {
+                    let src = priorDir.appending(path: "Quay.store\(suffix)")
+                    let dst = dir.appending(path: "Quay.store\(suffix)")
+                    if FileManager.default.fileExists(atPath: src.path) {
+                        try? FileManager.default.moveItem(at: src, to: dst)
+                    }
                 }
             }
         }

@@ -635,13 +635,13 @@ private struct GroupEditor: View {
 
 extension Notification.Name {
     /// Posted by the ⌘L menu command to focus the sidebar's search field.
-    static let focusSearch = Notification.Name("com.montopolis.quay.focusSearch")
+    static let focusSearch = Notification.Name("io.github.babul.quay.focusSearch")
     /// Posted by the ⌘B menu command to show or hide the sidebar.
-    static let toggleSidebar = Notification.Name("com.montopolis.quay.toggleSidebar")
+    static let toggleSidebar = Notification.Name("io.github.babul.quay.toggleSidebar")
     /// Posted by the File menu "Export Settings…" item.
-    static let startExportSettings = Notification.Name("com.montopolis.quay.startExportSettings")
+    static let startExportSettings = Notification.Name("io.github.babul.quay.startExportSettings")
     /// Posted by the File menu "Import Settings…" item.
-    static let startImportSettings = Notification.Name("com.montopolis.quay.startImportSettings")
+    static let startImportSettings = Notification.Name("io.github.babul.quay.startImportSettings")
 }
 
 @MainActor

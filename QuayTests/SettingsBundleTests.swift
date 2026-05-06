@@ -298,7 +298,7 @@ struct SettingsBundleTests {
             name: "c",
             hostname: "h",
             authMethod: .password,
-            secretRef: "keychain://com.montopolis.quay/my-server",
+            secretRef: "keychain://io.github.babul.quay/my-server",
             sortIndex: 0,
             parent: folder
         )
@@ -311,7 +311,7 @@ struct SettingsBundleTests {
         try SettingsBundle.decode(data: bundleData, modelContext: dst.mainContext, password: nil)
 
         let imported = try dst.mainContext.fetch(FetchDescriptor<ConnectionProfile>())
-        #expect(imported.first?.secretRef == "keychain://com.montopolis.quay/my-server")
+        #expect(imported.first?.secretRef == "keychain://io.github.babul.quay/my-server")
     }
 
     // MARK: - 12. loginScriptStepsJSON opaque pass-through
