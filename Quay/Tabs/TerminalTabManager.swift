@@ -69,7 +69,7 @@ final class TerminalTabManager {
     /// Select an existing tab for `profile`, or open/connect the first one.
     @discardableResult
     func openOrSelectTab(for profile: ConnectionProfile) -> TerminalTabItem {
-        if let existing = tabs.first(where: { $0.profile.id == profile.id }) {
+        if let existing = tabs.first(where: { $0.profile.id == profile.id && $0.kind == .ssh }) {
             select(existing)
             return existing
         }
@@ -79,12 +79,29 @@ final class TerminalTabManager {
 
     /// Open a new tab for `profile` and immediately connect.
     @discardableResult
-    func openNewTab(for profile: ConnectionProfile) -> TerminalTabItem {
-        let item = TerminalTabItem(profile: profile)
+    func openNewTab(
+        for profile: ConnectionProfile,
+        kind: TerminalSessionKind = .ssh,
+        localDirectoryOverride: String? = nil
+    ) -> TerminalTabItem {
+        let item = TerminalTabItem(
+            profile: profile,
+            kind: kind,
+            localDirectoryOverride: localDirectoryOverride
+        )
         tabs.append(item)
         select(item)
         connectTab(item)
         return item
+    }
+
+    @discardableResult
+    func openSFTPTab(for profile: ConnectionProfile, localDirectoryOverride: String? = nil) -> TerminalTabItem {
+        openNewTab(
+            for: profile,
+            kind: .sftp,
+            localDirectoryOverride: localDirectoryOverride
+        )
     }
 
     func select(_ item: TerminalTabItem) {

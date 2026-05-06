@@ -30,6 +30,9 @@ struct ContentView: View {
                 onOpenConnectionInNewTab: { profile in
                     tabManager.openNewTab(for: profile)
                 },
+                onOpenSFTPConnection: { profile in
+                    tabManager.openSFTPTab(for: profile)
+                },
                 onCreateConnection: { folder in
                     editorTarget = .create(folderID: folder?.id)
                 },
@@ -96,6 +99,12 @@ struct ContentView: View {
                         tabManager: tabManager,
                         onEditConnection: { profile in
                             editorTarget = .edit(profile)
+                        },
+                        onOpenSFTP: { tab in
+                            tabManager.openSFTPTab(
+                                for: tab.profile,
+                                localDirectoryOverride: tab.currentWorkingDirectory
+                            )
                         }
                     )
                     .frame(height: Self.terminalTabBarHeight - 1)

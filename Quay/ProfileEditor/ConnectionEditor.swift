@@ -24,6 +24,8 @@ struct ConnectionEditor: View {
     @State private var secretRef: String = ""
     @State private var privateKeyPath: String = ""
     @State private var sshConfigAlias: String = ""
+    @State private var localDirectory: String = ""
+    @State private var remoteDirectory: String = ""
     @State private var remoteTerminalType: RemoteTerminalType = .defaultValue
     @State private var colorTag: String?
     @State private var iconName: String?
@@ -35,6 +37,8 @@ struct ConnectionEditor: View {
     @State private var portIsRevealed = false
     @State private var usernameIsRevealed = false
     @State private var sshConfigAliasIsRevealed = false
+    @State private var localDirectoryIsRevealed = false
+    @State private var remoteDirectoryIsRevealed = false
     @State private var selectedEditorPage: ConnectionEditorPage = .connection
 
     var body: some View {
@@ -176,6 +180,26 @@ struct ConnectionEditor: View {
                     .foregroundStyle(.secondary)
                     .font(.caption)
                     .frame(width: ConnectionEditorLayout.rowWidth, alignment: .leading)
+            }
+
+            EditorSection("SFTP") {
+                HStack {
+                    FormPrivateTextField(
+                        title: "Local directory",
+                        text: $localDirectory,
+                        isRevealed: $localDirectoryIsRevealed,
+                        prompt: "Default local folder",
+                        width: 360
+                    )
+                    Button("Choose…") { pickLocalDirectory() }
+                }
+                EditorDivider()
+                FormPrivateTextField(
+                    title: "Remote directory",
+                    text: $remoteDirectory,
+                    isRevealed: $remoteDirectoryIsRevealed,
+                    prompt: "/path/on/server"
+                )
             }
         }
     }
@@ -333,6 +357,8 @@ struct ConnectionEditor: View {
             secretRef = p.secretRef ?? ""
             privateKeyPath = p.privateKeyPath ?? ""
             sshConfigAlias = p.sshConfigAlias ?? ""
+            localDirectory = p.localDirectory ?? ""
+            remoteDirectory = p.remoteDirectory ?? ""
             remoteTerminalType = p.remoteTerminalType
             colorTag = ConnectionColor.isKnown(p.colorTag) ? p.colorTag : nil
             iconName = p.iconName
@@ -351,6 +377,8 @@ struct ConnectionEditor: View {
         portIsRevealed = false
         usernameIsRevealed = false
         sshConfigAliasIsRevealed = false
+        localDirectoryIsRevealed = false
+        remoteDirectoryIsRevealed = false
     }
 
     private func save() {
@@ -359,6 +387,12 @@ struct ConnectionEditor: View {
         let secret = secretRef.isEmpty ? nil : secretRef
         let keyPath = privateKeyPath.isEmpty ? nil : privateKeyPath
         let alias = sshConfigAlias.isEmpty ? nil : sshConfigAlias
+        let localDir = localDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil
+            : localDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let remoteDir = remoteDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil
+            : remoteDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
         let folder = selectedFolder ?? (try? FolderStore.ensureDefaultFolder(in: ctx))
         let scripts = loginScriptSteps.normalizedLoginScriptSteps
 
@@ -373,6 +407,8 @@ struct ConnectionEditor: View {
                 secretRef: secret,
                 privateKeyPath: keyPath,
                 sshConfigAlias: alias,
+                localDirectory: localDir,
+                remoteDirectory: remoteDir,
                 remoteTerminalType: remoteTerminalType,
                 colorTag: colorTag,
                 iconName: iconName,
@@ -392,6 +428,8 @@ struct ConnectionEditor: View {
             p.secretRef = secret
             p.privateKeyPath = keyPath
             p.sshConfigAlias = alias
+            p.localDirectory = localDir
+            p.remoteDirectory = remoteDir
             p.remoteTerminalType = remoteTerminalType
             p.colorTag = colorTag
             p.iconName = iconName
@@ -419,6 +457,17 @@ struct ConnectionEditor: View {
             .appending(path: ".ssh")
         if panel.runModal() == .OK, let url = panel.url {
             privateKeyPath = url.path
+        }
+    }
+
+    private func pickLocalDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        if panel.runModal() == .OK, let url = panel.url {
+            localDirectory = url.path
         }
     }
 
@@ -527,6 +576,8 @@ enum ConnectionEditorPrivacy {
         case port
         case username
         case sshConfigAlias
+        case localDirectory
+        case remoteDirectory
         case loginScriptMatch
         case loginScriptSend
     }
@@ -534,6 +585,7 @@ enum ConnectionEditorPrivacy {
     static func isSensitive(_ field: Field) -> Bool {
         switch field {
         case .hostname, .port, .username, .sshConfigAlias,
+             .localDirectory, .remoteDirectory,
              .loginScriptMatch, .loginScriptSend:
             return true
         }

@@ -155,4 +155,83 @@ struct SSHCommandBuilderTests {
         let aliveIdx = cmd.command.range(of: "ServerAliveInterval=30")!
         #expect(connectIdx.lowerBound < aliveIdx.lowerBound)
     }
+
+    // MARK: SFTP
+
+    @Test("sftp agent + user + non-default port")
+    func sftpAgentUserPort() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(hostname: "host.internal", port: 2222, username: "deploy", auth: .sshAgent)
+        )
+        #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no -P 2222 deploy@host.internal")
+        #expect(cmd.environment == ["TERM": "xterm-256color"])
+    }
+
+    @Test("sftp private key path containing spaces is quoted")
+    func sftpKeyPathQuoted() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(
+                hostname: "h",
+                port: nil,
+                username: nil,
+                auth: .privateKey(path: "/Users/me/My Keys/id")
+            )
+        )
+        #expect(cmd.command.contains("'/Users/me/My Keys/id'"))
+        #expect(cmd.command.contains("-o IdentitiesOnly=yes"))
+    }
+
+    @Test("sftp password auth with askpass info wires env")
+    func sftpPasswordWithAskpass() {
+        let askpass = SSHCommandBuilder.AskpassEnv(
+            helperPath: "/Apps/Quay.app/Contents/MacOS/quay-askpass",
+            socketPath: "/tmp/quay-askpass-abc.sock"
+        )
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(hostname: "h", port: nil, username: "u",
+                      auth: .password(passwordRef: "keychain://quay/h")),
+            askpass: askpass
+        )
+        #expect(cmd.environment["SSH_ASKPASS"] == askpass.helperPath)
+        #expect(cmd.environment["QUAY_ASKPASS_SOCKET"] == askpass.socketPath)
+        #expect(cmd.command.contains("PreferredAuthentications=password,keyboard-interactive"))
+        #expect(cmd.command.contains("PubkeyAuthentication=no"))
+    }
+
+    @Test("sftp config alias uses alias destination")
+    func sftpConfigAlias() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(hostname: "ignored", port: nil, username: nil,
+                      auth: .sshConfigAlias(alias: "prod-bastion"))
+        )
+        #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no prod-bastion")
+    }
+
+    @Test("sftp remote directory is appended to destination and quoted")
+    func sftpRemoteDirectory() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(
+                hostname: "host.internal",
+                port: nil,
+                username: "deploy",
+                auth: .sshAgent,
+                remoteDirectory: "/var/www/site assets/"
+            )
+        )
+        #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no 'deploy@host.internal:/var/www/site assets/'")
+    }
+
+    @Test("sftp IPv6 destination brackets host when remote directory is set")
+    func sftpIPv6RemoteDirectory() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(
+                hostname: "2001:db8::1",
+                port: nil,
+                username: "deploy",
+                auth: .sshAgent,
+                remoteDirectory: "/srv"
+            )
+        )
+        #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no 'deploy@[2001:db8::1]:/srv'")
+    }
 }

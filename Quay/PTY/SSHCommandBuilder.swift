@@ -20,6 +20,11 @@ enum SSHAuth: Sendable, Equatable {
     case sshConfigAlias(alias: String)
 }
 
+enum TerminalSessionKind: String, Sendable, Equatable {
+    case ssh
+    case sftp
+}
+
 /// Remote terminal type sent by OpenSSH when allocating a pseudo-terminal.
 enum RemoteTerminalType: String, Codable, CaseIterable, Identifiable, Sendable {
     case xterm256Color = "xterm-256color"
@@ -58,6 +63,8 @@ struct SSHTarget: Sendable, Equatable {
     var username: String?
     var auth: SSHAuth
     var remoteTerminalType: RemoteTerminalType = .defaultValue
+    var localDirectory: String?
+    var remoteDirectory: String?
     /// Extra `-o key=value` overrides appended verbatim. Reserved; v0.1
     /// leaves this empty.
     var extraOptions: [String: String] = [:]
@@ -88,6 +95,7 @@ enum SSHCommandBuilder {
     }
 
     static let sshBinary = "/usr/bin/ssh"
+    static let sftpBinary = "/usr/bin/sftp"
 
     static func build(_ target: SSHTarget, askpass: AskpassEnv? = nil) -> SSHCommand {
         var argv: [String] = [sshBinary]
@@ -137,6 +145,49 @@ enum SSHCommandBuilder {
         )
     }
 
+    static func buildSFTP(_ target: SSHTarget, askpass: AskpassEnv? = nil) -> SSHCommand {
+        var argv: [String] = [sftpBinary]
+        var env: [String: String] = ["TERM": target.remoteTerminalType.rawValue]
+
+        argv.append(contentsOf: ["-o", "BatchMode=no"])
+
+        switch target.auth {
+        case .sshAgent:
+            argv.append(contentsOf: sftpHostOptions(target))
+
+        case .privateKey(let path):
+            argv.append(contentsOf: ["-i", path])
+            argv.append(contentsOf: ["-o", "IdentitiesOnly=yes"])
+            argv.append(contentsOf: sftpHostOptions(target))
+
+        case .privateKeyWithPassphrase(let path, _):
+            argv.append(contentsOf: ["-i", path])
+            argv.append(contentsOf: ["-o", "IdentitiesOnly=yes"])
+            argv.append(contentsOf: sftpHostOptions(target))
+            installAskpass(askpass, into: &env)
+
+        case .password:
+            argv.append(contentsOf: ["-o", "PreferredAuthentications=password,keyboard-interactive"])
+            argv.append(contentsOf: ["-o", "PubkeyAuthentication=no"])
+            argv.append(contentsOf: sftpHostOptions(target))
+            installAskpass(askpass, into: &env)
+
+        case .sshConfigAlias:
+            installAskpass(askpass, into: &env)
+        }
+
+        for (k, v) in target.extraOptions.sorted(by: { $0.key < $1.key }) {
+            argv.append(contentsOf: ["-o", "\(k)=\(v)"])
+        }
+
+        argv.append(sftpDestination(target))
+
+        return SSHCommand(
+            command: argv.map(shellQuote).joined(separator: " "),
+            environment: env
+        )
+    }
+
     private static func hostFlags(_ target: SSHTarget) -> [String] {
         var out: [String] = []
         if let port = target.port {
@@ -145,6 +196,41 @@ enum SSHCommandBuilder {
         let userPrefix = target.username.map { "\($0)@" } ?? ""
         out.append("\(userPrefix)\(target.hostname)")
         return out
+    }
+
+    private static func sftpHostOptions(_ target: SSHTarget) -> [String] {
+        guard let port = target.port else { return [] }
+        return ["-P", String(port)]
+    }
+
+    private static func sftpDestination(_ target: SSHTarget) -> String {
+        let base: String
+        switch target.auth {
+        case .sshConfigAlias(let alias):
+            base = alias
+        default:
+            let host = sftpHostForDestination(target.hostname)
+            let userPrefix = target.username.map { "\($0)@" } ?? ""
+            base = "\(userPrefix)\(host)"
+        }
+
+        guard let remoteDirectory = normalizedRemoteDirectory(target.remoteDirectory) else {
+            return base
+        }
+        return "\(base):\(remoteDirectory)"
+    }
+
+    private static func sftpHostForDestination(_ hostname: String) -> String {
+        if hostname.hasPrefix("[") && hostname.hasSuffix("]") {
+            return hostname
+        }
+        return hostname.contains(":") ? "[\(hostname)]" : hostname
+    }
+
+    private static func normalizedRemoteDirectory(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func installAskpass(_ a: AskpassEnv?, into env: inout [String: String]) {

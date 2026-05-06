@@ -2,6 +2,7 @@ name: Quay
 
 options:
   bundleIdPrefix: com.montopolis
+  xcodeVersion: "26.2"
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -22,6 +23,9 @@ settings:
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "-"
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    STRING_CATALOG_GENERATE_SYMBOLS: YES
   configs:
     Debug:
       SWIFT_OPTIMIZATION_LEVEL: -Onone

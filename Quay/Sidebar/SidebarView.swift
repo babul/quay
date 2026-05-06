@@ -21,6 +21,7 @@ struct SidebarView: View {
     @Binding var selection: UUID?
     var onOpenConnection: (ConnectionProfile) -> Void = { _ in }
     var onOpenConnectionInNewTab: (ConnectionProfile) -> Void = { _ in }
+    var onOpenSFTPConnection: (ConnectionProfile) -> Void = { _ in }
     var onCreateConnection: (Folder?) -> Void = { _ in }
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
 
@@ -276,6 +277,10 @@ struct SidebarView: View {
                 selection = profile.id
                 onOpenConnectionInNewTab(profile)
             }
+            Button("Open SFTP") {
+                selection = profile.id
+                onOpenSFTPConnection(profile)
+            }
             Button("Edit…") { onEditConnection(profile) }
             Button("Duplicate") { duplicateConnection(profile) }
             Button("Delete", role: .destructive) {
@@ -328,6 +333,10 @@ struct SidebarView: View {
             Button("Connect New Tab") {
                 selection = host.id
                 onOpenConnectionInNewTab(transientProfile(for: host))
+            }
+            Button("Open SFTP") {
+                selection = host.id
+                onOpenSFTPConnection(transientProfile(for: host))
             }
             Button("Save as Quay Connection") {
                 saveSSHConfigHost(host)

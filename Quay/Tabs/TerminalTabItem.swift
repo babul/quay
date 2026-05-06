@@ -77,6 +77,8 @@ final class LoginScriptRunner {
 final class TerminalTabItem: Identifiable {
     let id: UUID
     let profile: ConnectionProfile
+    let kind: TerminalSessionKind
+    private let localDirectoryOverride: String?
 
     enum Phase: Equatable {
         case idle
@@ -102,10 +104,16 @@ final class TerminalTabItem: Identifiable {
     /// `TerminalClient`) to receive cross-feature child-exit events.
     var onChildExited: (() -> Void)?
 
-    init(profile: ConnectionProfile) {
+    init(
+        profile: ConnectionProfile,
+        kind: TerminalSessionKind = .ssh,
+        localDirectoryOverride: String? = nil
+    ) {
         self.id = UUID()
         self.profile = profile
-        self.displayedTitle = profile.name
+        self.kind = kind
+        self.localDirectoryOverride = localDirectoryOverride
+        self.displayedTitle = kind == .sftp ? "\(profile.name) SFTP" : profile.name
         self.displayedUsername = profile.username
     }
 
@@ -116,7 +124,11 @@ final class TerminalTabItem: Identifiable {
         disconnectSurface()
         phase = .starting
         do {
-            let (config, askpass) = try SessionBootstrap.start(for: profile)
+            let (config, askpass) = try SessionBootstrap.start(
+                for: profile,
+                kind: kind,
+                localDirectoryOverride: localDirectoryOverride
+            )
             if askpassServer == nil {
                 askpassServer = askpass
             } else if let askpass {
@@ -196,7 +208,7 @@ final class TerminalTabItem: Identifiable {
     // MARK: Display
 
     var displayTitle: String {
-        profile.name
+        kind == .sftp ? "\(profile.name) SFTP" : profile.name
     }
 
     var displayHost: String {
@@ -216,6 +228,10 @@ final class TerminalTabItem: Identifiable {
     var terminalBackgroundOpacity: Double {
         surfaceView?.bridge?.state.backgroundOpacity
             ?? GhosttyResolvedAppearance.backgroundOpacity(from: GhosttyRuntime.shared.config)
+    }
+
+    var currentWorkingDirectory: String? {
+        surfaceView?.bridge?.state.pwd?.path
     }
 
     func updateFromTerminalTitle(_ terminalTitle: String) {

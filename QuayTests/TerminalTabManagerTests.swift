@@ -72,6 +72,35 @@ struct TerminalTabManagerTests {
         #expect(manager.selectedTabID == second.id)
     }
 
+    @Test("Open SFTP tab creates separate SFTP session")
+    func openSFTPTabCreatesSeparateSession() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let profile = ConnectionProfile(name: "prod", hostname: "prod.example.com")
+        let ssh = manager.openOrSelectTab(for: profile)
+
+        let sftp = manager.openSFTPTab(for: profile, localDirectoryOverride: "/tmp")
+
+        #expect(manager.tabs.count == 2)
+        #expect(ssh.kind == .ssh)
+        #expect(sftp.kind == .sftp)
+        #expect(sftp.displayTitle == "prod SFTP")
+        #expect(manager.selectedTabID == sftp.id)
+    }
+
+    @Test("Open or select ignores existing SFTP tab for same profile")
+    func openOrSelectIgnoresExistingSFTPTabForSameProfile() {
+        let manager = TerminalTabManager(connectTab: { _ in })
+        let profile = ConnectionProfile(name: "prod", hostname: "prod.example.com")
+        let sftp = manager.openSFTPTab(for: profile)
+
+        let ssh = manager.openOrSelectTab(for: profile)
+
+        #expect(manager.tabs.count == 2)
+        #expect(sftp.kind == .sftp)
+        #expect(ssh.kind == .ssh)
+        #expect(manager.selectedTabID == ssh.id)
+    }
+
     @Test("Move tab before another tab reorders live tabs")
     func moveTabBeforeAnotherTabReordersLiveTabs() {
         let manager = TerminalTabManager(connectTab: { _ in })

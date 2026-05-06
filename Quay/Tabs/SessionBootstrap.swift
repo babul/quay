@@ -28,7 +28,9 @@ enum SessionBootstrap {
     /// The caller is responsible for calling `askpass.stop()` when the tab closes
     /// (NOT on reconnect — the server must outlive the surface for re-auth).
     static func start(
-        for profile: ConnectionProfile
+        for profile: ConnectionProfile,
+        kind: TerminalSessionKind = .ssh,
+        localDirectoryOverride: String? = nil
     ) throws -> (config: GhosttySurfaceConfig, askpass: AskpassServer?) {
         guard let target = profile.sshTarget else {
             throw StartError.incompleteProfile
@@ -47,9 +49,18 @@ enum SessionBootstrap {
             askpassEnv = .init(helperPath: helperPath, socketPath: server.socketPath)
         }
 
-        let cmd = SSHCommandBuilder.build(target, askpass: askpassEnv)
+        let cmd = switch kind {
+        case .ssh:
+            SSHCommandBuilder.build(target, askpass: askpassEnv)
+        case .sftp:
+            SSHCommandBuilder.buildSFTP(target, askpass: askpassEnv)
+        }
         var cfg = GhosttySurfaceConfig()
         cfg.command = wrapInLoginShell(cmd.command, askpassEnv: cmd.environment)
+        if kind == .sftp {
+            cfg.workingDirectory = normalizedLocalDirectory(localDirectoryOverride)
+                ?? normalizedLocalDirectory(target.localDirectory)
+        }
         cfg.environment = [:]
         cfg.waitAfterCommand = true
         cfg.scaleFactor = NSScreen.main.map { Double($0.backingScaleFactor) } ?? 2.0
@@ -85,5 +96,17 @@ enum SessionBootstrap {
     static func bundledHelperPath() -> String? {
         let url = Bundle.main.bundleURL.appending(path: "Contents/MacOS/quay-askpass")
         return FileManager.default.isExecutableFile(atPath: url.path) ? url.path : nil
+    }
+
+    static func normalizedLocalDirectory(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return nil
+        }
+        return trimmed
     }
 }

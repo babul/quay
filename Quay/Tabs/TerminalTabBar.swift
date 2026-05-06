@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct TerminalTabBar: View {
     var tabManager: TerminalTabManager
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
+    var onOpenSFTP: (TerminalTabItem) -> Void = { _ in }
     @AppStorage("appearance.showTabColorBars") private var showTabColorBars = true
     @AppStorage("tabs.confirmCloseActiveSessions") private var confirmCloseActiveSessions = true
 
@@ -24,6 +25,7 @@ struct TerminalTabBar: View {
                         isSelected: tab.id == tabManager.selectedTabID,
                         onSelect: { tabManager.select(tab) },
                         onEdit: { onEditConnection(tab.profile) },
+                        onOpenSFTP: { onOpenSFTP(tab) },
                         onDisconnect: { tabManager.disconnectTab(tab) },
                         onReconnect: { tabManager.reconnectTab(tab) },
                         onClose: { requestClose(tab) },
@@ -94,6 +96,7 @@ private struct TabButton: View {
     var isSelected: Bool
     var onSelect: () -> Void
     var onEdit: () -> Void
+    var onOpenSFTP: () -> Void
     var onDisconnect: () -> Void
     var onReconnect: () -> Void
     var onClose: () -> Void
@@ -129,6 +132,10 @@ private struct TabButton: View {
         .contextMenu {
             Button(action: onEdit) {
                 Label("Edit…", systemImage: "pencil")
+            }
+
+            Button(action: onOpenSFTP) {
+                Label("Open SFTP", systemImage: "arrow.up.arrow.down")
             }
 
             Button(action: onDisconnect) {

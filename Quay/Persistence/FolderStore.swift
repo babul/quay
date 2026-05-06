@@ -131,6 +131,8 @@ enum FolderStore {
             secretRef: profile.secretRef,
             privateKeyPath: profile.privateKeyPath,
             sshConfigAlias: profile.sshConfigAlias,
+            localDirectory: profile.localDirectory,
+            remoteDirectory: profile.remoteDirectory,
             remoteTerminalType: profile.remoteTerminalType,
             colorTag: profile.colorTag,
             iconName: profile.iconName,

@@ -181,6 +181,26 @@ struct PersistenceTests {
         #expect(fetched.iconName == "server.rack")
     }
 
+    @Test("SFTP directories round-trip through ConnectionProfile")
+    func sftpDirectoriesRoundTrip() throws {
+        let container = try Self.makeContainer()
+        let ctx = container.mainContext
+        let profile = ConnectionProfile(
+            name: "n",
+            hostname: "h",
+            localDirectory: "/Users/example/Downloads",
+            remoteDirectory: "/var/www"
+        )
+        ctx.insert(profile)
+        try ctx.save()
+
+        let fetched = try #require(try ctx.fetch(FetchDescriptor<ConnectionProfile>()).first)
+        #expect(fetched.localDirectory == "/Users/example/Downloads")
+        #expect(fetched.remoteDirectory == "/var/www")
+        #expect(fetched.sshTarget?.localDirectory == "/Users/example/Downloads")
+        #expect(fetched.sshTarget?.remoteDirectory == "/var/www")
+    }
+
     @Test("login script steps round-trip through ConnectionProfile")
     func loginScriptStepsRoundTrip() throws {
         let container = try Self.makeContainer()
@@ -318,6 +338,8 @@ struct PersistenceTests {
             secretRef: "keychain://quay/web",
             privateKeyPath: "/Users/example/.ssh/id_ed25519",
             sshConfigAlias: "web-alias",
+            localDirectory: "/Users/example/Downloads",
+            remoteDirectory: "/srv/web",
             remoteTerminalType: .xtermColor,
             colorTag: "blue",
             iconName: "server.rack",
@@ -357,6 +379,8 @@ struct PersistenceTests {
         #expect(duplicate.secretRef == original.secretRef)
         #expect(duplicate.privateKeyPath == original.privateKeyPath)
         #expect(duplicate.sshConfigAlias == original.sshConfigAlias)
+        #expect(duplicate.localDirectory == original.localDirectory)
+        #expect(duplicate.remoteDirectory == original.remoteDirectory)
         #expect(duplicate.remoteTerminalType == original.remoteTerminalType)
         #expect(duplicate.colorTag == original.colorTag)
         #expect(duplicate.iconName == original.iconName)

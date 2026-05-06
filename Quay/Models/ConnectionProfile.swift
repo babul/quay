@@ -91,6 +91,12 @@ final class ConnectionProfile {
     /// `.sshConfigAlias` auth method.
     var sshConfigAlias: String?
 
+    /// Local directory used as the starting working directory for SFTP tabs.
+    var localDirectory: String?
+
+    /// Remote directory appended to the SFTP destination for interactive SFTP.
+    var remoteDirectory: String?
+
     /// `RemoteTerminalType.rawValue` sent as TERM for this SSH session.
     var remoteTerminalTypeRaw: String?
 
@@ -123,6 +129,8 @@ final class ConnectionProfile {
         secretRef: String? = nil,
         privateKeyPath: String? = nil,
         sshConfigAlias: String? = nil,
+        localDirectory: String? = nil,
+        remoteDirectory: String? = nil,
         remoteTerminalType: RemoteTerminalType = .defaultValue,
         colorTag: String? = nil,
         iconName: String? = nil,
@@ -140,6 +148,8 @@ final class ConnectionProfile {
         self.secretRef = secretRef
         self.privateKeyPath = privateKeyPath
         self.sshConfigAlias = sshConfigAlias
+        self.localDirectory = localDirectory
+        self.remoteDirectory = remoteDirectory
         self.remoteTerminalTypeRaw = remoteTerminalType.rawValue
         self.colorTag = colorTag
         self.iconName = iconName
@@ -220,7 +230,9 @@ final class ConnectionProfile {
             port: port,
             username: username,
             auth: auth,
-            remoteTerminalType: remoteTerminalType
+            remoteTerminalType: remoteTerminalType,
+            localDirectory: localDirectory,
+            remoteDirectory: remoteDirectory
         )
     }
 
