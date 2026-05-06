@@ -256,6 +256,10 @@ struct SSHCommandBuilderTests {
             client: .lftp
         )
         #expect(cmd.command.hasPrefix("/opt/homebrew/bin/lftp -e "))
+        #expect(cmd.command.contains("set color:use-color yes"))
+        #expect(cmd.command.contains("set color:dir-colors"))
+        #expect(cmd.command.contains("di=01;34"))
+        #expect(cmd.command.contains("alias ls cls"))
         #expect(cmd.command.contains("set sftp:connect-program"))
         #expect(!cmd.command.contains("--user"))
         #expect(cmd.command.contains("/usr/bin/ssh -a -x -o BatchMode=no -l deploy -p 2222"))
@@ -295,6 +299,7 @@ struct SSHCommandBuilderTests {
         #expect(cmd.environment["SSH_ASKPASS"] == "/p/quay-askpass")
         #expect(cmd.environment["SSH_ASKPASS_REQUIRE"] == "force")
         #expect(cmd.environment["QUAY_ASKPASS_SOCKET"] == "/tmp/q.sock")
+        #expect(cmd.command.contains("set color:use-color yes"))
         #expect(cmd.command.contains("PreferredAuthentications=password,keyboard-interactive"))
         #expect(cmd.command.contains("PubkeyAuthentication=no"))
         #expect(!cmd.command.contains("--user"))

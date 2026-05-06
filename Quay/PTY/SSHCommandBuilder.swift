@@ -244,11 +244,13 @@ enum SSHCommandBuilder {
         var env: [String: String] = ["TERM": target.remoteTerminalType.rawValue]
 
         let connectProgram = lftpSSHConnectProgram(target)
-        argv.append(contentsOf: [
-            "-e",
-            "set sftp:connect-program \(lftpDoubleQuote(connectProgram))",
-            lftpURL(target)
-        ])
+        let initScript = [
+            "set color:use-color yes",
+            "set color:dir-colors \"\(Self.lftpDirColors)\"",
+            "alias ls cls",
+            "set sftp:connect-program \(lftpDoubleQuote(connectProgram))"
+        ].joined(separator: "; ")
+        argv.append(contentsOf: ["-e", initScript, lftpURL(target)])
 
         switch target.auth {
         case .password, .privateKeyWithPassphrase:
@@ -376,6 +378,15 @@ enum SSHCommandBuilder {
         let prefixed = value.hasPrefix("/") ? value : "/\(value)"
         return prefixed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? prefixed
     }
+
+    // Standard GNU dir-colors palette. Used when LS_COLORS is unset (common on macOS).
+    private static let lftpDirColors =
+        "di=01;34:ln=01;36:so=01;35:pi=33:ex=01;32" +
+        ":bd=33;01:cd=33;01:su=37;41:sg=30;43:tw=30;42:ow=34;42" +
+        ":*.tar=01;31:*.gz=01;31:*.bz2=01;31:*.xz=01;31:*.zip=01;31:*.7z=01;31:*.rar=01;31" +
+        ":*.jpg=01;35:*.jpeg=01;35:*.png=01;35:*.gif=01;35:*.svg=01;35:*.webp=01;35" +
+        ":*.mp4=01;35:*.mkv=01;35:*.mov=01;35:*.avi=01;35" +
+        ":*.mp3=00;36:*.flac=00;36:*.wav=00;36:*.ogg=00;36:*.aac=00;36"
 
     private static func lftpDoubleQuote(_ value: String) -> String {
         let escaped = value
