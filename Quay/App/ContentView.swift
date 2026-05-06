@@ -4,6 +4,8 @@ import SwiftData
 import SwiftUI
 
 struct ContentView: View {
+    private static let terminalTabBarHeight: CGFloat = 37
+
     let store: StoreOf<AppFeature>
     @State private var selectedConnectionID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility
@@ -86,16 +88,23 @@ struct ContentView: View {
                 Text("Or hit ⌘L to search.")
             }
         } else {
-            VStack(spacing: 0) {
-                TerminalTabBar(
-                    tabManager: tabManager,
-                    onEditConnection: { profile in
-                        editorTarget = .edit(profile)
-                    }
-                )
-                Divider()
+            ZStack(alignment: .top) {
                 tabSurfaces
+                    .padding(.top, Self.terminalTabBarHeight)
+
+                VStack(spacing: 0) {
+                    TerminalTabBar(
+                        tabManager: tabManager,
+                        onEditConnection: { profile in
+                            editorTarget = .edit(profile)
+                        }
+                    )
+                    .frame(height: Self.terminalTabBarHeight - 1)
+                    Divider()
+                }
+                .ignoresSafeArea(.container, edges: .top)
             }
+            .ignoresSafeArea(.container, edges: .top)
         }
     }
 

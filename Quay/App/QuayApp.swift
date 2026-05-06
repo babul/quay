@@ -18,8 +18,7 @@ struct QuayApp: App {
                 .modifier(GhosttyColorSchemeSyncModifier())
                 .background(WindowConfigurator())
         }
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified(showsTitle: true))
+        .windowStyle(.hiddenTitleBar)
         .modelContainer(PersistenceContainer.shared)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -126,6 +125,9 @@ private struct WindowConfigurator: NSViewRepresentable {
         func configureWindow() {
             guard !didConfigureWindow, let window else { return }
             didConfigureWindow = true
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
             window.setFrameAutosaveName("Quay.MainWindow.Frame")
 
             let center = NotificationCenter.default
