@@ -256,7 +256,7 @@ struct SidebarView: View {
             }
             Divider()
             Button(role: .destructive) {
-                ctx.delete(profile)
+                deleteConnection(profile)
             } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -432,10 +432,24 @@ struct SidebarView: View {
               folder.connections.isEmpty,
               folder.children.isEmpty
         else { return }
+        guard NSAlert.confirmation(
+            title: "Delete Group?",
+            message: "\"\(folder.name)\" will be removed. This cannot be undone.",
+            confirmTitle: "Delete Group"
+        ) else { return }
         collapsedFolderIDs.remove(folder.id)
         SidebarCollapseState.save(collapsedFolderIDs)
         ctx.delete(folder)
         try? ctx.save()
+    }
+
+    private func deleteConnection(_ profile: ConnectionProfile) {
+        guard NSAlert.confirmation(
+            title: "Delete Connection?",
+            message: "\"\(profile.name)\" will be removed. This cannot be undone.",
+            confirmTitle: "Delete Connection"
+        ) else { return }
+        ctx.delete(profile)
     }
 
     private func duplicateConnection(_ profile: ConnectionProfile) {
