@@ -8,6 +8,17 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.2.0</title>
+            <pubDate>Wed, 06 May 2026 20:38:07 +0000</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.2.0/Quay-0.2.0.zip"
+                       sparkle:edSignature="eG/PBQdfkgDrb6t74G8IQlDifVAaTfLbEnvdxih/9qzMg2ROp56RvLgI0fvDRxp8Lqou01KiPZuixo5Xj1GCCA=="
+                       length="8550145"
+                       type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.1.0</title>
             <pubDate>Wed, 06 May 2026 11:41:59 +0000</pubDate>
             <sparkle:version>2</sparkle:version>
