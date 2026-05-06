@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import SwiftData
 import SwiftUI
@@ -253,9 +254,11 @@ struct SidebarView: View {
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 0) {
                 Text(profile.name)
-                Text(profile.sshTarget?.hostname ?? profile.hostname)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                if let subtitle = SidebarDisplayText.connectionSubtitle(for: profile) {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
         }
@@ -304,7 +307,7 @@ struct SidebarView: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 0) {
-                Text(host.displayName)
+                Text(SidebarDisplayText.sshConfigHostTitle(for: host))
                 Text("~/.ssh/config")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -468,6 +471,44 @@ struct SidebarView: View {
 
     private var localHostname: String {
         Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+    }
+}
+
+enum SidebarDisplayText {
+    static func connectionSubtitle(for profile: ConnectionProfile) -> String? {
+        if profile.authMethod == .sshConfigAlias {
+            return redactedHost(profile.sshConfigAlias ?? profile.hostname)
+        }
+
+        return redactedHost(profile.sshTarget?.hostname ?? profile.hostname)
+    }
+
+    static func sshConfigHostTitle(for host: DiscoveredSSHHost) -> String {
+        redactedHost(host.displayName) ?? "SSH Config Host"
+    }
+
+    static func redactedHost(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return isIPAddress(trimmed) ? nil : trimmed
+    }
+
+    static func isIPAddress(_ value: String) -> Bool {
+        var candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if candidate.hasPrefix("["), candidate.hasSuffix("]") {
+            candidate = String(candidate.dropFirst().dropLast())
+        }
+        if let zoneIndex = candidate.firstIndex(of: "%") {
+            candidate = String(candidate[..<zoneIndex])
+        }
+
+        var ipv4 = in_addr()
+        if candidate.withCString({ inet_pton(AF_INET, $0, &ipv4) }) == 1 {
+            return true
+        }
+
+        var ipv6 = in6_addr()
+        return candidate.withCString { inet_pton(AF_INET6, $0, &ipv6) } == 1
     }
 }
 

@@ -205,9 +205,7 @@ final class TerminalTabItem: Identifiable {
         case .sshConfigAlias(let alias): return alias
         default: break
         }
-        let user = displayedUsername.map { "\($0)@" } ?? ""
-        let port = target.port.map { ":\($0)" } ?? ""
-        return "\(user)\(target.hostname)\(port)"
+        return ""
     }
 
     var terminalBackgroundColor: NSColor {

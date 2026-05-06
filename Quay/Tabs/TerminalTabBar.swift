@@ -161,10 +161,12 @@ private struct TabButton: View {
             Text(title)
                 .font(.system(size: 12, weight: isSelected ? .medium : .regular))
                 .lineLimit(1)
-            Text(subtitle)
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
         .frame(minWidth: 56, maxWidth: 220, alignment: .leading)
     }

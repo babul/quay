@@ -175,7 +175,32 @@ struct TerminalTabManagerTests {
         tab.updateFromTerminalTitle("forge@cac-ash-vpn-1:~")
 
         #expect(tab.displayTitle == "VPN Jumpbox")
-        #expect(tab.displayHost == "forge@5.161.194.242")
+        #expect(tab.displayHost == "")
+    }
+
+    @Test("Terminal subtitle hides username and host for regular SSH")
+    func terminalSubtitleHidesUsernameAndHostForRegularSSH() {
+        let profile = ConnectionProfile(
+            name: "VPN Jumpbox",
+            hostname: "prod.example.com",
+            username: "forge"
+        )
+        let tab = TerminalTabItem(profile: profile)
+
+        #expect(tab.displayHost == "")
+    }
+
+    @Test("Terminal subtitle preserves ssh config alias")
+    func terminalSubtitlePreservesSSHConfigAlias() {
+        let profile = ConnectionProfile(
+            name: "VPN Jumpbox",
+            hostname: "ignored.example.com",
+            authMethod: .sshConfigAlias,
+            sshConfigAlias: "vpn-jumpbox"
+        )
+        let tab = TerminalTabItem(profile: profile)
+
+        #expect(tab.displayHost == "vpn-jumpbox")
     }
 
     @Test("Login script runner waits for each matcher and sends rows in order")

@@ -31,24 +31,102 @@ struct ConnectionEditor: View {
     @State private var loginScriptSteps: [LoginScriptStep] = []
     @State private var selectedFolderID: UUID?
     @State private var didLoad = false
+    @State private var hostnameIsRevealed = false
+    @State private var portIsRevealed = false
+    @State private var usernameIsRevealed = false
+    @State private var sshConfigAliasIsRevealed = false
+    @State private var selectedEditorPage: ConnectionEditorPage = .connection
 
     var body: some View {
-        Form {
-            Section("Identity") {
+        VStack(spacing: 0) {
+            Picker("Editor section", selection: $selectedEditorPage) {
+                ForEach(ConnectionEditorPage.allCases) { page in
+                    Text(page.label).tag(page)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    editorPage
+                }
+                    .frame(width: ConnectionEditorLayout.contentWidth, alignment: .topLeading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
+            }
+
+            Divider()
+
+            HStack(spacing: 12) {
+                Spacer()
+                Button("Cancel") { close() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSave)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+        }
+        .frame(width: ConnectionEditorLayout.sheetWidth)
+        .frame(minHeight: 420)
+        .fixedSize(horizontal: true, vertical: false)
+        .onAppear { loadIfNeeded() }
+    }
+
+    @ViewBuilder
+    private var editorPage: some View {
+        switch selectedEditorPage {
+        case .connection:
+            connectionPage
+        case .scripts:
+            scriptsPage
+        case .appearance:
+            appearancePage
+        case .notes:
+            notesPage
+        }
+    }
+
+    private var connectionPage: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            EditorSection("Identity") {
                 FormTextField(title: "Display name", text: $name)
+                EditorDivider()
                 groupPicker
-                FormTextField(
+                EditorDivider()
+                FormPrivateTextField(
                     title: "Hostname",
                     text: $hostname,
+                    isRevealed: $hostnameIsRevealed,
                     isDisabled: authMethod == .sshConfigAlias
                 )
+                EditorDivider()
                 HStack {
-                    FormTextField(title: "Port", text: $port, width: 90, labelWidth: 48)
-                    FormTextField(title: "Username", text: $username, labelWidth: 78)
+                    FormPrivateTextField(
+                        title: "Port",
+                        text: $port,
+                        isRevealed: $portIsRevealed,
+                        width: 124,
+                        labelWidth: 48
+                    )
+                    FormPrivateTextField(
+                        title: "Username",
+                        text: $username,
+                        isRevealed: $usernameIsRevealed,
+                        width: 190,
+                        labelWidth: 78
+                    )
                 }
             }
 
-            Section("Authentication") {
+            EditorSection("Authentication") {
                 Picker("Method", selection: $authMethod) {
                     Text("ssh-agent").tag(ConnectionProfile.AuthMethod.sshAgent)
                     Text("Private key").tag(ConnectionProfile.AuthMethod.privateKey)
@@ -62,83 +140,92 @@ struct ConnectionEditor: View {
                     Text("Uses keys loaded into ssh-agent.")
                         .foregroundStyle(.secondary)
                         .font(.caption)
+                        .frame(width: ConnectionEditorLayout.rowWidth, alignment: .leading)
                 case .privateKey:
+                    EditorDivider()
                     keyPathField
                 case .privateKeyWithPassphrase:
+                    EditorDivider()
                     keyPathField
+                    EditorDivider()
                     secretRefField(label: "Passphrase reference",
                                    placeholder: "keychain://service/account")
                 case .password:
+                    EditorDivider()
                     secretRefField(label: "Password reference",
                                    placeholder: "keychain://service/account")
                 case .sshConfigAlias:
-                    FormTextField(
+                    EditorDivider()
+                    FormPrivateTextField(
                         title: "Host alias",
                         text: $sshConfigAlias,
+                        isRevealed: $sshConfigAliasIsRevealed,
                         prompt: "Host alias from ~/.ssh/config"
                     )
                 }
             }
 
-            Section("Terminal") {
+            EditorSection("Terminal") {
                 Picker("Remote TERM", selection: $remoteTerminalType) {
                     ForEach(RemoteTerminalType.allCases) { type in
                         Text(type.label).tag(type)
                     }
                 }
+                EditorDivider()
                 Text(remoteTerminalType.helpText)
                     .foregroundStyle(.secondary)
                     .font(.caption)
+                    .frame(width: ConnectionEditorLayout.rowWidth, alignment: .leading)
             }
+        }
+    }
 
-            Section("Login Scripts") {
-                if loginScriptSteps.isEmpty {
-                    Text("No login scripts.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach($loginScriptSteps) { $step in
-                        LoginScriptStepRow(
-                            step: $step,
-                            onDelete: { removeLoginScriptStep(id: step.id) }
-                        )
+    private var scriptsPage: some View {
+        EditorSection("Login Scripts") {
+            if loginScriptSteps.isEmpty {
+                Text("No login scripts.")
+                    .foregroundStyle(.secondary)
+                    .frame(width: ConnectionEditorLayout.rowWidth, alignment: .leading)
+            } else {
+                ForEach($loginScriptSteps) { $step in
+                    LoginScriptStepRow(
+                        step: $step,
+                        onDelete: { removeLoginScriptStep(id: step.id) }
+                    )
+                    if step.id != loginScriptSteps.last?.id {
+                        EditorDivider()
                     }
-                    .onMove(perform: moveLoginScriptSteps)
-                }
-
-                Button {
-                    addLoginScriptStep()
-                } label: {
-                    Label("Add script step", systemImage: "plus")
                 }
             }
 
-            Section("Appearance") {
-                AppearanceIconPicker(
-                    title: "Icon",
-                    defaultSystemName: ConnectionIcon.fallback,
-                    defaultHelp: "Default",
-                    accessibilityLabel: "Connection icon",
-                    selection: $iconName
-                )
-                colorPicker
-            }
+            EditorDivider()
 
-            Section("Notes") {
-                FormTextEditor(title: "Notes", text: $notes, minHeight: 72)
+            Button {
+                addLoginScriptStep()
+            } label: {
+                Label("Add script step", systemImage: "plus")
             }
         }
-        .formStyle(.grouped)
-        .padding(.bottom, 12)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { close() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
-                    .disabled(!canSave)
-            }
+    }
+
+    private var appearancePage: some View {
+        EditorSection("Appearance") {
+            AppearanceIconPicker(
+                title: "Icon",
+                defaultSystemName: ConnectionIcon.fallback,
+                defaultHelp: "Default",
+                accessibilityLabel: "Connection icon",
+                selection: $iconName
+            )
+            EditorDivider()
+            colorPicker
         }
-        .onAppear { loadIfNeeded() }
+    }
+
+    private var notesPage: some View {
+        EditorSection("Notes") {
+            FormTextEditor(title: "Notes", text: $notes, minHeight: 132)
+        }
     }
 
     private var topLevelFolders: [Folder] {
@@ -156,6 +243,9 @@ struct ConnectionEditor: View {
 
     private var groupPicker: some View {
         Picker("Group", selection: $selectedFolderID) {
+            if selectedFolderID == nil {
+                Text("Default").tag(Optional<UUID>.none)
+            }
             ForEach(topLevelFolders, id: \.id) { folder in
                 Text(folder.name).tag(Optional(folder.id))
             }
@@ -168,7 +258,8 @@ struct ConnectionEditor: View {
             FormTextField(
                 title: "Private key path",
                 text: $privateKeyPath,
-                prompt: "Path to private key"
+                prompt: "Path to private key",
+                width: 360
             )
             Button("Choose…") { pickKeyFile() }
         }
@@ -232,6 +323,7 @@ struct ConnectionEditor: View {
     private func loadIfNeeded() {
         guard !didLoad else { return }
         didLoad = true
+        resetPrivacyReveals()
         if case .edit(let p) = target {
             name = p.name
             hostname = p.hostname
@@ -251,6 +343,13 @@ struct ConnectionEditor: View {
         } else {
             ensureDefaultFolderSelection()
         }
+    }
+
+    private func resetPrivacyReveals() {
+        hostnameIsRevealed = false
+        portIsRevealed = false
+        usernameIsRevealed = false
+        sshConfigAliasIsRevealed = false
     }
 
     private func save() {
@@ -363,19 +462,25 @@ struct ConnectionEditor: View {
 private struct LoginScriptStepRow: View {
     @Binding var step: LoginScriptStep
     let onDelete: () -> Void
+    @State private var matchIsRevealed = false
+    @State private var sendIsRevealed = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            FormTextField(
+            FormPrivateTextField(
                 title: "Match",
                 text: $step.match,
+                isRevealed: $matchIsRevealed,
                 prompt: "Visible text",
+                width: 170,
                 labelWidth: 46
             )
-            FormTextField(
+            FormPrivateTextField(
                 title: "Send",
                 text: $step.send,
+                isRevealed: $sendIsRevealed,
                 prompt: "Command",
+                width: 210,
                 labelWidth: 38
             )
             Button(role: .destructive, action: onDelete) {
@@ -411,7 +516,129 @@ private struct FormTextField: View {
                 .accessibilityLabel(title)
                 .frame(width: width)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: width == nil ? ConnectionEditorLayout.rowWidth : nil, alignment: .leading)
+    }
+}
+
+enum ConnectionEditorPrivacy {
+    enum Field: CaseIterable {
+        case hostname
+        case port
+        case username
+        case sshConfigAlias
+        case loginScriptMatch
+        case loginScriptSend
+    }
+
+    static func isSensitive(_ field: Field) -> Bool {
+        switch field {
+        case .hostname, .port, .username, .sshConfigAlias,
+             .loginScriptMatch, .loginScriptSend:
+            return true
+        }
+    }
+}
+
+private enum ConnectionEditorPage: String, CaseIterable, Identifiable {
+    case connection
+    case scripts
+    case appearance
+    case notes
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .connection: return "Connection"
+        case .scripts: return "Scripts"
+        case .appearance: return "Appearance"
+        case .notes: return "Notes"
+        }
+    }
+}
+
+private enum ConnectionEditorLayout {
+    static let sheetWidth: CGFloat = 680
+    static let contentWidth: CGFloat = 620
+    static let rowWidth: CGFloat = 596
+}
+
+private struct EditorSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+            VStack(spacing: 10) {
+                content()
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+            )
+        }
+        .frame(width: ConnectionEditorLayout.contentWidth, alignment: .leading)
+    }
+}
+
+private struct EditorDivider: View {
+    var body: some View {
+        Divider()
+    }
+}
+
+private struct FormPrivateTextField: View {
+    let title: String
+    @Binding var text: String
+    @Binding var isRevealed: Bool
+    var prompt: String?
+    var width: CGFloat?
+    var isDisabled: Bool = false
+    var labelWidth: CGFloat = 128
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: labelWidth, alignment: .leading)
+
+            HStack(spacing: 6) {
+                Group {
+                    if isRevealed {
+                        TextField("", text: $text, prompt: Text(prompt ?? title))
+                    } else {
+                        SecureField("", text: $text, prompt: Text(prompt ?? title))
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.regular)
+                .disabled(isDisabled)
+                .opacity(isDisabled ? 0.72 : 1)
+                .accessibilityLabel(title)
+
+                Button {
+                    isRevealed.toggle()
+                } label: {
+                    Image(systemName: isRevealed ? "eye.slash" : "eye")
+                }
+                .buttonStyle(.borderless)
+                .frame(width: 28, height: 28)
+                .disabled(isDisabled)
+                .help(isRevealed ? "Hide \(title)" : "Reveal \(title)")
+                .accessibilityLabel(isRevealed ? "Hide \(title)" : "Reveal \(title)")
+            }
+            .frame(width: width)
+        }
+        .frame(width: width == nil ? ConnectionEditorLayout.rowWidth : nil, alignment: .leading)
     }
 }
 
@@ -427,6 +654,7 @@ private struct FormTextEditor: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 128, alignment: .leading)
             TextEditor(text: $text)
+                .frame(width: ConnectionEditorLayout.rowWidth - 140)
                 .frame(minHeight: minHeight)
                 .padding(4)
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
@@ -436,5 +664,6 @@ private struct FormTextEditor: View {
                 }
                 .accessibilityLabel(title)
         }
+        .frame(width: ConnectionEditorLayout.rowWidth, alignment: .leading)
     }
 }
