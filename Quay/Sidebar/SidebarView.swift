@@ -30,6 +30,7 @@ struct SidebarView: View {
     @State private var sshConfigExpanded = SidebarCollapseState.loadSSHConfigExpanded()
     @State private var lastConnectionClick: (id: UUID, time: Date)?
     @State private var discoveredSSHHosts: [DiscoveredSSHHost] = []
+    private static let sshConfigSectionID = UUID(uuidString: "5547C0F9-0000-0000-0000-535348434F4E")!
 
     enum EditorTarget: Identifiable {
         case create(folderID: UUID? = nil)
@@ -169,14 +170,83 @@ struct SidebarView: View {
                 .padding(.vertical, 8)
         } else {
             ForEach(grouped, id: \.0.id) { folder, items in
-                DisclosureGroup(isExpanded: searchExpandedBinding(for: folderIsExpandedBinding(folder))) {
-                    ForEach(items, id: \.id) { connectionRow($0) }
-                } label: {
-                    folderLabel(folder, count: items.count)
-                        .contextMenu { folderContextMenu(folder) }
+                folderHeaderRow(folder, count: items.count)
+                if !collapsedFolderIDs.contains(folder.id) || searchIsActive {
+                    ForEach(items, id: \.id) {
+                        connectionRow($0).padding(.leading, 20)
+                    }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func chevronButton(isExpanded: Bool, onToggle: @escaping () -> Void) -> some View {
+        Button {
+            guard !searchIsActive else { return }
+            onToggle()
+        } label: {
+            Image(systemName: "chevron.right")
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                .foregroundStyle(.secondary)
+                .frame(width: 12)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func folderHeaderRow(_ folder: Folder, count: Int) -> some View {
+        let isExpanded = !collapsedFolderIDs.contains(folder.id) || searchIsActive
+        return groupHeaderRow(
+            id: folder.id,
+            isExpanded: isExpanded,
+            onToggle: { folderIsExpandedBinding(folder).wrappedValue.toggle() },
+            onClick: { handleFolderClick(folder) },
+            content: { folderLabel(folder, count: count) },
+            contextMenu: { folderContextMenu(folder) }
+        )
+    }
+
+    private func sshConfigHeaderRow(hostCount: Int) -> some View {
+        let isExpanded = sshConfigExpanded || searchIsActive
+        return groupHeaderRow(
+            id: Self.sshConfigSectionID,
+            isExpanded: isExpanded,
+            onToggle: { sshConfigExpanded.toggle() },
+            onClick: { handleSSHConfigClick() },
+            content: {
+                HStack(spacing: 6) {
+                    Image(systemName: "terminal")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text("SSH Config")
+                        .lineLimit(1)
+                    Spacer()
+                    Text("\(hostCount)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            },
+            contextMenu: { EmptyView() }
+        )
+    }
+
+    private func groupHeaderRow<Content: View, ContextMenu: View>(
+        id: UUID,
+        isExpanded: Bool,
+        onToggle: @escaping () -> Void,
+        onClick: @escaping () -> Void,
+        @ViewBuilder content: @escaping () -> Content,
+        @ViewBuilder contextMenu: @escaping () -> ContextMenu
+    ) -> some View {
+        HStack(spacing: 4) {
+            chevronButton(isExpanded: isExpanded, onToggle: onToggle)
+            content()
+        }
+        .tag(id)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onClick)
+        .contextMenu(menuItems: contextMenu)
     }
 
     private func shouldHideFolder(_ folder: Folder, connectionCount: Int) -> Bool {
@@ -267,25 +337,13 @@ struct SidebarView: View {
     private var sshConfigHostsSection: some View {
         let hosts = filteredDiscoveredSSHHosts
         if !hosts.isEmpty {
-            DisclosureGroup(isExpanded: searchExpandedBinding(for: $sshConfigExpanded)) {
-                ForEach(hosts, id: \.id) { host in
-                    sshConfigHostRow(host)
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "terminal")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16)
-                    Text("SSH Config")
-                        .lineLimit(1)
-                    Spacer()
-                    Text("\(hosts.count)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+            sshConfigHeaderRow(hostCount: hosts.count)
+            if sshConfigExpanded || searchIsActive {
+                ForEach(hosts, id: \.id) { sshConfigHostRow($0).padding(.leading, 20) }
             }
         }
     }
+
 
     private func sshConfigHostRow(_ host: DiscoveredSSHHost) -> some View {
         HStack {
@@ -321,6 +379,21 @@ struct SidebarView: View {
 
     private func handleSSHConfigHostClick(_ host: DiscoveredSSHHost) {
         handleItemClick(id: host.id) { onOpenConnection(transientProfile(for: host)) }
+    }
+
+    private func handleFolderClick(_ folder: Folder) {
+        handleGroupClick(id: folder.id) { folderIsExpandedBinding(folder).wrappedValue.toggle() }
+    }
+
+    private func handleSSHConfigClick() {
+        handleGroupClick(id: Self.sshConfigSectionID) { sshConfigExpanded.toggle() }
+    }
+
+    private func handleGroupClick(id: UUID, toggle: @escaping () -> Void) {
+        handleItemClick(id: id) {
+            guard !searchIsActive else { return }
+            toggle()
+        }
     }
 
     private func handleItemClick(id: UUID, onOpen: () -> Void) {
@@ -401,15 +474,6 @@ struct SidebarView: View {
                 expanded: isExpanded,
                 in: &collapsedFolderIDs
             )
-        }
-    }
-
-    private func searchExpandedBinding(for binding: Binding<Bool>) -> Binding<Bool> {
-        Binding {
-            searchIsActive || binding.wrappedValue
-        } set: { newValue in
-            guard !searchIsActive else { return }
-            binding.wrappedValue = newValue
         }
     }
 
