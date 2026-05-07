@@ -37,7 +37,6 @@ struct ConnectionEditor: View {
     @State private var sshConfigAliasIsRevealed = false
     @State private var localDirectoryIsRevealed = false
     @State private var remoteDirectoryIsRevealed = false
-    @State private var selectedEditorPage: ConnectionEditorPage = .connection
     @State private var testStatus: TestStatus = .idle
     @State private var testTask: Task<Void, Never>?
 
@@ -47,11 +46,13 @@ struct ConnectionEditor: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebarColumn
-            Divider()
-            detailColumn
+        TabView {
+            Tab("Connection", systemImage: "network")           { connectionPage }
+            Tab("Scripts",    systemImage: "terminal")          { scriptsPage }
+            Tab("Appearance", systemImage: "paintpalette.fill") { appearancePage }
+            Tab("Notes",      systemImage: "square.and.pencil") { notesPage }
         }
+        .tabViewStyle(.sidebarAdaptable)
         .frame(minWidth: 500, idealWidth: 680, maxWidth: .infinity,
                minHeight: 400, idealHeight: 540, maxHeight: .infinity)
         .toolbar {
@@ -82,48 +83,6 @@ struct ConnectionEditor: View {
         }
     }
 
-    // MARK: - Layout
-
-    private var sidebarColumn: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(ConnectionEditorPage.allCases) { page in
-                Button {
-                    selectedEditorPage = page
-                } label: {
-                    Label(page.label, systemImage: page.symbol)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(selectedEditorPage == page
-                              ? Color.accentColor.opacity(0.15)
-                              : Color.clear)
-                )
-                .foregroundStyle(selectedEditorPage == page ? Color.accentColor : Color.primary)
-            }
-            Spacer()
-        }
-        .padding(8)
-        .frame(width: 160)
-        .background(.bar)
-    }
-
-    private var detailColumn: some View {
-        Group {
-            switch selectedEditorPage {
-            case .connection: connectionPage
-            case .scripts: scriptsPage
-            case .appearance: appearancePage
-            case .notes: notesPage
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
     // MARK: - Pages
 
     private var connectionPage: some View {
@@ -148,9 +107,7 @@ struct ConnectionEditor: View {
                 }
                 switch authMethod {
                 case .sshAgent:
-                    Text("Uses ~/.ssh/config, default identity files, and keys loaded into ssh-agent.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    captionText("Uses ~/.ssh/config, default identity files, and keys loaded into ssh-agent.")
                 case .privateKey:
                     keyPathField
                 case .privateKeyWithPassphrase:
@@ -176,38 +133,24 @@ struct ConnectionEditor: View {
                         Text(type.label).tag(type)
                     }
                 }
-                Text(remoteTerminalType.helpText)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                captionText(remoteTerminalType.helpText)
             }
 
             Section("SFTP") {
-                LabeledContent("Local directory") {
-                    HStack(spacing: 6) {
-                        Group {
-                            if localDirectoryIsRevealed {
-                                TextField("", text: $localDirectory,
-                                         prompt: Text("Uses global default if empty"))
-                            } else {
-                                SecureField("", text: $localDirectory,
-                                            prompt: Text("Uses global default if empty"))
-                            }
-                        }
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("Local directory")
-                        Button {
-                            localDirectoryIsRevealed.toggle()
-                        } label: {
-                            Image(systemName: localDirectoryIsRevealed ? "eye.slash" : "eye")
-                        }
-                        .buttonStyle(.borderless)
-                        .help(localDirectoryIsRevealed ? "Hide local directory" : "Reveal local directory")
-                        Button("Choose…") { pickLocalDirectory() }
-                    }
+                revealableField(
+                    "Local directory",
+                    text: $localDirectory,
+                    isRevealed: $localDirectoryIsRevealed,
+                    prompt: "Uses global default if empty"
+                ) {
+                    Button("Choose…") { pickLocalDirectory() }
                 }
-                revealableField("Remote directory", text: $remoteDirectory,
-                               isRevealed: $remoteDirectoryIsRevealed,
-                               prompt: "/path/on/server")
+                revealableField(
+                    "Remote directory",
+                    text: $remoteDirectory,
+                    isRevealed: $remoteDirectoryIsRevealed,
+                    prompt: "/path/on/server"
+                )
             }
         }
         .formStyle(.grouped)
@@ -308,13 +251,15 @@ struct ConnectionEditor: View {
     // MARK: - Row builders
 
     @ViewBuilder
-    private func revealableField(
+    private func revealableField<Trailing: View>(
         _ title: String,
         text: Binding<String>,
         isRevealed: Binding<Bool>,
         isDisabled: Bool = false,
-        prompt: String? = nil
+        prompt: String? = nil,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
     ) -> some View {
+        let revealHelp = isRevealed.wrappedValue ? "Hide \(title)" : "Reveal \(title)"
         LabeledContent(title) {
             HStack(spacing: 6) {
                 Group {
@@ -328,15 +273,18 @@ struct ConnectionEditor: View {
                 .disabled(isDisabled)
                 .opacity(isDisabled ? 0.72 : 1)
                 .accessibilityLabel(title)
+
                 Button {
                     isRevealed.wrappedValue.toggle()
                 } label: {
                     Image(systemName: isRevealed.wrappedValue ? "eye.slash" : "eye")
                 }
                 .buttonStyle(.borderless)
-                .help(isRevealed.wrappedValue ? "Hide \(title)" : "Reveal \(title)")
-                .accessibilityLabel(isRevealed.wrappedValue ? "Hide \(title)" : "Reveal \(title)")
                 .disabled(isDisabled)
+                .help(revealHelp)
+                .accessibilityLabel(revealHelp)
+
+                trailing()
             }
         }
     }
@@ -359,6 +307,12 @@ struct ConnectionEditor: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func captionText(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 
     private var groupPicker: some View {
@@ -805,30 +759,6 @@ private struct LockStepSheet: View {
 }
 
 // MARK: - Supporting types
-
-private enum ConnectionEditorPage: String, CaseIterable, Identifiable {
-    case connection, scripts, appearance, notes
-
-    var id: Self { self }
-
-    var label: String {
-        switch self {
-        case .connection: "Connection"
-        case .scripts: "Scripts"
-        case .appearance: "Appearance"
-        case .notes: "Notes"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .connection: "network"
-        case .scripts: "terminal"
-        case .appearance: "paintpalette.fill"
-        case .notes: "square.and.pencil"
-        }
-    }
-}
 
 private extension String {
     var trimmedNonEmpty: String? {

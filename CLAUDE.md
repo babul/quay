@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-Quay is a native macOS SSH connection manager (macOS 14+, Apple Silicon) built on top of `libghostty` — the core of the Ghostty terminal — without shipping Ghostty's full UI. Think Tabby-style connection manager UX on a Ghostty-speed terminal engine.
+Quay is a native macOS SSH connection manager (macOS 15+, Apple Silicon) built on top of `libghostty` — the core of the Ghostty terminal — without shipping Ghostty's full UI. Think Tabby-style connection manager UX on a Ghostty-speed terminal engine.
 
 ## Build commands
 

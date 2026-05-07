@@ -107,7 +107,7 @@ GitHub Pages takes 1–2 minutes to deploy after the `gh-pages` push — install
             <pubDate>Wed, 07 May 2026 12:00:00 +0000</pubDate>
             <sparkle:version>2</sparkle:version>           <!-- CURRENT_PROJECT_VERSION -->
             <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/babul/quay/releases/download/v0.1.1/Quay-0.1.1.dmg"
                        sparkle:edSignature="<base64>"
                        length="12345678"

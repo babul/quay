@@ -6,7 +6,7 @@
 
 <p align="center">
   Native macOS SSH &amp; SFTP connection manager — free, no subscription.<br>
-  <sub>Built on <a href="https://ghostty.org">Ghostty</a>'s terminal core &nbsp;·&nbsp; macOS 14+ &nbsp;·&nbsp; Apple Silicon</sub>
+  <sub>Built on <a href="https://ghostty.org">Ghostty</a>'s terminal core &nbsp;·&nbsp; macOS 15+ &nbsp;·&nbsp; Apple Silicon</sub>
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@ If you're managing remote hosts and don't want to pay a monthly fee for it, Quay
 2. Drag **Quay** to `/Applications`.
 3. Launch. Future updates arrive automatically via Sparkle.
 
-**Requirements:** macOS 14 (Sonoma) or newer · Apple Silicon (arm64)
+**Requirements:** macOS 15 (Sequoia) or newer · Apple Silicon (arm64)
 
 > Want to build from source? See [Building from source](#building-from-source) below.
 
@@ -182,7 +182,7 @@ Bundles can be encrypted with a password (AES-256) on export. The export sheet r
 
 ### Requirements
 
-- macOS 14 (Sonoma) or newer, Apple Silicon (arm64) — Intel Macs are not supported. Ghostty's upstream build system (`GhosttyXCFramework.zig`) only offers `native` (host arch) and `universal` (arm64 + iOS slices) xcframework targets — there is no mac-fat arm64+x86_64 option, so producing a dual-arch `GhosttyKit.xcframework` would require an upstream Ghostty patch or a manual `lipo` step. PRs welcome.
+- macOS 15 (Sequoia) or newer, Apple Silicon (arm64) — Intel Macs are not supported. Ghostty's upstream build system (`GhosttyXCFramework.zig`) only offers `native` (host arch) and `universal` (arm64 + iOS slices) xcframework targets — there is no mac-fat arm64+x86_64 option, so producing a dual-arch `GhosttyKit.xcframework` would require an upstream Ghostty patch or a manual `lipo` step. PRs welcome.
 - Xcode 16+ (Swift 6)
 - [Zig 0.15](https://ziglang.org) (`brew install zig@0.15` — Ghostty 1.3.x requires this exact version)
 - [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)

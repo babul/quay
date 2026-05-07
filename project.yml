@@ -4,7 +4,7 @@ options:
   bundleIdPrefix: io.github.babul
   xcodeVersion: "26.2"
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "15.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
   defaultConfig: Debug
