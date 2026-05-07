@@ -7,7 +7,7 @@ private let quayAppLogger = Logger(subsystem: "io.github.babul.quay", category: 
 
 @main
 struct QuayApp: App {
-    @NSApplicationDelegateAdaptor(AppTerminationDelegate.self) private var appDelegate
+    @NSApplicationDelegateAdaptor(QuayAppDelegate.self) private var appDelegate
 
     let store = Store(initialState: AppFeature.State()) { AppFeature() }
     @State private var updater = UpdaterViewModel()
@@ -77,10 +77,20 @@ struct QuayApp: App {
             }
         }
 
+        WindowGroup("Connection", id: "connection-editor", for: ConnectionEditorSpec.self) { $spec in
+            if let spec {
+                ConnectionEditorWindowContent(spec: spec)
+            }
+        }
+        .modelContainer(PersistenceContainer.shared)
+        .defaultSize(width: 680, height: 540)
+        .windowResizability(.contentMinSize)
+
         Settings {
             AppSettingsView(updater: updater.controller.updater)
         }
         .modelContainer(PersistenceContainer.shared)
+        .windowResizability(.contentMinSize)
     }
 }
 
@@ -99,9 +109,38 @@ private struct GhosttyColorSchemeSyncModifier: ViewModifier {
 }
 
 @MainActor
-private final class AppTerminationDelegate: NSObject, NSApplicationDelegate {
+private final class QuayAppDelegate: NSObject, NSApplicationDelegate {
+    private var centeredWindowIDs = Set<ObjectIdentifier>()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+    }
+
+    // Centers each secondary window over the main Quay window the first time it
+    // becomes key. Subsequent activations (e.g. user moved the window) are skipped.
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        let id = ObjectIdentifier(window)
+        guard !centeredWindowIDs.contains(id) else { return }
+        centeredWindowIDs.insert(id)
+
+        // No anchor = this IS the first window (main); leave it where SwiftUI places it.
+        // Picking the widest resizable window as anchor intentionally targets the main
+        // Quay window, which is always wider than any secondary window.
+        let anchor = NSApp.windows
+            .filter { $0 !== window && $0.isVisible && !$0.isMiniaturized && $0.styleMask.contains(.resizable) }
+            .max(by: { $0.frame.width < $1.frame.width })
+        guard let anchor else { return }
+        window.setFrameOrigin(NSPoint(
+            x: anchor.frame.midX - window.frame.width / 2,
+            y: anchor.frame.midY - window.frame.height / 2
+        ))
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

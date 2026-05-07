@@ -7,14 +7,15 @@ struct ContentView: View {
     private static let terminalTabBarHeight: CGFloat = 37
 
     let store: StoreOf<AppFeature>
+    @Environment(\.openWindow) private var openWindow
     @State private var selectedConnectionID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility
-    @State private var editorTarget: SidebarView.EditorTarget?
     @State private var ghosttyConfigChangeToken = 0
     @State private var exportRequested = false
     @State private var importRequested = false
     @State private var searchQuery: String
-    @FocusState private var toolbarSearchFocused: Bool
+    @State private var searchFocusTrigger = false
+    @State private var mainWindow: NSWindow?
     private let tabManager = TerminalTabManager.shared
 
     init(store: StoreOf<AppFeature>) {
@@ -25,6 +26,7 @@ struct ContentView: View {
 
     var body: some View {
         splitView
+            .background(MainWindowCapture { mainWindow = $0 })
             .toolbar {
                 ToolbarItem(placement: .principal) { toolbarSearchField }
                 ToolbarItem(placement: .primaryAction) { newItemMenu }
@@ -51,13 +53,11 @@ struct ContentView: View {
                 importRequested = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
-                toolbarSearchFocused = true
+                mainWindow?.makeKeyAndOrderFront(nil)
+                searchFocusTrigger = true
             }
             .onChange(of: searchQuery) { _, query in
                 UserDefaults.standard.set(query, forKey: "sidebar.searchQuery")
-            }
-            .sheet(item: $editorTarget) { target in
-                ConnectionEditor(target: target) { editorTarget = nil }
             }
             .settingsImportExportFlow(
                 triggerExport: $exportRequested,
@@ -72,13 +72,22 @@ struct ContentView: View {
                 selection: $selectedConnectionID,
                 onOpenConnectionInNewTab: { tabManager.openNewTab(for: $0) },
                 onOpenSFTPConnection: { tabManager.openSFTPTab(for: $0) },
-                onCreateConnection: { editorTarget = .create(folderID: $0?.id) },
-                onEditConnection: { editorTarget = .edit($0) }
+                onCreateConnection: { openConnectionEditor(.create(folderID: $0?.id)) },
+                onEditConnection: { openConnectionEditor(.edit($0)) }
             )
         } detail: {
             detail
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
+    }
+
+    private func openConnectionEditor(_ target: SidebarView.EditorTarget) {
+        switch target {
+        case .create(let folderID):
+            openWindow(value: ConnectionEditorSpec.create(folderID: folderID))
+        case .edit(let profile):
+            openWindow(value: ConnectionEditorSpec.edit(profileID: profile.id))
+        }
     }
 
     private static var savedColumnVisibility: NavigationSplitViewVisibility {
@@ -96,9 +105,12 @@ struct ContentView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
                 .imageScale(.small)
-            TextField("Search connections (⌘L)", text: $searchQuery)
-                .textFieldStyle(.plain)
-                .focused($toolbarSearchFocused)
+            FocusableTextField(
+                text: $searchQuery,
+                placeholder: "Search connections (⌘L)",
+                requestFocus: searchFocusTrigger,
+                onDidFocus: { searchFocusTrigger = false }
+            )
             if !searchQuery.isEmpty {
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -115,7 +127,7 @@ struct ContentView: View {
 
     private var newItemMenu: some View {
         Menu {
-            Button("New Connection…") { editorTarget = .create() }
+            Button("New Connection…") { openConnectionEditor(.create()) }
             Button("New Group Folder") {
                 NotificationCenter.default.post(name: .createFolder, object: nil)
             }
@@ -137,9 +149,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 TerminalTabBar(
                     tabManager: tabManager,
-                    onEditConnection: { profile in
-                        editorTarget = .edit(profile)
-                    },
+                    onEditConnection: { openConnectionEditor(.edit($0)) },
                     onOpenSFTP: { tab in
                         tabManager.openSFTPTab(
                             for: tab.profile,
@@ -305,6 +315,71 @@ private struct TerminalSurfaceHostsView: NSViewRepresentable {
                 selectedSurface.window?.makeFirstResponder(selectedSurface)
             }
         }
+    }
+}
+
+/// Plain NSTextField wrapper that can receive focus programmatically — needed because
+/// SwiftUI's @FocusState doesn't reach into NSToolbar-hosted views on macOS.
+private struct FocusableTextField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    var requestFocus: Bool
+    var onDidFocus: () -> Void
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField()
+        field.placeholderString = placeholder
+        field.isBordered = false
+        field.backgroundColor = .clear
+        field.focusRingType = .none
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        if field.stringValue != text { field.stringValue = text }
+        if requestFocus, field.window?.firstResponder !== field {
+            DispatchQueue.main.async {
+                field.window?.makeFirstResponder(field)
+                onDidFocus()
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: FocusableTextField
+        init(_ parent: FocusableTextField) { self.parent = parent }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+    }
+}
+
+/// Captures the NSWindow hosting this view so it can be made key programmatically.
+private struct MainWindowCapture: NSViewRepresentable {
+    let handler: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { handler(v.window) }
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard context.coordinator.lastWindow !== nsView.window else { return }
+        context.coordinator.lastWindow = nsView.window
+        handler(nsView.window)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        weak var lastWindow: NSWindow?
     }
 }
 

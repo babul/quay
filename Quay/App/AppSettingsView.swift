@@ -17,6 +17,8 @@ struct AppSettingsView: View {
 
     @State private var automaticallyChecksForUpdates: Bool
     @State private var automaticallyDownloadsUpdates: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPage: SettingsPage = .appearance
     @State private var exportRequested = false
     @State private var importRequested = false
 
@@ -27,37 +29,89 @@ struct AppSettingsView: View {
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            sidebarColumn
+            Divider()
+            detailColumn
+        }
+        .frame(minWidth: 480, idealWidth: 560, maxWidth: .infinity,
+               minHeight: 380, idealHeight: 460, maxHeight: .infinity)
+        .onExitCommand { dismiss() }
+        .settingsImportExportFlow(
+            triggerExport: $exportRequested,
+            triggerImport: $importRequested
+        )
+    }
+
+    // MARK: - Layout
+
+    private var sidebarColumn: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsPage.allCases) { page in
+                Button { selectedPage = page } label: {
+                    Label(page.label, systemImage: page.symbol)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(selectedPage == page
+                              ? Color.accentColor.opacity(0.15)
+                              : Color.clear)
+                )
+                .foregroundStyle(selectedPage == page ? Color.accentColor : Color.primary)
+            }
+            Spacer()
+        }
+        .padding(8)
+        .frame(width: 160)
+        .background(.bar)
+    }
+
+    private var detailColumn: some View {
+        Group {
+            switch selectedPage {
+            case .appearance: appearancePage
+            case .tabs:       tabsPage
+            case .sftp:       sftpPage
+            case .updates:    updatesPage
+            case .data:       dataPage
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Pages
+
+    private var appearancePage: some View {
         Form {
             Section("Appearance") {
                 Toggle("Show host color bars in tabs", isOn: $showTabColorBars)
-
-                HStack(spacing: 8) {
-                    ForEach(ConnectionColor.tags) { tag in
-                        VStack(spacing: 4) {
-                            Circle()
-                                .fill(tag.color)
-                                .frame(width: 16, height: 16)
-                            Text(tag.label)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(width: 48)
-                    }
-                }
-                .padding(.top, 2)
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var tabsPage: some View {
+        Form {
             Section("Tabs") {
                 Toggle("Confirm before closing active tabs", isOn: $confirmCloseActiveSessions)
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var sftpPage: some View {
+        Form {
             Section("SFTP") {
                 Picker("Client", selection: $sftpClientRaw) {
                     ForEach(SFTPClient.allCases) { client in
                         Text(client.label).tag(client.rawValue)
                     }
                 }
-
                 Text(selectedSFTPClient.helpText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -74,7 +128,12 @@ struct AppSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var updatesPage: some View {
+        Form {
             Section("Updates") {
                 UpdateToggle(
                     label: "Automatically check for updates",
@@ -88,19 +147,18 @@ struct AppSettingsView: View {
                     isDisabled: !automaticallyChecksForUpdates
                 )
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var dataPage: some View {
+        Form {
             Section("Data") {
                 Button("Export Settings…") { exportRequested = true }
                 Button("Import Settings…") { importRequested = true }
             }
         }
         .formStyle(.grouped)
-        .padding(20)
-        .frame(width: 520, height: 560)
-        .settingsImportExportFlow(
-            triggerExport: $exportRequested,
-            triggerImport: $importRequested
-        )
     }
 
     private var selectedSFTPClient: SFTPClient {
@@ -115,6 +173,32 @@ struct AppSettingsView: View {
         panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         if panel.runModal() == .OK, let url = panel.url {
             sftpDefaultLocalDirectory = url.path
+        }
+    }
+}
+
+private enum SettingsPage: String, CaseIterable, Identifiable {
+    case appearance, tabs, sftp, updates, data
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .appearance: "Appearance"
+        case .tabs:       "Tabs"
+        case .sftp:       "SFTP"
+        case .updates:    "Updates"
+        case .data:       "Data"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .appearance: "paintpalette"
+        case .tabs:       "rectangle.3.group"
+        case .sftp:       "externaldrive"
+        case .updates:    "arrow.triangle.2.circlepath"
+        case .data:       "archivebox"
         }
     }
 }
