@@ -108,6 +108,7 @@ final class TerminalTabItem: Identifiable {
     private(set) var phase: Phase = .idle
     private(set) var displayedTitle: String
     private(set) var displayedUsername: String?
+    private var didReportConnect = false
 
     /// The long-lived surface view — `nil` only before the first connect.
     private(set) var surfaceView: GhosttySurfaceView?
@@ -137,6 +138,7 @@ final class TerminalTabItem: Identifiable {
     func connect() {
         // Clean up a previous surface (reconnect) without stopping the askpass server.
         disconnectSurface()
+        didReportConnect = false
         phase = .starting
         do {
             let (config, askpass) = try SessionBootstrap.start(
@@ -160,6 +162,10 @@ final class TerminalTabItem: Identifiable {
                 bridge.onTitleChange = { [weak self] title in
                     guard let self else { return }
                     self.updateFromTerminalTitle(title)
+                    if !self.didReportConnect, !title.isEmpty {
+                        self.didReportConnect = true
+                        NotificationCenter.default.post(name: .connectionConnected, object: self.id)
+                    }
                 }
                 bridge.onChildExited = { [weak self] _ in
                     self?.markSessionEnded()

@@ -35,6 +35,7 @@ private struct ConnectionDTO: Codable {
 
 private struct PreferencesDTO: Codable {
     let showTabColorBars: Bool?
+    let autoHideSidebar: Bool?
     let confirmCloseActiveSessions: Bool?
     let sftpClient: String?
     let sftpDefaultLocalDirectory: String?
@@ -161,6 +162,7 @@ enum SettingsBundle {
 
         let prefs = PreferencesDTO(
             showTabColorBars: UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool,
+            autoHideSidebar: UserDefaults.standard.object(forKey: AppDefaultsKeys.autoHideSidebar) as? Bool,
             confirmCloseActiveSessions: UserDefaults.standard.object(forKey: AppDefaultsKeys.confirmCloseActiveSessions) as? Bool,
             sftpClient: UserDefaults.standard.string(forKey: SFTPClient.defaultsKey),
             sftpDefaultLocalDirectory: UserDefaults.standard.string(forKey: AppDefaultsKeys.sftpDefaultLocalDirectory),
@@ -279,12 +281,16 @@ enum SettingsBundle {
     private static func applyPreferences(_ prefs: PreferencesDTO?) {
         guard let prefs else { return }
         let defaults = UserDefaults.standard
-        if let v = prefs.showTabColorBars { defaults.set(v, forKey: AppDefaultsKeys.showTabColorBars) }
-        if let v = prefs.confirmCloseActiveSessions { defaults.set(v, forKey: AppDefaultsKeys.confirmCloseActiveSessions) }
-        if let v = prefs.sftpClient { defaults.set(v, forKey: SFTPClient.defaultsKey) }
-        if let v = prefs.sftpDefaultLocalDirectory { defaults.set(v, forKey: AppDefaultsKeys.sftpDefaultLocalDirectory) }
-        if let v = prefs.automaticallyChecksForUpdates { defaults.set(v, forKey: UpdatesDefaultsKeys.checksForUpdates) }
-        if let v = prefs.automaticallyDownloadsUpdates { defaults.set(v, forKey: UpdatesDefaultsKeys.downloadsUpdates) }
+        let setIfPresent: (Any?, String) -> Void = { value, key in
+            if let value { defaults.set(value, forKey: key) }
+        }
+        setIfPresent(prefs.showTabColorBars, AppDefaultsKeys.showTabColorBars)
+        setIfPresent(prefs.autoHideSidebar, AppDefaultsKeys.autoHideSidebar)
+        setIfPresent(prefs.confirmCloseActiveSessions, AppDefaultsKeys.confirmCloseActiveSessions)
+        setIfPresent(prefs.sftpClient, SFTPClient.defaultsKey)
+        setIfPresent(prefs.sftpDefaultLocalDirectory, AppDefaultsKeys.sftpDefaultLocalDirectory)
+        setIfPresent(prefs.automaticallyChecksForUpdates, UpdatesDefaultsKeys.checksForUpdates)
+        setIfPresent(prefs.automaticallyDownloadsUpdates, UpdatesDefaultsKeys.downloadsUpdates)
     }
 
     private static func mapMalformed<T>(_ body: () throws -> T) throws -> T {

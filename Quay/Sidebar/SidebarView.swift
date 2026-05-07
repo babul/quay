@@ -677,6 +677,8 @@ extension Notification.Name {
     static let focusSearch = Notification.Name("io.github.babul.quay.focusSearch")
     /// Posted by the ⌘B menu command to show or hide the sidebar.
     static let toggleSidebar = Notification.Name("io.github.babul.quay.toggleSidebar")
+    /// Posted by a tab when its first remote title arrives (SSH is connected and at shell prompt).
+    static let connectionConnected = Notification.Name("io.github.babul.quay.connectionConnected")
     /// Posted by the File menu "Export Settings…" item.
     static let startExportSettings = Notification.Name("io.github.babul.quay.startExportSettings")
     /// Posted by the File menu "Import Settings…" item.

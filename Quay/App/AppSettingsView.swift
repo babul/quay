@@ -3,6 +3,7 @@ import SwiftUI
 
 enum AppDefaultsKeys {
     static let showTabColorBars = "appearance.showTabColorBars"
+    static let autoHideSidebar = "sidebar.autoHide"
     static let confirmCloseActiveSessions = "tabs.confirmCloseActiveSessions"
     static let sftpDefaultLocalDirectory = "sftp.defaultLocalDirectory"
 }
@@ -11,6 +12,7 @@ struct AppSettingsView: View {
     let updater: SPUUpdater
 
     @AppStorage(AppDefaultsKeys.showTabColorBars) private var showTabColorBars = true
+    @AppStorage(AppDefaultsKeys.autoHideSidebar) private var autoHideSidebar = true
     @AppStorage(AppDefaultsKeys.confirmCloseActiveSessions) private var confirmCloseActiveSessions = true
     @AppStorage(SFTPClient.defaultsKey) private var sftpClientRaw = SFTPClient.macOSOpenSSH.rawValue
     @AppStorage(AppDefaultsKeys.sftpDefaultLocalDirectory) private var sftpDefaultLocalDirectory = ""
@@ -57,6 +59,7 @@ struct AppSettingsView: View {
     private var appearancePage: some View {
         settingsForm("Appearance") {
             Toggle("Show host color bars in tabs", isOn: $showTabColorBars)
+            Toggle("Auto-hide sidebar when a connection is active", isOn: $autoHideSidebar)
         }
     }
 

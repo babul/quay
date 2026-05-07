@@ -5,9 +5,11 @@ import SwiftUI
 
 struct ContentView: View {
     private static let terminalTabBarHeight: CGFloat = 37
+    private static let sidebarAnimation = Animation.easeInOut(duration: 0.22)
 
     let store: StoreOf<AppFeature>
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(AppDefaultsKeys.autoHideSidebar) private var autoHideSidebar = true
     @State private var selectedConnectionID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility
     @State private var ghosttyConfigChangeToken = 0
@@ -16,6 +18,9 @@ struct ContentView: View {
     @State private var searchQuery: String
     @State private var searchFocusTrigger = false
     @State private var mainWindow: NSWindow?
+    @State private var isHoveringLeadingEdge = false
+    @State private var isHoveringSidebar = false
+    @State private var sidebarHideTask: Task<Void, Never>?
     private let tabManager = TerminalTabManager.shared
 
     init(store: StoreOf<AppFeature>) {
@@ -37,14 +42,29 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
                 let shouldShowSidebar = columnVisibility == .detailOnly
-                columnVisibility = shouldShowSidebar ? .all : .detailOnly
+                withAnimation(Self.sidebarAnimation) {
+                    columnVisibility = shouldShowSidebar ? .all : .detailOnly
+                }
                 SidebarLayoutState.saveSidebarVisible(shouldShowSidebar)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .connectionConnected)) { _ in
+                guard autoHideSidebar else { return }
+                withAnimation(Self.sidebarAnimation) { columnVisibility = .detailOnly }
             }
             .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in
                 ghosttyConfigChangeToken &+= 1
             }
             .onChange(of: columnVisibility) { _, visibility in
+                guard !autoHideSidebar else { return }
                 SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
+            }
+            .onChange(of: tabManager.tabs.isEmpty) { _, isEmpty in
+                guard autoHideSidebar, isEmpty else { return }
+                withAnimation(Self.sidebarAnimation) { columnVisibility = .all }
+            }
+            .onChange(of: autoHideSidebar) { _, enabled in
+                guard enabled, !tabManager.tabs.isEmpty else { return }
+                withAnimation(Self.sidebarAnimation) { columnVisibility = .detailOnly }
             }
             .onReceive(NotificationCenter.default.publisher(for: .startExportSettings)) { _ in
                 exportRequested = true
@@ -75,8 +95,30 @@ struct ContentView: View {
                 onCreateConnection: { openConnectionEditor(.create(folderID: $0?.id)) },
                 onEditConnection: { openConnectionEditor(.edit($0)) }
             )
+            .onHover { hovering in
+                isHoveringSidebar = hovering
+                guard !hovering, autoHideSidebar, !tabManager.tabs.isEmpty else { return }
+                sidebarHideTask?.cancel()
+                sidebarHideTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !isHoveringSidebar, !isHoveringLeadingEdge else { return }
+                    withAnimation(Self.sidebarAnimation) { columnVisibility = .detailOnly }
+                }
+            }
         } detail: {
             detail
+                .overlay(alignment: .leading) {
+                    if autoHideSidebar, columnVisibility == .detailOnly {
+                        Color.clear
+                            .frame(width: 6)
+                            .onHover { hovering in
+                                isHoveringLeadingEdge = hovering
+                                if hovering {
+                                    withAnimation(Self.sidebarAnimation) { columnVisibility = .all }
+                                }
+                            }
+                    }
+                }
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
     }
@@ -91,7 +133,11 @@ struct ContentView: View {
     }
 
     private static var savedColumnVisibility: NavigationSplitViewVisibility {
-        SidebarLayoutState.loadSidebarVisible() ? .all : .detailOnly
+        let autoHide = UserDefaults.standard.object(forKey: AppDefaultsKeys.autoHideSidebar) as? Bool ?? true
+        // When auto-hide is enabled, start with sidebar shown; manual visibility is managed by auto-hide logic
+        if autoHide { return .all }
+        // When disabled, respect saved preference
+        return SidebarLayoutState.loadSidebarVisible() ? .all : .detailOnly
     }
 
     private func restoreSavedSidebarVisibility() {

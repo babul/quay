@@ -11,6 +11,7 @@ struct QuayApp: App {
 
     let store = Store(initialState: AppFeature.State()) { AppFeature() }
     @State private var updater = UpdaterViewModel()
+    @AppStorage(AppDefaultsKeys.autoHideSidebar) private var autoHideSidebar = true
 
     var body: some Scene {
         WindowGroup("Quay") {
@@ -37,6 +38,7 @@ struct QuayApp: App {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
                 }
                 .keyboardShortcut("b", modifiers: [.command])
+                Toggle("Auto-hide Sidebar", isOn: $autoHideSidebar)
             }
             CommandMenu("Find") {
                 Button("Search Connections") {
