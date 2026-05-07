@@ -23,7 +23,9 @@ struct QuayApp: App {
         .windowStyle(.hiddenTitleBar)
         .modelContainer(PersistenceContainer.shared)
         .commands {
-            CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .newItem) {
+                TabFileCommands()
+            }
             CommandGroup(after: .newItem) {
                 Divider()
                 Button("Export Settings…") {
@@ -93,6 +95,24 @@ struct QuayApp: App {
         }
         .modelContainer(PersistenceContainer.shared)
         .windowResizability(.contentMinSize)
+    }
+}
+
+private struct TabFileCommands: View {
+    @State private var tabManager = TerminalTabManager.shared
+
+    var body: some View {
+        Button("New Tab") {
+            tabManager.duplicateSelectedTab()
+        }
+        .keyboardShortcut("t", modifiers: .command)
+        .disabled(tabManager.selectedTab == nil)
+
+        Button("Close Tab") {
+            tabManager.requestCloseSelectedTab()
+        }
+        .keyboardShortcut("w", modifiers: .command)
+        .disabled(tabManager.selectedTab == nil)
     }
 }
 

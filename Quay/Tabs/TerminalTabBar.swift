@@ -9,7 +9,6 @@ struct TerminalTabBar: View {
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
     var onOpenSFTP: (TerminalTabItem) -> Void = { _ in }
     @AppStorage(AppDefaultsKeys.showTabColorBars) private var showTabColorBars = true
-    @AppStorage(AppDefaultsKeys.confirmCloseActiveSessions) private var confirmCloseActiveSessions = true
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -26,7 +25,7 @@ struct TerminalTabBar: View {
                         onOpenSFTP: { onOpenSFTP(tab) },
                         onDisconnect: { tabManager.disconnectTab(tab) },
                         onReconnect: { tabManager.reconnectTab(tab) },
-                        onClose: { requestClose(tab) },
+                        onClose: { tabManager.requestClose(tab) },
                         onContextClose: { tabManager.closeTab(tab) }
                     )
                     .draggable(tab.id.uuidString) {
@@ -50,33 +49,12 @@ struct TerminalTabBar: View {
         .frame(height: 36)
     }
 
-    private func requestClose(_ tab: TerminalTabItem) {
-        if !TerminalTabManager.shouldConfirmClose(
-            phase: tab.phase,
-            confirmActiveSessions: confirmCloseActiveSessions
-        ) {
-            tabManager.closeTab(tab)
-            return
-        }
-
-        if confirmClosingTab(tab) {
-            tabManager.closeTab(tab)
-        }
-    }
-
     private func moveDroppedTab(items: [String], before destinationID: UUID?) -> Bool {
         guard let raw = items.first, let id = UUID(uuidString: raw) else { return false }
         tabManager.moveTab(id: id, before: destinationID)
         return true
     }
 
-    private func confirmClosingTab(_ tab: TerminalTabItem) -> Bool {
-        NSAlert.confirmation(
-            title: "Close Active Tab?",
-            message: "\"\(tab.displayTitle)\" is still active. Closing the tab will disconnect this session.",
-            confirmTitle: "Close Tab"
-        )
-    }
 }
 
 private struct TabButton: View {

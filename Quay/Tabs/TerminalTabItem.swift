@@ -95,7 +95,7 @@ final class TerminalTabItem: Identifiable {
     let id: UUID
     let profile: ConnectionProfile
     let kind: TerminalSessionKind
-    private let localDirectoryOverride: String?
+    let localDirectoryOverride: String?
 
     enum Phase: Equatable {
         case idle

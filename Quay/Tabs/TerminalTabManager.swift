@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -141,6 +142,39 @@ final class TerminalTabManager {
         }
 
         tabs.insert(item, at: destinationIndex)
+    }
+
+    @discardableResult
+    func duplicateSelectedTab() -> TerminalTabItem? {
+        guard let tab = selectedTab else { return nil }
+        return openNewTab(
+            for: tab.profile,
+            kind: tab.kind,
+            localDirectoryOverride: tab.localDirectoryOverride
+        )
+    }
+
+    @discardableResult
+    func requestClose(_ tab: TerminalTabItem) -> Bool {
+        let confirmActive = UserDefaults.standard
+            .object(forKey: AppDefaultsKeys.confirmCloseActiveSessions) as? Bool ?? true
+        guard Self.shouldConfirmClose(phase: tab.phase, confirmActiveSessions: confirmActive) else {
+            closeTab(tab)
+            return true
+        }
+        let confirmed = NSAlert.confirmation(
+            title: "Close Active Tab?",
+            message: "\"\(tab.displayTitle)\" is still active. Closing the tab will disconnect this session.",
+            confirmTitle: "Close Tab"
+        )
+        if confirmed { closeTab(tab) }
+        return confirmed
+    }
+
+    @discardableResult
+    func requestCloseSelectedTab() -> Bool {
+        guard let tab = selectedTab else { return false }
+        return requestClose(tab)
     }
 
     func closeTab(_ item: TerminalTabItem) {
