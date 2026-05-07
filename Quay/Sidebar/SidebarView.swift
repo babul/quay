@@ -20,7 +20,6 @@ struct SidebarView: View {
 
     @Binding var searchQuery: String
     @Binding var selection: UUID?
-    var onOpenConnection: (ConnectionProfile) -> Void = { _ in }
     var onOpenConnectionInNewTab: (ConnectionProfile) -> Void = { _ in }
     var onOpenSFTPConnection: (ConnectionProfile) -> Void = { _ in }
     var onCreateConnection: (Folder?) -> Void = { _ in }
@@ -374,11 +373,11 @@ struct SidebarView: View {
     }
 
     private func handleConnectionClick(_ profile: ConnectionProfile) {
-        handleItemClick(id: profile.id) { onOpenConnection(profile) }
+        handleItemClick(id: profile.id) { onOpenConnectionInNewTab(profile) }
     }
 
     private func handleSSHConfigHostClick(_ host: DiscoveredSSHHost) {
-        handleItemClick(id: host.id) { onOpenConnection(transientProfile(for: host)) }
+        handleItemClick(id: host.id) { onOpenConnectionInNewTab(transientProfile(for: host)) }
     }
 
     private func handleFolderClick(_ folder: Folder) {

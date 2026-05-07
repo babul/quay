@@ -70,7 +70,6 @@ struct ContentView: View {
             SidebarView(
                 searchQuery: $searchQuery,
                 selection: $selectedConnectionID,
-                onOpenConnection: { tabManager.openOrSelectTab(for: $0) },
                 onOpenConnectionInNewTab: { tabManager.openNewTab(for: $0) },
                 onOpenSFTPConnection: { tabManager.openSFTPTab(for: $0) },
                 onCreateConnection: { editorTarget = .create(folderID: $0?.id) },
