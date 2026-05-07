@@ -42,6 +42,13 @@ struct ConnectionEditor: View {
     @State private var localDirectoryIsRevealed = false
     @State private var remoteDirectoryIsRevealed = false
     @State private var selectedEditorPage: ConnectionEditorPage = .connection
+    @State private var testStatus: TestStatus = .idle
+    @State private var testTask: Task<Void, Never>?
+
+    private enum TestStatus: Equatable {
+        case idle, running, success
+        case failure(String)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -87,7 +94,10 @@ struct ConnectionEditor: View {
         .onDisappear {
             pendingLocks = [:]
             pendingDeletes = []
+            testTask?.cancel()
+            testTask = nil
         }
+        .onChange(of: authMethod) { testStatus = .idle }
         .alert(
             "Could not save",
             isPresented: Binding(get: { saveError != nil }, set: { _ in saveError = nil })
@@ -214,6 +224,15 @@ struct ConnectionEditor: View {
                     isRevealed: $remoteDirectoryIsRevealed,
                     prompt: "/path/on/server"
                 )
+            }
+
+            EditorSection("Test") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button("Test connection") { runTest() }
+                        .disabled(!canTest)
+                    testStatusView
+                }
+                .frame(width: ConnectionEditorLayout.rowWidth, alignment: .leading)
             }
         }
     }
@@ -351,6 +370,78 @@ struct ConnectionEditor: View {
                 }
             }
             .accessibilityLabel("Connection color")
+        }
+    }
+
+    @ViewBuilder
+    private var testStatusView: some View {
+        switch testStatus {
+        case .idle:
+            EmptyView()
+        case .running:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Testing…").foregroundStyle(.secondary)
+            }
+        case .success:
+            Label("Connected", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failure(let msg):
+            Label(msg, systemImage: "xmark.octagon.fill")
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func draftSSHTarget() -> SSHTarget? {
+        let host = hostname.trimmingCharacters(in: .whitespaces)
+        let portInt = Int(port.trimmingCharacters(in: .whitespaces))
+        let user = username.isEmpty ? nil : username
+
+        switch authMethod {
+        case .sshAgent:
+            guard !host.isEmpty else { return nil }
+            return SSHTarget(hostname: host, port: portInt, username: user, auth: .sshAgent,
+                             remoteTerminalType: remoteTerminalType)
+        case .privateKey:
+            guard !host.isEmpty, !privateKeyPath.isEmpty else { return nil }
+            return SSHTarget(hostname: host, port: portInt, username: user,
+                             auth: .privateKey(path: privateKeyPath),
+                             remoteTerminalType: remoteTerminalType)
+        case .privateKeyWithPassphrase:
+            guard !host.isEmpty, !privateKeyPath.isEmpty, !secretRef.isEmpty else { return nil }
+            return SSHTarget(hostname: host, port: portInt, username: user,
+                             auth: .privateKeyWithPassphrase(path: privateKeyPath, passphraseRef: secretRef),
+                             remoteTerminalType: remoteTerminalType)
+        case .password:
+            guard !host.isEmpty, !secretRef.isEmpty else { return nil }
+            return SSHTarget(hostname: host, port: portInt, username: user,
+                             auth: .password(passwordRef: secretRef),
+                             remoteTerminalType: remoteTerminalType)
+        case .sshConfigAlias:
+            let alias = sshConfigAlias.trimmingCharacters(in: .whitespaces)
+            guard !alias.isEmpty else { return nil }
+            return SSHTarget(hostname: "", port: nil, username: nil,
+                             auth: .sshConfigAlias(alias: alias),
+                             remoteTerminalType: remoteTerminalType)
+        }
+    }
+
+    private var canTest: Bool { draftSSHTarget() != nil && testStatus != .running }
+
+    private func runTest() {
+        guard let target = draftSSHTarget() else { return }
+        testTask?.cancel()
+        testStatus = .running
+        testTask = Task { @MainActor in
+            let result = await ConnectionProbe.run(target: target)
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .success:
+                testStatus = .success
+            case .failure(let msg, _):
+                testStatus = .failure(msg)
+            }
         }
     }
 
