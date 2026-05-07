@@ -419,7 +419,8 @@ private struct MainWindowCapture: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         guard context.coordinator.lastWindow !== nsView.window else { return }
         context.coordinator.lastWindow = nsView.window
-        handler(nsView.window)
+        let window = nsView.window
+        DispatchQueue.main.async { handler(window) }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
