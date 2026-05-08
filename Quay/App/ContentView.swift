@@ -19,8 +19,8 @@ struct ContentView: View {
     @State private var searchQuery: String
     @State private var searchFocusTrigger = false
     @State private var mainWindow: NSWindow?
-    @State private var isHoveringLeadingEdge = false
-    @State private var isHoveringSidebar = false
+    @State private var isCursorInSidebarZone = false
+    @State private var sidebarHoverWidth: CGFloat
     @State private var sidebarHideTask: Task<Void, Never>?
     private let tabManager = TerminalTabManager.shared
 
@@ -28,6 +28,7 @@ struct ContentView: View {
         self.store = store
         _columnVisibility = State(initialValue: Self.savedColumnVisibility)
         _searchQuery = State(initialValue: UserDefaults.standard.string(forKey: "sidebar.searchQuery") ?? "")
+        _sidebarHoverWidth = State(initialValue: SidebarLayoutState.loadWidth())
     }
 
     var body: some View {
@@ -62,6 +63,9 @@ struct ContentView: View {
                 ghosttyConfigChangeToken &+= 1
             }
             .onChange(of: columnVisibility) { _, visibility in
+                if visibility != .detailOnly {
+                    sidebarHoverWidth = SidebarLayoutState.loadWidth()
+                }
                 guard !autoHideSidebar else { return }
                 SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
             }
@@ -113,36 +117,38 @@ struct ContentView: View {
                 onCreateConnection: { openConnectionEditor(.create(folderID: $0?.id)) },
                 onEditConnection: { openConnectionEditor(.edit($0)) }
             )
-            .onHover { hovering in
-                isHoveringSidebar = hovering
-                guard !hovering, autoHideSidebar, !tabManager.tabs.isEmpty else { return }
-                sidebarHideTask?.cancel()
-                sidebarHideTask = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(300))
-                    guard !isHoveringSidebar, !isHoveringLeadingEdge else { return }
-                    withAnimation(Self.sidebarAnimation) { columnVisibility = .detailOnly }
-                }
-            }
+            .background(SidebarHoverObserver { [self] x in handleCursorChange(localX: x) })
         } detail: {
             detail
-                .overlay(alignment: .leading) {
-                    if autoHideSidebar, columnVisibility == .detailOnly {
-                        Color.clear
-                            .frame(width: 6)
-                            .onHover { hovering in
-                                isHoveringLeadingEdge = hovering
-                                if hovering {
-                                    withAnimation(Self.sidebarAnimation) { columnVisibility = .all }
-                                }
-                            }
-                    }
-                }
                 .inspector(isPresented: $rightSidebarOpen) {
                     SnippetSidebarView()
                         .inspectorColumnWidth(min: 240, ideal: 300, max: 480)
                 }
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
+    }
+
+    private func handleCursorChange(localX: CGFloat?) {
+        let threshold: CGFloat = columnVisibility == .detailOnly ? 6 : sidebarHoverWidth
+        let inZone = localX.map { $0 <= threshold } ?? false
+
+        guard inZone != isCursorInSidebarZone else { return }
+        isCursorInSidebarZone = inZone
+
+        sidebarHideTask?.cancel()
+
+        if inZone {
+            sidebarHideTask = nil
+            guard autoHideSidebar, columnVisibility == .detailOnly else { return }
+            withAnimation(Self.sidebarAnimation) { columnVisibility = .all }
+        } else {
+            guard autoHideSidebar, columnVisibility == .all, !tabManager.tabs.isEmpty else { return }
+            sidebarHideTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !isCursorInSidebarZone else { return }
+                withAnimation(Self.sidebarAnimation) { columnVisibility = .detailOnly }
+            }
+        }
     }
 
     private func openConnectionEditor(_ target: SidebarView.EditorTarget) {
@@ -449,6 +455,96 @@ private struct MainWindowCapture: NSViewRepresentable {
 
     final class Coordinator {
         weak var lastWindow: NSWindow?
+    }
+}
+
+/// Tracks cursor position via an NSTrackingArea on the enclosing NSSplitView.
+/// Reports the cursor's splitView-local X coordinate on every mouse move, and nil
+/// when the cursor exits the splitView. Apply as `.background(SidebarHoverObserver { ... })`
+/// on any view inside the NSSplitView hierarchy.
+private struct SidebarHoverObserver: NSViewRepresentable {
+    let onCursorChange: (CGFloat?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView(frame: .zero)
+        v.isHidden = true
+        return v
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.attach(from: view, onChange: onCursorChange)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor
+    final class Coordinator {
+        private weak var splitView: NSSplitView?
+        private var trackerView: HoverTrackerView?
+
+        func attach(from view: NSView, onChange: @escaping (CGFloat?) -> Void) {
+            Task { @MainActor [weak self, weak view] in
+                guard let self, let view, let sv = view.enclosingSplitView else { return }
+                guard self.splitView !== sv else {
+                    self.trackerView?.onCursorChange = onChange
+                    return
+                }
+                self.detach()
+                self.splitView = sv
+
+                let tracker = HoverTrackerView(frame: sv.bounds)
+                tracker.autoresizingMask = [.width, .height]
+                tracker.onCursorChange = onChange
+                sv.addSubview(tracker)
+                self.trackerView = tracker
+            }
+        }
+
+        private func detach() {
+            trackerView?.removeFromSuperview()
+            trackerView = nil
+            splitView = nil
+        }
+    }
+}
+
+private final class HoverTrackerView: NSView {
+    var onCursorChange: ((CGFloat?) -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.activeAlways, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        reportCursorPosition(event)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        reportCursorPosition(event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onCursorChange?(nil)
+    }
+
+    private func reportCursorPosition(_ event: NSEvent) {
+        onCursorChange?(convert(event.locationInWindow, from: nil).x)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private extension NSView {
+    var enclosingSplitView: NSSplitView? {
+        if let sv = self as? NSSplitView { return sv }
+        return superview?.enclosingSplitView
     }
 }
 
