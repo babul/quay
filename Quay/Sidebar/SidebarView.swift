@@ -43,6 +43,22 @@ struct SidebarView: View {
     }
 
     var body: some View {
+        sidebarBase
+            .onAppear {
+                bootstrapFolders()
+                refreshDiscoveredSSHHosts()
+            }
+            .onChange(of: sshConfigExpanded) { _, val in
+                SidebarCollapseState.saveSSHConfigExpanded(val)
+            }
+            .applyFolderCollapseHandlers(
+                folders: folders,
+                collapsedFolderIDs: $collapsedFolderIDs
+            )
+            .onReceive(NotificationCenter.default.publisher(for: .createFolder)) { _ in newFolder() }
+    }
+
+    private var sidebarBase: some View {
         VStack(spacing: 0) {
             identityHeader
             Divider()
@@ -63,22 +79,6 @@ struct SidebarView: View {
                 }
                 .frame(minWidth: 440, minHeight: 220)
             }
-        }
-        .onAppear {
-            bootstrapFolders()
-            refreshDiscoveredSSHHosts()
-        }
-        .onChange(of: folders.map(\.id)) { _, ids in
-            SidebarCollapseState.prune(
-                &collapsedFolderIDs,
-                keeping: Set(ids)
-            )
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .createFolder)) { _ in
-            newFolder()
-        }
-        .onChange(of: sshConfigExpanded) { _, val in
-            SidebarCollapseState.saveSSHConfigExpanded(val)
         }
     }
 
@@ -434,22 +434,6 @@ struct SidebarView: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Menu {
-                Button("New Connection…") { onCreateConnection(nil) }
-                Button("New Folder") { newFolder() }
-            } label: {
-                Image(systemName: "plus")
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: 28)
-            Spacer()
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-    }
-
     private func newFolder() {
         let existingNames = Set(topLevelFolders.map(\.name))
         let folder = Folder(
@@ -675,8 +659,12 @@ private struct GroupEditor: View {
 extension Notification.Name {
     /// Posted by the ⌘L menu command to focus the sidebar's search field.
     static let focusSearch = Notification.Name("io.github.babul.quay.focusSearch")
-    /// Posted by the ⌘B menu command to show or hide the sidebar.
+    /// Posted by the ⌘⇧L menu command to open the snippets sidebar and focus its search field.
+    static let focusSearchSnippets = Notification.Name("io.github.babul.quay.focusSearchSnippets")
+    /// Posted by the ⌘B menu command to show or hide the hosts sidebar.
     static let toggleSidebar = Notification.Name("io.github.babul.quay.toggleSidebar")
+    /// Posted by the View menu to show or hide the snippets sidebar.
+    static let toggleSnippetsSidebar = Notification.Name("io.github.babul.quay.toggleSnippetsSidebar")
     /// Posted by a tab when its first remote title arrives (SSH is connected and at shell prompt).
     static let connectionConnected = Notification.Name("io.github.babul.quay.connectionConnected")
     /// Posted by the File menu "Export Settings…" item.
@@ -773,5 +761,16 @@ private extension NSView {
             return splitView
         }
         return superview?.enclosingSplitView
+    }
+}
+
+private extension View {
+    func applyFolderCollapseHandlers(
+        folders: [Folder],
+        collapsedFolderIDs: Binding<Set<UUID>>
+    ) -> some View {
+        self.onChange(of: folders.map(\.id)) { _, ids in
+            SidebarCollapseState.prune(&collapsedFolderIDs.wrappedValue, keeping: Set(ids))
+        }
     }
 }

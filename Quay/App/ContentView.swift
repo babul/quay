@@ -11,6 +11,7 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(AppDefaultsKeys.autoHideSidebar) private var autoHideSidebar = true
     @State private var selectedConnectionID: UUID?
+    @SceneStorage("rightSidebarOpen") private var rightSidebarOpen = false
     @State private var columnVisibility: NavigationSplitViewVisibility
     @State private var ghosttyConfigChangeToken = 0
     @State private var exportRequested = false
@@ -35,6 +36,12 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) { toolbarSearchField }
                 ToolbarItem(placement: .primaryAction) { newItemMenu }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { rightSidebarOpen.toggle() } label: {
+                        Image(systemName: "sidebar.right")
+                    }
+                    .help("Toggle Snippets Sidebar")
+                }
             }
             .onAppear {
                 store.send(.onAppear)
@@ -75,6 +82,17 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
                 mainWindow?.makeKeyAndOrderFront(nil)
                 searchFocusTrigger = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .focusSearchSnippets)) { _ in
+                mainWindow?.makeKeyAndOrderFront(nil)
+                rightSidebarOpen = true
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .focusSearchSnippets, object: "focus")
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleSnippetsSidebar)) { _ in
+                mainWindow?.makeKeyAndOrderFront(nil)
+                rightSidebarOpen.toggle()
             }
             .onChange(of: searchQuery) { _, query in
                 UserDefaults.standard.set(query, forKey: "sidebar.searchQuery")
@@ -119,6 +137,10 @@ struct ContentView: View {
                             }
                     }
                 }
+                .inspector(isPresented: $rightSidebarOpen) {
+                    SnippetSidebarView()
+                        .inspectorColumnWidth(min: 240, ideal: 300, max: 480)
+                }
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
     }
@@ -153,7 +175,7 @@ struct ContentView: View {
                 .imageScale(.small)
             FocusableTextField(
                 text: $searchQuery,
-                placeholder: "Search connections (⌘L)",
+                placeholder: "Search hosts (⌘L)",
                 requestFocus: searchFocusTrigger,
                 onDidFocus: { searchFocusTrigger = false }
             )
@@ -432,5 +454,5 @@ private struct MainWindowCapture: NSViewRepresentable {
 
 #Preview {
     ContentView(store: Store(initialState: AppFeature.State()) { AppFeature() })
-        .modelContainer(for: [Folder.self, ConnectionProfile.self], inMemory: true)
+        .modelContainer(for: [Folder.self, ConnectionProfile.self, SnippetGroup.self, Snippet.self], inMemory: true)
 }

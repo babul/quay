@@ -36,17 +36,26 @@ struct QuayApp: App {
                 }
             }
             CommandGroup(replacing: .sidebar) {
-                Button("Toggle Sidebar") {
+                Button("Toggle Hosts Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
                 }
                 .keyboardShortcut("b", modifiers: [.command])
-                Toggle("Auto-hide Sidebar", isOn: $autoHideSidebar)
+                Toggle("Auto-hide Hosts Sidebar", isOn: $autoHideSidebar)
+                Button("Toggle Snippets Sidebar") {
+                    NotificationCenter.default.post(name: .toggleSnippetsSidebar, object: nil)
+                }
+                .labelStyle(.titleOnly)
+                Divider()
             }
             CommandMenu("Find") {
                 Button("Search Connections") {
                     NotificationCenter.default.post(name: .focusSearch, object: nil)
                 }
                 .keyboardShortcut("l", modifiers: [.command])
+                Button("Search Snippets") {
+                    NotificationCenter.default.post(name: .focusSearchSnippets, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             }
             CommandMenu("Terminal") {
                 Button("Open Ghostty Config") {
@@ -88,6 +97,15 @@ struct QuayApp: App {
         }
         .modelContainer(PersistenceContainer.shared)
         .defaultSize(width: 680, height: 540)
+        .windowResizability(.contentMinSize)
+
+        WindowGroup("Snippet", id: "snippet-editor", for: SnippetEditorSpec.self) { $spec in
+            if let spec {
+                SnippetEditorWindowContent(spec: spec)
+            }
+        }
+        .modelContainer(PersistenceContainer.shared)
+        .defaultSize(width: 640, height: 560)
         .windowResizability(.contentMinSize)
 
         Settings {
