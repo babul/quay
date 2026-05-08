@@ -8,6 +8,31 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.4.0</title>
+            <pubDate>Fri, 08 May 2026 05:43:09 +0000</pubDate>
+            <sparkle:version>7</sparkle:version>
+            <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<h2>New</h2>
+<ul>
+  <li>Snippets panel in the right sidebar, with a dedicated editor window and View/Find menu commands</li>
+  <li>Snippets and snippet groups are saved to settings and survive export/import</li>
+  <li>Connection icon now appears in the tab bar, left of the tab title</li>
+</ul>
+<h2>Fixes</h2>
+<ul>
+  <li>Sidebar edge no longer oscillates when hovering near the resize zone</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.3.0...v0.4.0</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.4.0/Quay-0.4.0.dmg"
+                       sparkle:edSignature="m+YS+EcWvcVLNW2QNORNW99rJinBaZKaXX1w1cBrt0Bd9wLyqK9ZzarsjTjTfp71yRvJkRDtmY6PqgKAhi92Ag=="
+                       length="10137985"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.3.0</title>
             <pubDate>Fri, 08 May 2026 01:10:56 +0000</pubDate>
             <sparkle:version>6</sparkle:version>
