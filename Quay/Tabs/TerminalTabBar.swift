@@ -8,6 +8,7 @@ struct TerminalTabBar: View {
     var tabManager: TerminalTabManager
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
     var onOpenSFTP: (TerminalTabItem) -> Void = { _ in }
+    var onTabSelected: () -> Void = {}
     @AppStorage(AppDefaultsKeys.showTabColorBars) private var showTabColorBars = true
 
     var body: some View {
@@ -17,10 +18,11 @@ struct TerminalTabBar: View {
                     TabButton(
                         title: tab.displayTitle,
                         phase: tab.phase,
+                        iconName: tab.profile.iconName,
                         colorTag: tab.profile.colorTag,
                         showColorBar: showTabColorBars,
                         isSelected: tab.id == tabManager.selectedTabID,
-                        onSelect: { tabManager.select(tab) },
+                        onSelect: { tabManager.select(tab); onTabSelected() },
                         onEdit: { onEditConnection(tab.profile) },
                         onOpenSFTP: { onOpenSFTP(tab) },
                         onDisconnect: { tabManager.disconnectTab(tab) },
@@ -60,6 +62,7 @@ struct TerminalTabBar: View {
 private struct TabButton: View {
     var title: String
     var phase: TerminalTabItem.Phase
+    var iconName: String?
     var colorTag: String?
     var showColorBar: Bool
     var isSelected: Bool
@@ -76,6 +79,10 @@ private struct TabButton: View {
             Button(action: onSelect) {
                 HStack(spacing: 6) {
                     phaseDot
+                    Image(systemName: ConnectionIcon.systemName(for: iconName))
+                        .imageScale(.small)
+                        .foregroundStyle(tabAccent)
+                        .frame(width: 14)
                     titleStack
                 }
                 .contentShape(Rectangle())
