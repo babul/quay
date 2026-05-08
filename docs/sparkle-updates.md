@@ -68,23 +68,26 @@ In GitHub repo settings → **Pages** → set source to the `gh-pages` branch, r
 ## Release flow
 
 ```sh
-# 1. Bump MARKETING_VERSION (and optionally CURRENT_PROJECT_VERSION) in project.yml.
-# 2. Commit and push main.
-# 3. Run:
-./scripts/release.sh [--notes release-notes.md]
+./scripts/release.sh [--dry-run]
 ```
 
 The script:
 1. Reads `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` from `project.yml`.
-2. Checks that the version tag doesn't already exist and the tree is clean.
-3. Calls `scripts/notarize.sh` → produces a notarized, stapled `Quay.app`.
-4. Creates a DMG with `hdiutil` → `build/release/Quay-X.Y.Z.dmg` (includes an `/Applications` symlink for drag-to-install).
-5. Notarizes and staples the DMG separately (required for Gatekeeper to accept the container).
-6. Calls `sign_update` to generate an EdDSA signature over the DMG (reads the private key from your Keychain).
-7. Checks out the `gh-pages` branch in a git worktree, prepends a new `<item>` to `appcast.xml`, commits, and pushes.
-8. Creates a GitHub Release with the DMG attached, tagged `vX.Y.Z`.
+2. Checks that the version tag doesn't already exist, the tree is clean, and local `main` is in sync with `origin/main`.
+3. Prompts for the new version and build number.
+4. Opens your `$EDITOR` with a git-log draft — delete the lines you don't want in the release notes.
+5. Pipes your curated notes through `claude` (or `codex` if `claude` isn't on PATH) to polish them for end users. The polished result reopens in `$EDITOR` for a final tweak. Override the formatter: `RELEASE_NOTES_FORMATTER=claude|codex|skip`.
+6. Commits the polished notes alongside the version bump in `project.yml` and pushes `main`.
+7. Calls `scripts/notarize.sh` → produces a notarized, stapled `Quay.app`.
+8. Creates a DMG with `hdiutil` → `build/release/Quay-X.Y.Z.dmg` (includes an `/Applications` symlink for drag-to-install).
+9. Notarizes and staples the DMG separately (required for Gatekeeper to accept the container).
+10. Calls `sign_update` to generate an EdDSA signature over the DMG (reads the private key from your Keychain).
+11. Checks out the `gh-pages` branch in a git worktree, prepends a new `<item>` (with inline release notes) to `appcast.xml`, commits, and pushes.
+12. Creates a GitHub Release with the DMG attached, tagged `vX.Y.Z`.
 
-If you omit `--notes`, GitHub auto-generates release notes from merged PRs.
+**BYO notes**: drop a pre-written `release-notes/vX.Y.Z.md` into the repo before running the script — the editor and polish steps are skipped entirely and your file is used verbatim.
+
+**Dry run**: `./scripts/release.sh --dry-run` stops after committing and pushing the bump, then prints the appcast `<item>` that would be added. Nothing is notarized or published.
 
 GitHub Pages takes 1–2 minutes to deploy after the `gh-pages` push — installed copies of older Quay versions will see the update on their next automatic check.
 
@@ -108,6 +111,13 @@ GitHub Pages takes 1–2 minutes to deploy after the `gh-pages` push — install
             <sparkle:version>2</sparkle:version>           <!-- CURRENT_PROJECT_VERSION -->
             <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What's Changed</h2>
+<ul>
+  <li>Sidebar hides automatically when connected and reappears on hover or ⌘B</li>
+</ul>
+<p><strong>Full Changelog</strong>: <a href="https://github.com/babul/quay/compare/v0.1.0...v0.1.1">v0.1.0...v0.1.1</a></p>
+            ]]></description>
             <enclosure url="https://github.com/babul/quay/releases/download/v0.1.1/Quay-0.1.1.dmg"
                        sparkle:edSignature="<base64>"
                        length="12345678"
@@ -118,6 +128,13 @@ GitHub Pages takes 1–2 minutes to deploy after the `gh-pages` push — install
 ```
 
 `sparkle:version` is the internal build number Sparkle uses for version comparison. `sparkle:shortVersionString` is what users see. Both must be present when they differ.
+
+`<description>` carries release notes as inline HTML inside a CDATA block — Sparkle 2 renders this in its update dialog's WKWebView. It is only shown when `<sparkle:releaseNotesLink>` is absent; since we don't emit that element, the description is always used.
+
+## Where notes live
+
+- **Polished Markdown**: `release-notes/vX.Y.Z.md` on the `main` branch (committed alongside the version bump). Use a prior release's file as a template for BYO-mode releases.
+- **Rendered HTML**: embedded inline in each `<item>` on `gh-pages`. No separate hosted file is needed.
 
 ---
 
