@@ -48,15 +48,37 @@ private enum UpdatesDefaultsKeys {
     static let downloadsUpdates = "SUAutomaticallyUpdate"
 }
 
+private struct SnippetGroupDTO: Codable {
+    let id: UUID
+    let name: String
+    let iconName: String?
+    let sortIndex: Int
+}
+
+private struct SnippetDTO: Codable {
+    let id: UUID
+    let name: String
+    let body: String
+    let bodyRef: String?
+    let notes: String?
+    let appendsReturn: Bool?
+    let sortIndex: Int
+    let groupID: UUID?
+}
+
 private struct SettingsPayload: Codable {
     let folders: [FolderDTO]
     let connections: [ConnectionDTO]
     let preferences: PreferencesDTO?
+    let snippetGroups: [SnippetGroupDTO]?
+    let snippets: [SnippetDTO]?
 }
 
 struct ImportSummary {
     let foldersAdded: Int
     let connectionsAdded: Int
+    let snippetGroupsAdded: Int
+    let snippetsAdded: Int
 }
 
 // MARK: - Private envelope types
@@ -111,11 +133,20 @@ enum SettingsBundle {
         /// A login-script step's Keychain value could not be read during export
         /// (e.g. Touch ID was cancelled or the entry no longer exists).
         case lockedStepResolutionFailed
+        /// A secured snippet's Keychain value could not be read during export.
+        case snippetSecretResolutionFailed
+        /// The bundle contains Keychain-backed secrets but no password was provided.
+        /// Exporting without encryption would expose plaintext secrets.
+        case passwordRequiredForSecrets
 
         var errorDescription: String? {
             switch self {
             case .lockedStepResolutionFailed:
                 return "A locked login-script step could not be read from your Keychain. Make sure Touch ID succeeds and try again."
+            case .snippetSecretResolutionFailed:
+                return "A secured snippet could not be read from your Keychain. Make sure Touch ID succeeds and try again."
+            case .passwordRequiredForSecrets:
+                return "This export contains Keychain-backed values. Set a password to protect them."
             default:
                 return nil
             }
@@ -124,9 +155,14 @@ enum SettingsBundle {
 
     // MARK: Encode
 
-    static func encode(modelContext: ModelContext, password: SensitiveBytes?) throws -> Data {
-        let allFolders = try modelContext.fetch(FetchDescriptor<Folder>())
-        let allConnections = try modelContext.fetch(FetchDescriptor<ConnectionProfile>())
+    static func encode(container: ModelContainer, password: SensitiveBytes?) throws -> Data {
+        let mainCtx = ModelContext(container)
+        let snippetsCtx = ModelContext(container)
+
+        let allFolders = try mainCtx.fetch(FetchDescriptor<Folder>())
+        let allConnections = try mainCtx.fetch(FetchDescriptor<ConnectionProfile>())
+        let allGroups = try snippetsCtx.fetch(FetchDescriptor<SnippetGroup>())
+        let allSnippets = try snippetsCtx.fetch(FetchDescriptor<Snippet>())
 
         let folderDTOs = allFolders.map { f in
             FolderDTO(
@@ -160,6 +196,31 @@ enum SettingsBundle {
             )
         }
 
+        let snippetGroupDTOs = allGroups.map { g in
+            SnippetGroupDTO(id: g.id, name: g.name, iconName: g.iconName, sortIndex: g.sortIndex)
+        }
+        let snippetDTOs = try allSnippets.map { s -> SnippetDTO in
+            let resolvedBody = try resolveSnippetBody(s)
+            return SnippetDTO(
+                id: s.id,
+                name: s.name,
+                body: resolvedBody,
+                bodyRef: s.bodyRef != nil ? "pending" : nil,
+                notes: s.notes.isEmpty ? nil : s.notes,
+                appendsReturn: s.appendsReturn,
+                sortIndex: s.sortIndex,
+                groupID: s.group?.id
+            )
+        }
+
+        let hasSecrets = snippetDTOs.contains { $0.bodyRef != nil }
+            || connectionDTOs.contains { dto in
+                (try? makeDecoder().decode([LoginScriptStep].self, from: Data(dto.loginScriptStepsJSON?.utf8 ?? "[]".utf8)))?.contains { $0.sendRef != nil } ?? false
+            }
+        if hasSecrets, password == nil {
+            throw BundleError.passwordRequiredForSecrets
+        }
+
         let prefs = PreferencesDTO(
             showTabColorBars: UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool,
             autoHideSidebar: UserDefaults.standard.object(forKey: AppDefaultsKeys.autoHideSidebar) as? Bool,
@@ -169,7 +230,13 @@ enum SettingsBundle {
             automaticallyChecksForUpdates: UserDefaults.standard.object(forKey: UpdatesDefaultsKeys.checksForUpdates) as? Bool,
             automaticallyDownloadsUpdates: UserDefaults.standard.object(forKey: UpdatesDefaultsKeys.downloadsUpdates) as? Bool
         )
-        let payload = SettingsPayload(folders: folderDTOs, connections: connectionDTOs, preferences: prefs)
+        let payload = SettingsPayload(
+            folders: folderDTOs,
+            connections: connectionDTOs,
+            preferences: prefs,
+            snippetGroups: snippetGroupDTOs,
+            snippets: snippetDTOs
+        )
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         let enc = makeEncoder()
 
@@ -222,7 +289,7 @@ enum SettingsBundle {
     @discardableResult
     static func decode(
         data: Data,
-        modelContext: ModelContext,
+        container: ModelContainer,
         password: SensitiveBytes?
     ) throws -> ImportSummary {
         let dec = makeDecoder()
@@ -265,18 +332,60 @@ enum SettingsBundle {
 
         try validateNoCycles(in: settingsPayload.folders)
 
-        let (foldersAdded, idToImported) = try insertFolders(settingsPayload.folders, into: modelContext)
+        let mainCtx = ModelContext(container)
+        let snippetsCtx = ModelContext(container)
+
+        let (foldersAdded, idToImported) = try insertFolders(settingsPayload.folders, into: mainCtx)
         let connectionsAdded = try insertConnections(
             settingsPayload.connections,
             idToImported: idToImported,
-            into: modelContext
+            into: mainCtx
         )
-        try modelContext.save()
+        try mainCtx.save()
+
+        let (snippetGroupsAdded, groupIDMap) = try insertSnippetGroups(settingsPayload.snippetGroups ?? [], into: snippetsCtx)
+        let snippetsAdded = try insertSnippets(settingsPayload.snippets ?? [], groupIDMap: groupIDMap, into: snippetsCtx)
+        try snippetsCtx.save()
+
         applyPreferences(settingsPayload.preferences)
-        return ImportSummary(foldersAdded: foldersAdded, connectionsAdded: connectionsAdded)
+        return ImportSummary(
+            foldersAdded: foldersAdded,
+            connectionsAdded: connectionsAdded,
+            snippetGroupsAdded: snippetGroupsAdded,
+            snippetsAdded: snippetsAdded
+        )
     }
 
     // MARK: - Private helpers
+
+    private static func resolveSnippetBody(_ snippet: Snippet) throws -> String {
+        guard let uri = snippet.bodyRef else { return snippet.body }
+        guard let pair = SecretReference.keychainPair(forURI: uri),
+              let bytes = try? KeychainStore.read(service: pair.service, account: pair.account)
+        else { throw BundleError.snippetSecretResolutionFailed }
+        return bytes.unsafeUTF8String() ?? ""
+    }
+
+    private static func resolveImportSnippetBody(
+        dto: SnippetDTO,
+        newID: UUID,
+        shouldSecure: Bool
+    ) throws -> (body: String, bodyRef: String?) {
+        guard shouldSecure else {
+            return (body: dto.body, bodyRef: nil)
+        }
+        do {
+            try KeychainStore.write(
+                service: SecretReference.snippetKeychainService,
+                account: newID.uuidString,
+                value: SensitiveBytes(Data(dto.body.utf8))
+            )
+            return (body: "", bodyRef: SecretReference.snippetURI(snippetID: newID))
+        } catch {
+            // Keychain write failed; store as plaintext
+            return (body: dto.body, bodyRef: nil)
+        }
+    }
 
     private static func applyPreferences(_ prefs: PreferencesDTO?) {
         guard let prefs else { return }
@@ -453,6 +562,60 @@ enum SettingsBundle {
             profile.loginScriptStepsJSON = dto.loginScriptStepsJSON
             profile.remoteTerminalTypeRaw = dto.remoteTerminalTypeRaw
             context.insert(profile)
+            count += 1
+        }
+        return count
+    }
+
+    private static func insertSnippetGroups(
+        _ dtos: [SnippetGroupDTO],
+        into context: ModelContext
+    ) throws -> (Int, [UUID: SnippetGroup]) {
+        let existing = (try? context.fetch(FetchDescriptor<SnippetGroup>())) ?? []
+        var existingNames = Set(existing.map(\.name))
+        var groupIDMap = [UUID: SnippetGroup]()
+        for dto in dtos {
+            let name = SnippetStore.uniqueGroupName(baseName: dto.name, existingNames: existingNames)
+            let sortIdx = SnippetStore.nextGroupSortIndex(from: existing + Array(groupIDMap.values))
+            let group = SnippetGroup(name: name, iconName: dto.iconName, sortIndex: sortIdx)
+            context.insert(group)
+            groupIDMap[dto.id] = group
+            existingNames.insert(name)
+        }
+        return (groupIDMap.count, groupIDMap)
+    }
+
+    private static func insertSnippets(
+        _ dtos: [SnippetDTO],
+        groupIDMap: [UUID: SnippetGroup],
+        into context: ModelContext
+    ) throws -> Int {
+        let existingUngrouped = (try? context.fetch(
+            FetchDescriptor<Snippet>(predicate: #Predicate { $0.group == nil })
+        )) ?? []
+        var ungroupedNames = Set(existingUngrouped.map(\.name))
+        var count = 0
+        for dto in dtos {
+            let group = dto.groupID.flatMap { groupIDMap[$0] }
+            let existingNames = group.map { Set(($0.snippets ?? []).map(\.name)) } ?? ungroupedNames
+            let name = SnippetStore.uniqueSnippetName(baseName: dto.name, existingNames: existingNames)
+            let sortIdx = SnippetStore.nextSnippetSortIndex(in: group, ungrouped: existingUngrouped)
+            let newID = UUID()
+
+            let (body, bodyRef) = try resolveImportSnippetBody(
+                dto: dto, newID: newID, shouldSecure: dto.bodyRef != nil && !dto.body.isEmpty
+            )
+
+            let snippet = Snippet(
+                id: newID, name: name, body: body,
+                bodyRef: bodyRef,
+                notes: dto.notes ?? "",
+                appendsReturn: dto.appendsReturn ?? false,
+                sortIndex: sortIdx, group: group
+            )
+
+            context.insert(snippet)
+            if group == nil { ungroupedNames.insert(name) }
             count += 1
         }
         return count

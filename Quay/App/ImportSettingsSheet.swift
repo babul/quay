@@ -51,7 +51,7 @@ struct ImportSettingsSheet: View {
         errorMessage = nil
 
         do {
-            let summary = try SettingsBundle.decode(data: fileData, modelContext: modelContext, password: pw)
+            let summary = try SettingsBundle.decode(data: fileData, container: modelContext.container, password: pw)
             dismiss()
             onSuccess(summary)
         } catch SettingsBundle.BundleError.wrongPassword {
@@ -123,7 +123,7 @@ private struct SettingsImportExportFlow: ViewModifier {
     private func startImport() {
         Task { @MainActor in
             runImportFlow(
-                modelContext: modelContext,
+                container: modelContext.container,
                 onPassword: { data in pendingImportFile = IdentifiableData(data: data) },
                 onSummary: { summary in showImportSummaryAlert(summary) },
                 onError: { msg in importError = msg }
@@ -149,14 +149,14 @@ private func bundleErrorMessage(_ error: Error) -> String {
         return "This file is encrypted. A password is required."
     case .cyclicFolderGraph:
         return "The bundle contains a circular folder reference and could not be imported."
-    case .lockedStepResolutionFailed:
+    case .lockedStepResolutionFailed, .snippetSecretResolutionFailed, .passwordRequiredForSecrets:
         return bundleError.errorDescription ?? bundleError.localizedDescription
     }
 }
 
 @MainActor
 private func runImportFlow(
-    modelContext: ModelContext,
+    container: ModelContainer,
     onPassword: @escaping (Data) -> Void,
     onSummary: @escaping (ImportSummary) -> Void,
     onError: @escaping (String) -> Void
@@ -180,7 +180,7 @@ private func runImportFlow(
     // Try a passwordless decode: succeeds for plaintext bundles, throws
     // missingPassword for encrypted ones (which is how we know to prompt).
     do {
-        let summary = try SettingsBundle.decode(data: data, modelContext: modelContext, password: nil)
+        let summary = try SettingsBundle.decode(data: data, container: container, password: nil)
         onSummary(summary)
     } catch SettingsBundle.BundleError.missingPassword {
         onPassword(data)
@@ -193,9 +193,22 @@ private func runImportFlow(
 private func showImportSummaryAlert(_ summary: ImportSummary) {
     let alert = NSAlert()
     alert.messageText = "Import complete"
-    let cText = summary.connectionsAdded == 1 ? "1 host" : "\(summary.connectionsAdded) hosts"
-    let fText = summary.foldersAdded == 1 ? "1 group" : "\(summary.foldersAdded) groups"
-    alert.informativeText = "Imported \(cText) and \(fText)."
+
+    let pluralize: (Int, String, String) -> String = { count, singular, plural in
+        count == 1 ? "1 \(singular)" : "\(count) \(plural)"
+    }
+
+    var parts = [
+        "Imported \(pluralize(summary.connectionsAdded, "host", "hosts")) and \(pluralize(summary.foldersAdded, "group", "groups"))."
+    ]
+
+    if summary.snippetsAdded > 0 || summary.snippetGroupsAdded > 0 {
+        parts.append(
+            "Imported \(pluralize(summary.snippetsAdded, "snippet", "snippets")) in \(pluralize(summary.snippetGroupsAdded, "snippet group", "snippet groups"))."
+        )
+    }
+
+    alert.informativeText = parts.joined(separator: " ")
     alert.addButton(withTitle: "OK")
     alert.runModal()
 }

@@ -10,6 +10,7 @@ struct ExportSettingsSheet: View {
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var errorMessage: String?
+    @State private var passwordRequiredBySecrets = false
 
     private var passwordsMatch: Bool { password == confirmPassword }
     private var canExport: Bool {
@@ -23,6 +24,7 @@ struct ExportSettingsSheet: View {
                 .font(.headline)
 
             Toggle("Encrypt with password", isOn: $usePassword.animation())
+                .disabled(passwordRequiredBySecrets)
 
             if usePassword {
                 VStack(alignment: .leading, spacing: 8) {
@@ -48,9 +50,15 @@ struct ExportSettingsSheet: View {
                     .foregroundStyle(.red)
             }
 
-            Text("Locked login-script step values will be included as plaintext inside the bundle. Set a password above to encrypt them.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if passwordRequiredBySecrets {
+                Text("This export contains Keychain-backed values. A password is required to protect them.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else {
+                Text("Keychain-backed values (locked login-script steps, secured snippets) will be included as plaintext unless you encrypt the bundle.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
@@ -65,7 +73,7 @@ struct ExportSettingsSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 380, height: usePassword ? 240 : 160)
+        .frame(width: 380, height: usePassword ? 260 : 180)
     }
 
     @MainActor
@@ -78,7 +86,12 @@ struct ExportSettingsSheet: View {
 
         let bundleData: Data
         do {
-            bundleData = try SettingsBundle.encode(modelContext: modelContext, password: pw)
+            bundleData = try SettingsBundle.encode(container: modelContext.container, password: pw)
+        } catch SettingsBundle.BundleError.passwordRequiredForSecrets {
+            passwordRequiredBySecrets = true
+            usePassword = true
+            errorMessage = "This export contains Keychain-backed values. Set a password to protect them."
+            return
         } catch {
             errorMessage = "Could not build export: \(error.localizedDescription)"
             return

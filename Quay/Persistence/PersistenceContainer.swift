@@ -3,7 +3,13 @@ import SwiftData
 
 /// Builds the app-wide `ModelContainer`.
 ///
-/// Store lives at `~/Library/Application Support/<bundleID>/Quay.store`.
+/// Two separate SQLite stores:
+///   • `Quay.store`     — hosts/folders (ConnectionProfile, Folder). Always local.
+///   • `Snippets.store` — snippet groups + snippets (SnippetGroup, Snippet).
+///     Currently local (cloudKitDatabase: .none). To enable iCloud sync for snippets,
+///     flip snippetsConfig to .private("iCloud.io.github.babul.quay.snippets") and add
+///     the CloudKit entitlement + container in the Apple Developer portal.
+///
 /// CloudKit sync is intentionally off in v0.1 (PRD §9 — opt-in candidate
 /// for v1.x); the schema contains zero plaintext secrets either way.
 @MainActor
@@ -11,18 +17,34 @@ enum PersistenceContainer {
     static let shared: ModelContainer = make()
 
     private static func make() -> ModelContainer {
-        let schema = Schema([Folder.self, ConnectionProfile.self])
+        let mainSchema     = Schema([Folder.self, ConnectionProfile.self])
+        let snippetsSchema = Schema([SnippetGroup.self, Snippet.self])
         do {
-            let storeURL = try storeLocation()
-            let config = ModelConfiguration(
-                schema: schema,
-                url: storeURL,
+            let mainConfig = ModelConfiguration(
+                "Quay",
+                schema: mainSchema,
+                url: try storeLocation(),
                 cloudKitDatabase: .none
             )
-            return try ModelContainer(for: schema, configurations: [config])
+            let snippetsConfig = ModelConfiguration(
+                "Snippets",
+                schema: snippetsSchema,
+                url: try snippetsStoreLocation(),
+                cloudKitDatabase: .none
+            )
+            return try ModelContainer(
+                for: Folder.self, ConnectionProfile.self, SnippetGroup.self, Snippet.self,
+                configurations: mainConfig, snippetsConfig
+            )
         } catch {
             fatalError("Failed to build ModelContainer: \(error)")
         }
+    }
+
+    /// Returns the URL for the snippets store, creating intermediate directories.
+    static func snippetsStoreLocation() throws -> URL {
+        let dir = try storeLocation().deletingLastPathComponent()
+        return dir.appending(path: "Snippets.store", directoryHint: .notDirectory)
     }
 
     /// Returns the on-disk store URL, creating intermediate directories.

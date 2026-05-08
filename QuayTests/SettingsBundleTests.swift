@@ -8,9 +8,14 @@ import Testing
 struct SettingsBundleTests {
 
     private static func makeContainer() throws -> ModelContainer {
-        let schema = Schema([Folder.self, ConnectionProfile.self])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
+        let mainSchema     = Schema([Folder.self, ConnectionProfile.self])
+        let snippetsSchema = Schema([SnippetGroup.self, Snippet.self])
+        let mainConfig     = ModelConfiguration("Main",     schema: mainSchema,     isStoredInMemoryOnly: true)
+        let snippetsConfig = ModelConfiguration("Snippets", schema: snippetsSchema, isStoredInMemoryOnly: true)
+        return try ModelContainer(
+            for: Folder.self, ConnectionProfile.self, SnippetGroup.self, Snippet.self,
+            configurations: mainConfig, snippetsConfig
+        )
     }
 
     private static func makePassword(_ s: String) -> SensitiveBytes {
@@ -22,8 +27,6 @@ struct SettingsBundleTests {
     @Test("Plaintext round-trip preserves folder hierarchy and connection fields")
     func plaintextRoundTrip() throws {
         let src = try Self.makeContainer()
-        let srcCtx = src.mainContext
-
         let root = Folder(name: "Work", sortIndex: 0)
         let child = Folder(name: "Prod", iconName: "server.rack", parent: root, sortIndex: 0)
         let conn = ConnectionProfile(
@@ -36,21 +39,20 @@ struct SettingsBundleTests {
             sortIndex: 0,
             parent: child
         )
-        srcCtx.insert(root)
-        srcCtx.insert(child)
-        srcCtx.insert(conn)
-        try srcCtx.save()
+        src.mainContext.insert(root)
+        src.mainContext.insert(child)
+        src.mainContext.insert(conn)
+        try src.mainContext.save()
 
-        let bundleData = try SettingsBundle.encode(modelContext: srcCtx, password: nil)
+        let bundleData = try SettingsBundle.encode(container: src, password: nil)
 
         let dst = try Self.makeContainer()
-        let dstCtx = dst.mainContext
-        let summary = try SettingsBundle.decode(data: bundleData, modelContext: dstCtx, password: nil)
+        let summary = try SettingsBundle.decode(data: bundleData, container: dst, password: nil)
 
         #expect(summary.foldersAdded == 2)
         #expect(summary.connectionsAdded == 1)
 
-        let folders = try dstCtx.fetch(FetchDescriptor<Folder>())
+        let folders = try dst.mainContext.fetch(FetchDescriptor<Folder>())
         let rootImported = try #require(folders.first(where: { $0.parent == nil }))
         #expect(rootImported.name == "Work")
 
@@ -71,16 +73,15 @@ struct SettingsBundleTests {
     @Test("Encrypted round-trip: payload differs from plaintext, decodes correctly")
     func encryptedRoundTrip() throws {
         let src = try Self.makeContainer()
-        let srcCtx = src.mainContext
         let folder = Folder(name: "Servers", sortIndex: 0)
         let conn = ConnectionProfile(name: "db", hostname: "db.example.com", sortIndex: 0, parent: folder)
-        srcCtx.insert(folder)
-        srcCtx.insert(conn)
-        try srcCtx.save()
+        src.mainContext.insert(folder)
+        src.mainContext.insert(conn)
+        try src.mainContext.save()
 
         let pw = Self.makePassword("correct-horse")
-        let encryptedData = try SettingsBundle.encode(modelContext: srcCtx, password: pw)
-        let plaintextData = try SettingsBundle.encode(modelContext: srcCtx, password: nil)
+        let encryptedData = try SettingsBundle.encode(container: src, password: pw)
+        let plaintextData = try SettingsBundle.encode(container: src, password: nil)
 
         #expect(encryptedData != plaintextData)
 
@@ -90,12 +91,11 @@ struct SettingsBundleTests {
         #expect(!encryptedJSON.contains("\"Servers\"")) // name must not be visible in ciphertext
 
         let dst = try Self.makeContainer()
-        let dstCtx = dst.mainContext
-        let summary = try SettingsBundle.decode(data: encryptedData, modelContext: dstCtx, password: pw)
+        let summary = try SettingsBundle.decode(data: encryptedData, container: dst, password: pw)
 
         #expect(summary.foldersAdded == 1)
         #expect(summary.connectionsAdded == 1)
-        let folders = try dstCtx.fetch(FetchDescriptor<Folder>())
+        let folders = try dst.mainContext.fetch(FetchDescriptor<Folder>())
         #expect(folders.first?.name == "Servers")
     }
 
@@ -108,11 +108,11 @@ struct SettingsBundleTests {
         src.mainContext.insert(conn)
         try src.mainContext.save()
 
-        let data = try SettingsBundle.encode(modelContext: src.mainContext, password: Self.makePassword("right"))
+        let data = try SettingsBundle.encode(container: src, password: Self.makePassword("right"))
         let dst = try Self.makeContainer()
 
         #expect(throws: SettingsBundle.BundleError.wrongPassword) {
-            try SettingsBundle.decode(data: data, modelContext: dst.mainContext, password: Self.makePassword("wrong"))
+            try SettingsBundle.decode(data: data, container: dst, password: Self.makePassword("wrong"))
         }
     }
 
@@ -126,7 +126,7 @@ struct SettingsBundleTests {
         try src.mainContext.save()
 
         let pw = Self.makePassword("pw")
-        let data = try SettingsBundle.encode(modelContext: src.mainContext, password: pw)
+        let data = try SettingsBundle.encode(container: src, password: pw)
 
         // Decode JSON to find and tamper the payload base64 string
         var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -138,7 +138,7 @@ struct SettingsBundleTests {
 
         let dst = try Self.makeContainer()
         #expect(throws: SettingsBundle.BundleError.wrongPassword) {
-            try SettingsBundle.decode(data: tampered, modelContext: dst.mainContext, password: pw)
+            try SettingsBundle.decode(data: tampered, container: dst, password: pw)
         }
     }
 
@@ -152,7 +152,7 @@ struct SettingsBundleTests {
         try src.mainContext.save()
 
         let pw = Self.makePassword("pw")
-        let data = try SettingsBundle.encode(modelContext: src.mainContext, password: pw)
+        let data = try SettingsBundle.encode(container: src, password: pw)
 
         var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         var encInfo = try #require(json["encryption"] as? [String: Any])
@@ -165,7 +165,7 @@ struct SettingsBundleTests {
 
         let dst = try Self.makeContainer()
         #expect(throws: SettingsBundle.BundleError.wrongPassword) {
-            try SettingsBundle.decode(data: tampered, modelContext: dst.mainContext, password: pw)
+            try SettingsBundle.decode(data: tampered, container: dst, password: pw)
         }
     }
 
@@ -174,14 +174,14 @@ struct SettingsBundleTests {
     @Test("formatVersion above supported → unsupportedVersion error")
     func unsupportedVersion() throws {
         let src = try Self.makeContainer()
-        let data = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
+        let data = try SettingsBundle.encode(container: src, password: nil)
         var json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         json["formatVersion"] = 99
         let patched = try JSONSerialization.data(withJSONObject: json)
 
         let dst = try Self.makeContainer()
         #expect(throws: SettingsBundle.BundleError.unsupportedVersion(found: 99)) {
-            try SettingsBundle.decode(data: patched, modelContext: dst.mainContext, password: nil)
+            try SettingsBundle.decode(data: patched, container: dst, password: nil)
         }
     }
 
@@ -191,7 +191,7 @@ struct SettingsBundleTests {
     func malformedJSON() throws {
         let dst = try Self.makeContainer()
         #expect(throws: SettingsBundle.BundleError.malformedFile) {
-            try SettingsBundle.decode(data: Data("not a bundle".utf8), modelContext: dst.mainContext, password: nil)
+            try SettingsBundle.decode(data: Data("not a bundle".utf8), container: dst, password: nil)
         }
     }
 
@@ -219,7 +219,7 @@ struct SettingsBundleTests {
 
         let dst = try Self.makeContainer()
         #expect(throws: SettingsBundle.BundleError.cyclicFolderGraph) {
-            try SettingsBundle.decode(data: data, modelContext: dst.mainContext, password: nil)
+            try SettingsBundle.decode(data: data, container: dst, password: nil)
         }
     }
 
@@ -228,12 +228,11 @@ struct SettingsBundleTests {
     @Test("Imported folder with same name gets uniqued")
     func folderCollisionUniquing() throws {
         let dst = try Self.makeContainer()
-        let dstCtx = dst.mainContext
 
         // Pre-populate with "Servers" root folder
         let existing = Folder(name: "Servers", sortIndex: 0)
-        dstCtx.insert(existing)
-        try dstCtx.save()
+        dst.mainContext.insert(existing)
+        try dst.mainContext.save()
 
         // Bundle that also has "Servers" root folder
         let src = try Self.makeContainer()
@@ -241,10 +240,10 @@ struct SettingsBundleTests {
         src.mainContext.insert(folder)
         try src.mainContext.save()
 
-        let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
-        try SettingsBundle.decode(data: bundleData, modelContext: dstCtx, password: nil)
+        let bundleData = try SettingsBundle.encode(container: src, password: nil)
+        try SettingsBundle.decode(data: bundleData, container: dst, password: nil)
 
-        let folderNames = Set(try dstCtx.fetch(FetchDescriptor<Folder>()).map(\.name))
+        let folderNames = Set(try dst.mainContext.fetch(FetchDescriptor<Folder>()).map(\.name))
         #expect(folderNames.contains("Servers"))
         #expect(folderNames.contains("Servers 2"))
     }
@@ -252,14 +251,13 @@ struct SettingsBundleTests {
     @Test("Imported connection placed in default folder gets uniqued on name collision")
     func connectionCollisionUniquing() throws {
         let dst = try Self.makeContainer()
-        let dstCtx = dst.mainContext
 
         // Pre-populate the default "Hosts" folder with a "web" connection
         let existing = Folder(name: "Hosts", sortIndex: 0)
         let existingConn = ConnectionProfile(name: "web", hostname: "web.example.com", sortIndex: 0, parent: existing)
-        dstCtx.insert(existing)
-        dstCtx.insert(existingConn)
-        try dstCtx.save()
+        dst.mainContext.insert(existing)
+        dst.mainContext.insert(existingConn)
+        try dst.mainContext.save()
 
         // Bundle: a connection with no parent (orphan → placed in ensureDefaultFolder = "Hosts")
         let src = try Self.makeContainer()
@@ -267,10 +265,10 @@ struct SettingsBundleTests {
         src.mainContext.insert(orphan)
         try src.mainContext.save()
 
-        let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
-        try SettingsBundle.decode(data: bundleData, modelContext: dstCtx, password: nil)
+        let bundleData = try SettingsBundle.encode(container: src, password: nil)
+        try SettingsBundle.decode(data: bundleData, container: dst, password: nil)
 
-        let connNames = Set(try dstCtx.fetch(FetchDescriptor<ConnectionProfile>()).map(\.name))
+        let connNames = Set(try dst.mainContext.fetch(FetchDescriptor<ConnectionProfile>()).map(\.name))
         #expect(connNames.contains("web"))
         #expect(connNames.contains("web Copy"))
     }
@@ -280,10 +278,10 @@ struct SettingsBundleTests {
     @Test("Empty database round-trip yields (0, 0) summary")
     func emptyRoundTrip() throws {
         let src = try Self.makeContainer()
-        let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
+        let bundleData = try SettingsBundle.encode(container: src, password: nil)
 
         let dst = try Self.makeContainer()
-        let summary = try SettingsBundle.decode(data: bundleData, modelContext: dst.mainContext, password: nil)
+        let summary = try SettingsBundle.decode(data: bundleData, container: dst, password: nil)
         #expect(summary.foldersAdded == 0)
         #expect(summary.connectionsAdded == 0)
     }
@@ -306,9 +304,9 @@ struct SettingsBundleTests {
         src.mainContext.insert(conn)
         try src.mainContext.save()
 
-        let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
+        let bundleData = try SettingsBundle.encode(container: src, password: nil)
         let dst = try Self.makeContainer()
-        try SettingsBundle.decode(data: bundleData, modelContext: dst.mainContext, password: nil)
+        try SettingsBundle.decode(data: bundleData, container: dst, password: nil)
 
         let imported = try dst.mainContext.fetch(FetchDescriptor<ConnectionProfile>())
         #expect(imported.first?.secretRef == "keychain://io.github.babul.quay/my-server")
@@ -346,12 +344,12 @@ struct SettingsBundleTests {
             UserDefaults.standard.set("lftp", forKey: SFTPClient.defaultsKey)
             UserDefaults.standard.set("/tmp/sftp-test", forKey: AppDefaultsKeys.sftpDefaultLocalDirectory)
 
-            let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
+            let bundleData = try SettingsBundle.encode(container: src, password: nil)
 
             for key in Self.preferenceKeys { UserDefaults.standard.removeObject(forKey: key) }
 
             let dst = try Self.makeContainer()
-            try SettingsBundle.decode(data: bundleData, modelContext: dst.mainContext, password: nil)
+            try SettingsBundle.decode(data: bundleData, container: dst, password: nil)
 
             #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool == false)
             #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.confirmCloseActiveSessions) as? Bool == false)
@@ -366,13 +364,13 @@ struct SettingsBundleTests {
             let src = try Self.makeContainer()
 
             for key in Self.preferenceKeys { UserDefaults.standard.removeObject(forKey: key) }
-            let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
+            let bundleData = try SettingsBundle.encode(container: src, password: nil)
 
             UserDefaults.standard.set(true, forKey: AppDefaultsKeys.showTabColorBars)
             UserDefaults.standard.set(true, forKey: AppDefaultsKeys.confirmCloseActiveSessions)
 
             let dst = try Self.makeContainer()
-            try SettingsBundle.decode(data: bundleData, modelContext: dst.mainContext, password: nil)
+            try SettingsBundle.decode(data: bundleData, container: dst, password: nil)
 
             #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool == true)
             #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.confirmCloseActiveSessions) as? Bool == true)
@@ -395,7 +393,7 @@ struct SettingsBundleTests {
 
             UserDefaults.standard.set(true, forKey: AppDefaultsKeys.showTabColorBars)
 
-            try SettingsBundle.decode(data: data, modelContext: dst.mainContext, password: nil)
+            try SettingsBundle.decode(data: data, container: dst, password: nil)
 
             #expect(UserDefaults.standard.object(forKey: AppDefaultsKeys.showTabColorBars) as? Bool == true)
         }
@@ -413,9 +411,9 @@ struct SettingsBundleTests {
         src.mainContext.insert(conn)
         try src.mainContext.save()
 
-        let bundleData = try SettingsBundle.encode(modelContext: src.mainContext, password: nil)
+        let bundleData = try SettingsBundle.encode(container: src, password: nil)
         let dst = try Self.makeContainer()
-        try SettingsBundle.decode(data: bundleData, modelContext: dst.mainContext, password: nil)
+        try SettingsBundle.decode(data: bundleData, container: dst, password: nil)
 
         let imported = try dst.mainContext.fetch(FetchDescriptor<ConnectionProfile>())
         #expect(imported.first?.loginScriptStepsJSON == rawJSON)
