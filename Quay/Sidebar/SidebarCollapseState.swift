@@ -57,19 +57,14 @@ enum SidebarLayoutState {
     static let defaultWidth: CGFloat = 280
     static let maximumWidth: CGFloat = 640
 
-    static func loadWidth(from defaults: UserDefaults = .standard) -> CGFloat {
-        guard let stored = defaults.object(forKey: widthStorageKey) as? Double else {
-            return defaultWidth
-        }
+    static let searchQueryStorageKey = "sidebar.searchQuery"
 
-        let width = CGFloat(stored)
-        guard isValid(width) else { return defaultWidth }
-        return width
+    static func loadWidth(from defaults: UserDefaults = .standard) -> CGFloat {
+        loadCGFloat(forKey: widthStorageKey, default: defaultWidth, range: minimumWidth...maximumWidth, from: defaults)
     }
 
     static func saveWidth(_ width: CGFloat, to defaults: UserDefaults = .standard) {
-        guard isValid(width) else { return }
-        defaults.set(Double(width), forKey: widthStorageKey)
+        saveCGFloat(width, forKey: widthStorageKey, range: minimumWidth...maximumWidth, to: defaults)
     }
 
     static func loadSidebarVisible(from defaults: UserDefaults = .standard) -> Bool {
@@ -81,7 +76,31 @@ enum SidebarLayoutState {
         defaults.set(isVisible, forKey: visibilityStorageKey)
     }
 
-    private static func isValid(_ width: CGFloat) -> Bool {
-        width.isFinite && width >= minimumWidth && width <= maximumWidth
+    // MARK: Right sidebar width
+
+    static let rightWidthStorageKey = "sidebar.right.width"
+    static let rightMinimumWidth: CGFloat = 240
+    static let rightDefaultWidth: CGFloat = 300
+    static let rightMaximumWidth: CGFloat = 480
+
+    static func loadRightWidth(from defaults: UserDefaults = .standard) -> CGFloat {
+        loadCGFloat(forKey: rightWidthStorageKey, default: rightDefaultWidth, range: rightMinimumWidth...rightMaximumWidth, from: defaults)
+    }
+
+    static func saveRightWidth(_ width: CGFloat, to defaults: UserDefaults = .standard) {
+        saveCGFloat(width, forKey: rightWidthStorageKey, range: rightMinimumWidth...rightMaximumWidth, to: defaults)
+    }
+
+    // MARK: Private helpers
+
+    private static func loadCGFloat(forKey key: String, default def: CGFloat, range: ClosedRange<CGFloat>, from defaults: UserDefaults) -> CGFloat {
+        guard let stored = defaults.object(forKey: key) as? Double else { return def }
+        let w = CGFloat(stored)
+        return w.isFinite && range ~= w ? w : def
+    }
+
+    private static func saveCGFloat(_ value: CGFloat, forKey key: String, range: ClosedRange<CGFloat>, to defaults: UserDefaults) {
+        guard value.isFinite, range ~= value else { return }
+        defaults.set(Double(value), forKey: key)
     }
 }

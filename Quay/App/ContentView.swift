@@ -5,7 +5,7 @@ import SwiftUI
 
 struct ContentView: View {
     private static let terminalTabBarHeight: CGFloat = 37
-    private static let sidebarAnimation = Animation.easeInOut(duration: 0.22)
+    private static let splitViewAnimation = Animation.easeInOut(duration: 0.22)
 
     let store: StoreOf<AppFeature>
     @Environment(\.openWindow) private var openWindow
@@ -19,137 +19,193 @@ struct ContentView: View {
     @State private var searchQuery: String
     @State private var searchFocusTrigger = false
     @State private var mainWindow: NSWindow?
-    @State private var isCursorInSidebarZone = false
-    @State private var sidebarHoverWidth: CGFloat
-    @State private var sidebarHideTask: Task<Void, Never>?
+    @State private var hoverController = SidebarHoverController()
+    @State private var rightSidebarWidth = SidebarLayoutState.loadRightWidth()
     private let tabManager = TerminalTabManager.shared
 
     init(store: StoreOf<AppFeature>) {
         self.store = store
         _columnVisibility = State(initialValue: Self.savedColumnVisibility)
-        _searchQuery = State(initialValue: UserDefaults.standard.string(forKey: "sidebar.searchQuery") ?? "")
-        _sidebarHoverWidth = State(initialValue: SidebarLayoutState.loadWidth())
+        _searchQuery = State(initialValue: UserDefaults.standard.string(forKey: SidebarLayoutState.searchQueryStorageKey) ?? "")
     }
 
     var body: some View {
-        splitView
-            .background(MainWindowCapture { mainWindow = $0 })
-            .toolbar {
-                ToolbarItem(placement: .principal) { toolbarSearchField }
-                ToolbarItem(placement: .primaryAction) { newItemMenu }
-                ToolbarItem(placement: .primaryAction) {
-                    Button { rightSidebarOpen.toggle() } label: {
-                        Image(systemName: "sidebar.right")
-                    }
-                    .help("Toggle Snippets Sidebar")
-                }
-            }
-            .onAppear {
-                store.send(.onAppear)
-                restoreSavedSidebarVisibility()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
-                let shouldShowSidebar = columnVisibility == .detailOnly
-                withAnimation(Self.sidebarAnimation) {
-                    columnVisibility = shouldShowSidebar ? .all : .detailOnly
-                }
-                SidebarLayoutState.saveSidebarVisible(shouldShowSidebar)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .connectionConnected)) { _ in
-                guard autoHideSidebar else { return }
-                withAnimation(Self.sidebarAnimation) { columnVisibility = .detailOnly }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in
-                ghosttyConfigChangeToken &+= 1
-            }
-            .onChange(of: columnVisibility) { _, visibility in
-                if visibility != .detailOnly {
-                    sidebarHoverWidth = SidebarLayoutState.loadWidth()
-                }
-                guard !autoHideSidebar else { return }
-                SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
-            }
-            .onChange(of: tabManager.tabs.isEmpty) { _, isEmpty in
-                guard autoHideSidebar, isEmpty else { return }
-                withAnimation(Self.sidebarAnimation) { columnVisibility = .all }
-            }
-            .onChange(of: autoHideSidebar) { _, enabled in
-                guard enabled, !tabManager.tabs.isEmpty else { return }
-                withAnimation(Self.sidebarAnimation) { columnVisibility = .detailOnly }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .startExportSettings)) { _ in
-                exportRequested = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .startImportSettings)) { _ in
-                importRequested = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
-                mainWindow?.makeKeyAndOrderFront(nil)
-                searchFocusTrigger = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .focusSearchSnippets)) { _ in
-                mainWindow?.makeKeyAndOrderFront(nil)
-                rightSidebarOpen = true
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .focusSearchSnippets, object: "focus")
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .toggleSnippetsSidebar)) { _ in
-                mainWindow?.makeKeyAndOrderFront(nil)
-                rightSidebarOpen.toggle()
-            }
-            .onChange(of: searchQuery) { _, query in
-                UserDefaults.standard.set(query, forKey: "sidebar.searchQuery")
-            }
-            .settingsImportExportFlow(
-                triggerExport: $exportRequested,
-                triggerImport: $importRequested
-            )
+        Group {
+            rootContent
+                .background(MainWindowCapture { mainWindow = $0 })
+                .toolbar { toolbarContent }
+                .onAppear { onAppear() }
+                .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in onToggleSidebar() }
+                .onReceive(NotificationCenter.default.publisher(for: .connectionConnected)) { _ in onConnectionConnected() }
+                .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in ghosttyConfigChangeToken &+= 1 }
+        }
+        .onChange(of: columnVisibility) { _, visibility in
+            guard !autoHideSidebar else { return }
+            SidebarLayoutState.saveSidebarVisible(visibility != .detailOnly)
+        }
+        .onChange(of: tabManager.tabs.isEmpty) { _, isEmpty in onTabsEmptyChanged(isEmpty) }
+        .onChange(of: autoHideSidebar) { _, enabled in onAutoHideChanged(enabled) }
+        .onChange(of: mainWindow) { _, window in onMainWindowChanged(window) }
+        .onChange(of: rightSidebarOpen) { _, open in hoverController.rightSidebarOpen = open }
+        .onChange(of: rightSidebarWidth) { _, w in hoverController.rightSidebarWidth = w }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            guard (note.object as? NSWindow) === mainWindow else { return }
+            hoverController.windowDidResignKey()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .startExportSettings)) { _ in exportRequested = true }
+        .onReceive(NotificationCenter.default.publisher(for: .startImportSettings)) { _ in importRequested = true }
+        .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in onFocusSearch() }
+        .onReceive(NotificationCenter.default.publisher(for: .focusSearchSnippets)) { _ in onFocusSearchSnippets() }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleSnippetsSidebar)) { _ in
+            mainWindow?.makeKeyAndOrderFront(nil)
+            rightSidebarOpen.toggle()
+        }
+        .onChange(of: searchQuery) { _, query in
+            UserDefaults.standard.set(query, forKey: SidebarLayoutState.searchQueryStorageKey)
+        }
+        .settingsImportExportFlow(triggerExport: $exportRequested, triggerImport: $importRequested)
     }
 
-    private var splitView: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(
-                searchQuery: $searchQuery,
-                selection: $selectedConnectionID,
-                onOpenConnectionInNewTab: { tabManager.openNewTab(for: $0) },
-                onOpenSFTPConnection: { tabManager.openSFTPTab(for: $0) },
-                onCreateConnection: { openConnectionEditor(.create(folderID: $0?.id)) },
-                onEditConnection: { openConnectionEditor(.edit($0)) }
+    // MARK: - Event handlers
+
+    private func onAppear() {
+        store.send(.onAppear)
+        restoreSavedSidebarVisibility()
+        hoverController.setTabsEmpty(tabManager.tabs.isEmpty)
+    }
+
+    private func onToggleSidebar() {
+        if autoHideSidebar {
+            hoverController.manualToggle()
+        } else {
+            guard !tabManager.tabs.isEmpty else { return }
+            let shouldShow = columnVisibility == .detailOnly
+            withAnimation(Self.splitViewAnimation) {
+                columnVisibility = shouldShow ? .all : .detailOnly
+            }
+            SidebarLayoutState.saveSidebarVisible(shouldShow)
+        }
+    }
+
+    private func onConnectionConnected() {
+        if autoHideSidebar {
+            hoverController.connectionDidConnect()
+        } else {
+            withAnimation(Self.splitViewAnimation) { columnVisibility = .detailOnly }
+        }
+    }
+
+    private func onTabsEmptyChanged(_ isEmpty: Bool) {
+        if autoHideSidebar {
+            hoverController.setTabsEmpty(isEmpty)
+        } else if isEmpty {
+            withAnimation(Self.splitViewAnimation) { columnVisibility = .all }
+        }
+    }
+
+    private func onAutoHideChanged(_ enabled: Bool) {
+        hoverController.setAutoHide(enabled)
+        if !enabled, !tabManager.tabs.isEmpty {
+            withAnimation(Self.splitViewAnimation) { columnVisibility = .detailOnly }
+        }
+    }
+
+    private func onMainWindowChanged(_ window: NSWindow?) {
+        if let window { hoverController.start(mainWindow: window) }
+        else { hoverController.stop() }
+    }
+
+    private func onFocusSearch() {
+        mainWindow?.makeKeyAndOrderFront(nil)
+        searchFocusTrigger = true
+    }
+
+    private func onFocusSearchSnippets() {
+        mainWindow?.makeKeyAndOrderFront(nil)
+        rightSidebarOpen = true
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .focusSearchSnippets, object: "focus")
+        }
+    }
+
+    // MARK: - Root layout
+
+    @ViewBuilder
+    private var rootContent: some View {
+        ZStack(alignment: .top) {
+            if autoHideSidebar {
+                overlayLeftAndDetail
+            } else {
+                navigationSplitLayout
+            }
+            rightSidebarOverlay
+        }
+    }
+
+    private var rightSidebarOverlay: some View {
+        OverlaySidebarContainer(
+            isVisible: rightSidebarOpen,
+            width: rightSidebarWidth,
+            edge: .trailing
+        ) {
+            SnippetSidebarView()
+        } edgeHandle: {
+            SidebarResizeHandle(
+                edge: .trailing,
+                width: $rightSidebarWidth,
+                range: SidebarLayoutState.rightMinimumWidth...SidebarLayoutState.rightMaximumWidth,
+                onCommit: { SidebarLayoutState.saveRightWidth($0) }
             )
-            .background(SidebarHoverObserver { [self] x in handleCursorChange(localX: x) })
+        }
+    }
+
+    private var overlayLeftAndDetail: some View {
+        ZStack(alignment: .top) {
+            detail
+            OverlaySidebarContainer(
+                isVisible: hoverController.isVisible,
+                width: hoverController.width,
+                edge: .leading
+            ) {
+                sidebarView
+            } edgeHandle: {
+                SidebarResizeHandle(
+                    edge: .leading,
+                    width: $hoverController.width,
+                    range: SidebarLayoutState.minimumWidth...SidebarLayoutState.maximumWidth,
+                    onCommit: { SidebarLayoutState.saveWidth($0) }
+                )
+            }
+        }
+        .onContinuousHover(coordinateSpace: .local) { phase in
+            switch phase {
+            case .active(let location): hoverController.cursorMoved(localX: location.x)
+            case .ended: hoverController.cursorMoved(localX: nil)
+            }
+        }
+    }
+
+    private var navigationSplitLayout: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebarView
         } detail: {
             detail
-                .inspector(isPresented: $rightSidebarOpen) {
-                    SnippetSidebarView()
-                        .inspectorColumnWidth(min: 240, ideal: 300, max: 480)
-                }
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
     }
 
-    private func handleCursorChange(localX: CGFloat?) {
-        let threshold: CGFloat = columnVisibility == .detailOnly ? 6 : sidebarHoverWidth
-        let inZone = localX.map { $0 <= threshold } ?? false
-
-        guard inZone != isCursorInSidebarZone else { return }
-        isCursorInSidebarZone = inZone
-
-        sidebarHideTask?.cancel()
-
-        if inZone {
-            sidebarHideTask = nil
-            guard autoHideSidebar, columnVisibility == .detailOnly else { return }
-            withAnimation(Self.sidebarAnimation) { columnVisibility = .all }
-        } else {
-            guard autoHideSidebar, columnVisibility == .all, !tabManager.tabs.isEmpty else { return }
-            sidebarHideTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(300))
-                guard !isCursorInSidebarZone else { return }
-                withAnimation(Self.sidebarAnimation) { columnVisibility = .detailOnly }
-            }
-        }
+    private var sidebarView: some View {
+        SidebarView(
+            searchQuery: $searchQuery,
+            selection: $selectedConnectionID,
+            onOpenConnectionInNewTab: { tabManager.openNewTab(for: $0) },
+            onOpenSFTPConnection: { tabManager.openSFTPTab(for: $0) },
+            onCreateConnection: { openConnectionEditor(.create(folderID: $0?.id)) },
+            onEditConnection: { openConnectionEditor(.edit($0)) }
+        )
     }
+
+    // MARK: - Helpers
 
     private func openConnectionEditor(_ target: SidebarView.EditorTarget) {
         switch target {
@@ -162,15 +218,36 @@ struct ContentView: View {
 
     private static var savedColumnVisibility: NavigationSplitViewVisibility {
         let autoHide = UserDefaults.standard.object(forKey: AppDefaultsKeys.autoHideSidebar) as? Bool ?? true
-        // When auto-hide is enabled, start with sidebar shown; manual visibility is managed by auto-hide logic
         if autoHide { return .all }
-        // When disabled, respect saved preference
         return SidebarLayoutState.loadSidebarVisible() ? .all : .detailOnly
     }
 
     private func restoreSavedSidebarVisibility() {
+        guard !autoHideSidebar else { return }
         scheduleAfterSwiftUILayout {
             self.columnVisibility = Self.savedColumnVisibility
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button { onToggleSidebar() } label: {
+                Label("Toggle Hosts Sidebar", systemImage: "sidebar.left")
+            }
+            .labelStyle(.iconOnly)
+            .help("Toggle Hosts Sidebar")
+        }
+        ToolbarItem(placement: .principal) { toolbarSearchField }
+        ToolbarItem(placement: .primaryAction) { newItemMenu }
+        ToolbarItem(placement: .primaryAction) {
+            Button { rightSidebarOpen.toggle() } label: {
+                Label("Toggle Snippets Sidebar", systemImage: "sidebar.right")
+            }
+            .labelStyle(.iconOnly)
+            .help("Toggle Snippets Sidebar")
         }
     }
 
@@ -183,7 +260,8 @@ struct ContentView: View {
                 text: $searchQuery,
                 placeholder: "Search hosts (⌘L)",
                 requestFocus: searchFocusTrigger,
-                onDidFocus: { searchFocusTrigger = false }
+                onDidFocus: { searchFocusTrigger = false },
+                onFocusChange: { focused in hoverController.setSearchFocused(focused) }
             )
             if !searchQuery.isEmpty {
                 Button { searchQuery = "" } label: {
@@ -210,6 +288,8 @@ struct ContentView: View {
         }
         .help("New…")
     }
+
+    // MARK: - Detail
 
     @ViewBuilder
     private var detail: some View {
@@ -241,19 +321,12 @@ struct ContentView: View {
     private var tabSurfaces: some View {
         ZStack {
             terminalBackgroundColor
-
-            // Single container that keeps every surface view as a direct NSView
-            // subview at all times. Visibility is toggled via isHidden rather
-            // than removing from the hierarchy, so libghostty never loses its
-            // render target and background sessions stay alive.
             TerminalSurfaceHostsView(
                 tabs: tabManager.tabs,
                 selectedTabID: tabManager.selectedTabID,
                 backgroundColor: selectedTerminalBackgroundColor,
                 backgroundOpacity: selectedTerminalBackgroundOpacity
             )
-
-            // Status overlay for the selected tab only.
             if let tab = tabManager.selectedTab {
                 statusOverlay(for: tab)
             }
@@ -268,9 +341,6 @@ struct ContentView: View {
     }
 
     private var selectedTerminalBackgroundColor: NSColor {
-        // Force SwiftUI to re-evaluate when the Ghostty config changes.
-        // GhosttyRuntime.config is not @Observable, so we use a token that
-        // is incremented via notification and read here to create a dependency.
         _ = ghosttyConfigChangeToken
         return tabManager.selectedTab?.terminalBackgroundColor
             ?? GhosttyResolvedAppearance.backgroundColor(from: GhosttyRuntime.shared.config)
@@ -315,6 +385,8 @@ struct ContentView: View {
     }
 }
 
+// MARK: - AppKit helper views
+
 private struct TerminalWindowBackgroundSync: NSViewRepresentable {
     let color: NSColor
     let opacity: Double
@@ -356,7 +428,6 @@ private struct TerminalSurfaceHostsView: NSViewRepresentable {
         let existing = container.subviews.compactMap { $0 as? GhosttySurfaceView }
         let existingIDs = Set(existing.map { ObjectIdentifier($0) })
 
-        // Add surface views for tabs not yet in the container.
         for tab in tabs {
             guard let sv = tab.surfaceView,
                   !existingIDs.contains(ObjectIdentifier(sv)) else { continue }
@@ -365,23 +436,17 @@ private struct TerminalSurfaceHostsView: NSViewRepresentable {
             container.addSubview(sv)
         }
 
-        // Remove surface views whose tabs have been closed.
         let activeIDs = Set(tabs.compactMap { $0.surfaceView }.map { ObjectIdentifier($0) })
         for sv in existing where !activeIDs.contains(ObjectIdentifier(sv)) {
             sv.removeFromSuperview()
         }
 
         let selectedSurface = tabs.first(where: { $0.id == selectedTabID })?.surfaceView
-        for sv in container.subviews {
-            sv.isHidden = false
-        }
-
-        if let selectedSurface {
+        for sv in container.subviews { sv.isHidden = false }
+        if let selectedSurface, container.subviews.last !== selectedSurface {
             container.addSubview(selectedSurface, positioned: .above, relativeTo: nil)
         }
 
-        // Transfer first-responder after AppKit has settled the subview order
-        // changes for this update pass.
         if let selectedSurface, container.window?.firstResponder !== selectedSurface {
             DispatchQueue.main.async { [weak selectedSurface] in
                 guard let selectedSurface,
@@ -399,6 +464,7 @@ private struct FocusableTextField: NSViewRepresentable {
     let placeholder: String
     var requestFocus: Bool
     var onDidFocus: () -> Void
+    var onFocusChange: ((Bool) -> Void)?
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
@@ -412,6 +478,7 @@ private struct FocusableTextField: NSViewRepresentable {
 
     func updateNSView(_ field: NSTextField, context: Context) {
         if field.stringValue != text { field.stringValue = text }
+        context.coordinator.parent = self
         if requestFocus, field.window?.firstResponder !== field {
             DispatchQueue.main.async {
                 field.window?.makeFirstResponder(field)
@@ -430,6 +497,14 @@ private struct FocusableTextField: NSViewRepresentable {
         func controlTextDidChange(_ obj: Notification) {
             guard let field = obj.object as? NSTextField else { return }
             parent.text = field.stringValue
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            parent.onFocusChange?(true)
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            parent.onFocusChange?(false)
         }
     }
 }
@@ -455,96 +530,6 @@ private struct MainWindowCapture: NSViewRepresentable {
 
     final class Coordinator {
         weak var lastWindow: NSWindow?
-    }
-}
-
-/// Tracks cursor position via an NSTrackingArea on the enclosing NSSplitView.
-/// Reports the cursor's splitView-local X coordinate on every mouse move, and nil
-/// when the cursor exits the splitView. Apply as `.background(SidebarHoverObserver { ... })`
-/// on any view inside the NSSplitView hierarchy.
-private struct SidebarHoverObserver: NSViewRepresentable {
-    let onCursorChange: (CGFloat?) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView(frame: .zero)
-        v.isHidden = true
-        return v
-    }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        context.coordinator.attach(from: view, onChange: onCursorChange)
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    @MainActor
-    final class Coordinator {
-        private weak var splitView: NSSplitView?
-        private var trackerView: HoverTrackerView?
-
-        func attach(from view: NSView, onChange: @escaping (CGFloat?) -> Void) {
-            Task { @MainActor [weak self, weak view] in
-                guard let self, let view, let sv = view.enclosingSplitView else { return }
-                guard self.splitView !== sv else {
-                    self.trackerView?.onCursorChange = onChange
-                    return
-                }
-                self.detach()
-                self.splitView = sv
-
-                let tracker = HoverTrackerView(frame: sv.bounds)
-                tracker.autoresizingMask = [.width, .height]
-                tracker.onCursorChange = onChange
-                sv.addSubview(tracker)
-                self.trackerView = tracker
-            }
-        }
-
-        private func detach() {
-            trackerView?.removeFromSuperview()
-            trackerView = nil
-            splitView = nil
-        }
-    }
-}
-
-private final class HoverTrackerView: NSView {
-    var onCursorChange: ((CGFloat?) -> Void)?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(
-            rect: .zero,
-            options: [.activeAlways, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
-            owner: self,
-            userInfo: nil
-        ))
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        reportCursorPosition(event)
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        reportCursorPosition(event)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        onCursorChange?(nil)
-    }
-
-    private func reportCursorPosition(_ event: NSEvent) {
-        onCursorChange?(convert(event.locationInWindow, from: nil).x)
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private extension NSView {
-    var enclosingSplitView: NSSplitView? {
-        if let sv = self as? NSSplitView { return sv }
-        return superview?.enclosingSplitView
     }
 }
 
