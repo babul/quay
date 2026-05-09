@@ -104,6 +104,14 @@ final class SidebarHoverController {
         }
     }
 
+    /// Ensures the sidebar is visible and pinned without toggling.
+    func ensureVisible() {
+        guard !tabsEmpty else { return }
+        cancelTasks()
+        pinned = true
+        isVisible = true
+    }
+
     /// Called when a connection succeeds. Soft-hide: cancels any pending show, then
     /// hides on the standard delay only if the cursor is not currently over the sidebar.
     func connectionDidConnect() {

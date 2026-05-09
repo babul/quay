@@ -16,8 +16,6 @@ struct ContentView: View {
     @State private var ghosttyConfigChangeToken = 0
     @State private var exportRequested = false
     @State private var importRequested = false
-    @State private var searchQuery: String
-    @State private var searchFocusTrigger = false
     @State private var mainWindow: NSWindow?
     @State private var hoverController = SidebarHoverController()
     @State private var rightSidebarWidth = SidebarLayoutState.loadRightWidth()
@@ -26,7 +24,6 @@ struct ContentView: View {
     init(store: StoreOf<AppFeature>) {
         self.store = store
         _columnVisibility = State(initialValue: Self.savedColumnVisibility)
-        _searchQuery = State(initialValue: UserDefaults.standard.string(forKey: SidebarLayoutState.searchQueryStorageKey) ?? "")
     }
 
     var body: some View {
@@ -59,9 +56,6 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleSnippetsSidebar)) { _ in
             mainWindow?.makeKeyAndOrderFront(nil)
             rightSidebarOpen.toggle()
-        }
-        .onChange(of: searchQuery) { _, query in
-            UserDefaults.standard.set(query, forKey: SidebarLayoutState.searchQueryStorageKey)
         }
         .settingsImportExportFlow(triggerExport: $exportRequested, triggerImport: $importRequested)
     }
@@ -117,7 +111,14 @@ struct ContentView: View {
 
     private func onFocusSearch() {
         mainWindow?.makeKeyAndOrderFront(nil)
-        searchFocusTrigger = true
+        if autoHideSidebar {
+            hoverController.ensureVisible()
+        } else if columnVisibility == .detailOnly {
+            withAnimation(Self.splitViewAnimation) { columnVisibility = .all }
+        }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .focusSearch, object: "focus")
+        }
     }
 
     private func onFocusSearchSnippets() {
@@ -196,12 +197,12 @@ struct ContentView: View {
 
     private var sidebarView: some View {
         SidebarView(
-            searchQuery: $searchQuery,
             selection: $selectedConnectionID,
             onOpenConnectionInNewTab: { tabManager.openNewTab(for: $0) },
             onOpenSFTPConnection: { tabManager.openSFTPTab(for: $0) },
             onCreateConnection: { openConnectionEditor(.create(folderID: $0?.id)) },
-            onEditConnection: { openConnectionEditor(.edit($0)) }
+            onEditConnection: { openConnectionEditor(.edit($0)) },
+            onSearchFocusChange: { hoverController.setSearchFocused($0) }
         )
     }
 
@@ -240,8 +241,6 @@ struct ContentView: View {
             .labelStyle(.iconOnly)
             .help("Toggle Hosts Sidebar")
         }
-        ToolbarItem(placement: .principal) { toolbarSearchField }
-        ToolbarItem(placement: .primaryAction) { newItemMenu }
         ToolbarItem(placement: .primaryAction) {
             Button { rightSidebarOpen.toggle() } label: {
                 Label("Toggle Snippets Sidebar", systemImage: "sidebar.right")
@@ -249,44 +248,6 @@ struct ContentView: View {
             .labelStyle(.iconOnly)
             .help("Toggle Snippets Sidebar")
         }
-    }
-
-    private var toolbarSearchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .imageScale(.small)
-            FocusableTextField(
-                text: $searchQuery,
-                placeholder: "Search hosts (⌘L)",
-                requestFocus: searchFocusTrigger,
-                onDidFocus: { searchFocusTrigger = false },
-                onFocusChange: { focused in hoverController.setSearchFocused(focused) }
-            )
-            if !searchQuery.isEmpty {
-                Button { searchQuery = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(.quinary, in: RoundedRectangle(cornerRadius: 7))
-        .frame(minWidth: 180, maxWidth: 300)
-    }
-
-    private var newItemMenu: some View {
-        Menu {
-            Button("New Connection…") { openConnectionEditor(.create()) }
-            Button("New Connection Group") {
-                NotificationCenter.default.post(name: .createFolder, object: nil)
-            }
-        } label: {
-            Image(systemName: "plus")
-        }
-        .help("New…")
     }
 
     // MARK: - Detail
@@ -453,58 +414,6 @@ private struct TerminalSurfaceHostsView: NSViewRepresentable {
                       selectedSurface.window?.firstResponder !== selectedSurface else { return }
                 selectedSurface.window?.makeFirstResponder(selectedSurface)
             }
-        }
-    }
-}
-
-/// Plain NSTextField wrapper that can receive focus programmatically — needed because
-/// SwiftUI's @FocusState doesn't reach into NSToolbar-hosted views on macOS.
-private struct FocusableTextField: NSViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-    var requestFocus: Bool
-    var onDidFocus: () -> Void
-    var onFocusChange: ((Bool) -> Void)?
-
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
-        field.placeholderString = placeholder
-        field.isBordered = false
-        field.backgroundColor = .clear
-        field.focusRingType = .none
-        field.delegate = context.coordinator
-        return field
-    }
-
-    func updateNSView(_ field: NSTextField, context: Context) {
-        if field.stringValue != text { field.stringValue = text }
-        context.coordinator.parent = self
-        if requestFocus, field.window?.firstResponder !== field {
-            DispatchQueue.main.async {
-                field.window?.makeFirstResponder(field)
-                onDidFocus()
-            }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    @MainActor
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: FocusableTextField
-        init(_ parent: FocusableTextField) { self.parent = parent }
-
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
-            parent.text = field.stringValue
-        }
-
-        func controlTextDidBeginEditing(_ obj: Notification) {
-            parent.onFocusChange?(true)
-        }
-
-        func controlTextDidEndEditing(_ obj: Notification) {
-            parent.onFocusChange?(false)
         }
     }
 }

@@ -18,12 +18,14 @@ struct SidebarView: View {
     @Query(sort: [SortDescriptor(\ConnectionProfile.sortIndex), SortDescriptor(\ConnectionProfile.name)])
     private var allConnections: [ConnectionProfile]
 
-    @Binding var searchQuery: String
+    @State private var searchQuery: String = UserDefaults.standard.string(forKey: SidebarLayoutState.searchQueryStorageKey) ?? ""
+    @FocusState private var searchFocused: Bool
     @Binding var selection: UUID?
     var onOpenConnectionInNewTab: (ConnectionProfile) -> Void = { _ in }
     var onOpenSFTPConnection: (ConnectionProfile) -> Void = { _ in }
     var onCreateConnection: (Folder?) -> Void = { _ in }
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
+    var onSearchFocusChange: ((Bool) -> Void)? = nil
     @State private var groupEditTarget: Folder?
     @State private var collapsedFolderIDs = SidebarCollapseState.load()
     @State private var sshConfigExpanded = SidebarCollapseState.loadSSHConfigExpanded()
@@ -51,6 +53,16 @@ struct SidebarView: View {
             .onChange(of: sshConfigExpanded) { _, val in
                 SidebarCollapseState.saveSSHConfigExpanded(val)
             }
+            .onChange(of: searchQuery) { _, q in
+                UserDefaults.standard.set(q, forKey: SidebarLayoutState.searchQueryStorageKey)
+            }
+            .onChange(of: searchFocused) { _, val in
+                onSearchFocusChange?(val)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { note in
+                guard (note.object as? String) == "focus" else { return }
+                searchFocused = true
+            }
             .applyFolderCollapseHandlers(
                 folders: folders,
                 collapsedFolderIDs: $collapsedFolderIDs
@@ -60,7 +72,8 @@ struct SidebarView: View {
 
     private var sidebarBase: some View {
         VStack(spacing: 0) {
-            identityHeader
+            header
+            searchField
             Divider()
             list
         }
@@ -82,26 +95,50 @@ struct SidebarView: View {
         }
     }
 
-    private var identityHeader: some View {
-        HStack(spacing: 9) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 24, height: 24)
-                .cornerRadius(5)
+    // MARK: - Header
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Quay")
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                Text(localHostname)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+    private var header: some View {
+        HStack(spacing: 6) {
+            Text("Connections")
+                .font(.system(size: 13, weight: .semibold))
             Spacer()
+            Menu {
+                Button("New Connection…") { onCreateConnection(nil) }
+                Button("New Connection Group") { newFolder() }
+            } label: {
+                Image(systemName: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 28)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - Search field
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .imageScale(.small)
+            TextField("Search connections", text: $searchQuery)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+            if !searchQuery.isEmpty {
+                Button { searchQuery = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quinary, in: RoundedRectangle(cornerRadius: 7))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 
     private var searchIsActive: Bool {
@@ -514,10 +551,8 @@ struct SidebarView: View {
         discoveredSSHHosts = SSHConfigHostProvider.loadHosts()
     }
 
-    private var localHostname: String {
-        Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-    }
 }
+
 
 enum SidebarDisplayText {
     static func sshConfigHostTitle(for host: DiscoveredSSHHost) -> String {
@@ -671,7 +706,7 @@ extension Notification.Name {
     static let startExportSettings = Notification.Name("io.github.babul.quay.startExportSettings")
     /// Posted by the File menu "Import Settings…" item.
     static let startImportSettings = Notification.Name("io.github.babul.quay.startImportSettings")
-    /// Posted by the toolbar "+" menu to create a new group folder.
+    /// Posted to create a new connection group folder.
     static let createFolder = Notification.Name("io.github.babul.quay.createFolder")
 }
 
