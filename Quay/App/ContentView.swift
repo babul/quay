@@ -280,7 +280,7 @@ struct ContentView: View {
     private var newItemMenu: some View {
         Menu {
             Button("New Connection…") { openConnectionEditor(.create()) }
-            Button("New Group Folder") {
+            Button("New Connection Group") {
                 NotificationCenter.default.post(name: .createFolder, object: nil)
             }
         } label: {
