@@ -166,6 +166,7 @@ private final class QuayAppDelegate: NSObject, NSApplicationDelegate {
     // becomes key. Subsequent activations (e.g. user moved the window) are skipped.
     @objc private func windowDidBecomeKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        guard window.styleMask.contains(.titled) else { return }
         let id = ObjectIdentifier(window)
         guard !centeredWindowIDs.contains(id) else { return }
         centeredWindowIDs.insert(id)
