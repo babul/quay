@@ -87,6 +87,16 @@ struct SnippetSidebarView: View {
                     searchFocused = false
                     NSApp.keyWindow?.makeFirstResponder(nil)
                 }
+                .onChange(of: searchQuery) { _, _ in
+                    guard searchIsActive else { return }
+                    let ids = launchableSnippetIDs
+                    if !ids.contains(selectedID ?? UUID()) {
+                        selectedID = ids.first
+                    }
+                }
+                .onKeyPress(.upArrow) { navigateSnippetSelection(direction: -1); return .handled }
+                .onKeyPress(.downArrow) { navigateSnippetSelection(direction: 1); return .handled }
+                .onSubmit { launchSelectedSnippet() }
             if !searchQuery.isEmpty {
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -117,23 +127,8 @@ struct SnippetSidebarView: View {
 
     @ViewBuilder
     private var snippetsSection: some View {
-        let ungrouped: [Snippet] = {
-            let items = allSnippets.filter { $0.group == nil }
-            return searchIsActive
-                ? FuzzySearch.rank(items, query: searchQuery) { snippetSearchKeys($0) }
-                : items
-        }()
-        let visibleGroups: [(SnippetGroup, [Snippet])] = {
-            snippetGroups.compactMap { g in
-                var items = SnippetStore.snippets(in: g)
-                if searchIsActive {
-                    items = FuzzySearch.rank(items, query: searchQuery) { snippetSearchKeys($0) }
-                    guard !items.isEmpty else { return nil }
-                }
-                return (g, items)
-            }
-        }()
-
+        let ungrouped = visibleUngroupedSnippets
+        let visibleGroups = visibleSnippetGroups
         let hasContent = !visibleGroups.isEmpty || !ungrouped.isEmpty
         if hasContent {
             ForEach(visibleGroups, id: \.0.id) { group, items in
@@ -344,12 +339,51 @@ struct SnippetSidebarView: View {
 
     // MARK: - Search
 
+    private var visibleUngroupedSnippets: [Snippet] {
+        let items = allSnippets.filter { $0.group == nil }
+        return searchIsActive
+            ? FuzzySearch.rank(items, query: searchQuery) { snippetSearchKeys($0) }
+            : items
+    }
+
+    private var visibleSnippetGroups: [(SnippetGroup, [Snippet])] {
+        snippetGroups.compactMap { g in
+            var items = SnippetStore.snippets(in: g)
+            if searchIsActive {
+                items = FuzzySearch.rank(items, query: searchQuery) { snippetSearchKeys($0) }
+                guard !items.isEmpty else { return nil }
+            }
+            return (g, items)
+        }
+    }
+
+    private var launchableSnippetIDs: [UUID] {
+        visibleSnippetGroups.flatMap { $1.map(\.id) }
+        + visibleUngroupedSnippets.map(\.id)
+    }
+
     private func snippetSearchKeys(_ snippet: Snippet) -> [String] {
         var keys = [snippet.name]
         if !snippet.isSecured && !snippet.body.isEmpty {
             keys.append(snippet.body)
         }
         return keys
+    }
+
+    private func navigateSnippetSelection(direction: Int) {
+        let ids = launchableSnippetIDs
+        guard !ids.isEmpty else { return }
+        if let current = selectedID, let idx = ids.firstIndex(of: current),
+           (0..<ids.count).contains(idx + direction) {
+            selectedID = ids[idx + direction]
+        } else {
+            selectedID = direction >= 0 ? ids.first : ids.last
+        }
+    }
+
+    private func launchSelectedSnippet() {
+        guard let snippet = allSnippets.first(where: { $0.id == selectedID }) else { return }
+        Task { await SnippetActions.paste(snippet, into: TerminalTabManager.shared.selectedTab) }
     }
 
     // MARK: - Mutations

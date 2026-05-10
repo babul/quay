@@ -55,6 +55,11 @@ struct SidebarView: View {
             }
             .onChange(of: searchQuery) { _, q in
                 UserDefaults.standard.set(q, forKey: SidebarLayoutState.searchQueryStorageKey)
+                guard searchIsActive else { return }
+                let ids = launchableConnectionIDs
+                if !ids.contains(selection ?? UUID()) {
+                    selection = ids.first
+                }
             }
             .onChange(of: isVisible) { _, vis in
                 guard !vis else { return }
@@ -132,6 +137,9 @@ struct SidebarView: View {
                     searchFocused = false
                     NSApp.keyWindow?.makeFirstResponder(nil)
                 }
+                .onKeyPress(.upArrow) { navigateConnectionSelection(direction: -1); return .handled }
+                .onKeyPress(.downArrow) { navigateConnectionSelection(direction: 1); return .handled }
+                .onSubmit { launchSelectedConnection() }
             if !searchQuery.isEmpty {
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -170,6 +178,31 @@ struct SidebarView: View {
         }
     }
 
+    private var visibleConnectionGroups: [(Folder, [ConnectionProfile])] {
+        var byFolder: [UUID: [ConnectionProfile]] = [:]
+        for c in allConnections {
+            if let f = c.parent { byFolder[f.id, default: []].append(c) }
+        }
+        var out: [(Folder, [ConnectionProfile])] = []
+        for f in topLevelFolders {
+            var items = byFolder[f.id] ?? []
+            if searchIsActive {
+                items = FuzzySearch.rank(items, query: searchQuery) { [$0.name, $0.hostname] }
+                guard !items.isEmpty else { continue }
+            } else {
+                guard !shouldHideFolder(f, connectionCount: items.count) else { continue }
+                items = SidebarOrdering.connectionsByName(items)
+            }
+            out.append((f, items))
+        }
+        return out
+    }
+
+    private var launchableConnectionIDs: [UUID] {
+        visibleConnectionGroups.flatMap { $1.map(\.id) }
+        + filteredDiscoveredSSHHosts.map(\.id)
+    }
+
     private var topLevelFolders: [Folder] {
         SidebarOrdering.foldersByName(folders.filter { $0.parent == nil })
     }
@@ -184,28 +217,7 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var groupedByFolder: some View {
-        let grouped: [(Folder, [ConnectionProfile])] = {
-            var byFolder: [UUID: [ConnectionProfile]] = [:]
-            for c in allConnections {
-                if let f = c.parent {
-                    byFolder[f.id, default: []].append(c)
-                }
-            }
-            var out: [(Folder, [ConnectionProfile])] = []
-            for f in topLevelFolders {
-                var items = byFolder[f.id] ?? []
-                if searchIsActive {
-                    items = FuzzySearch.rank(items, query: searchQuery) { [$0.name, $0.hostname] }
-                    guard !items.isEmpty else { continue }
-                } else {
-                    guard !shouldHideFolder(f, connectionCount: items.count) else { continue }
-                    items = SidebarOrdering.connectionsByName(items)
-                }
-                out.append((f, items))
-            }
-            return out
-        }()
-
+        let grouped = visibleConnectionGroups
         if grouped.isEmpty && !searchIsActive {
             Text("No groups yet")
                 .foregroundStyle(.secondary)
@@ -555,6 +567,24 @@ struct SidebarView: View {
 
     private func refreshDiscoveredSSHHosts() {
         discoveredSSHHosts = SSHConfigHostProvider.loadHosts()
+    }
+
+    private func navigateConnectionSelection(direction: Int) {
+        let ids = launchableConnectionIDs
+        guard !ids.isEmpty else { return }
+        if let current = selection, let idx = ids.firstIndex(of: current),
+           (0..<ids.count).contains(idx + direction) {
+            selection = ids[idx + direction]
+        } else {
+            selection = direction >= 0 ? ids.first : ids.last
+        }
+    }
+
+    private func launchSelectedConnection() {
+        guard let id = selection else { return }
+        let profile = allConnections.first { $0.id == id }
+            ?? filteredDiscoveredSSHHosts.first { $0.id == id }.map(transientProfile)
+        profile.map { TerminalTabManager.shared.openOrSelectTab(for: $0) }
     }
 
 }
