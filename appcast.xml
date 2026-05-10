@@ -8,6 +8,33 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.4.2</title>
+            <pubDate>Sun, 10 May 2026 09:18:22 +0000</pubDate>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>0.4.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<h2>Improvements</h2>
+<ul>
+  <li>Sidebar search and &quot;add&quot; controls now mirror the layout used in the Snippets sidebar</li>
+  <li>Sidebar focus, resize behavior, and toolbar layout are now smoother and more consistent</li>
+  <li>Keyboard navigation from search fields now launches connections directly</li>
+</ul>
+<h2>Fixes</h2>
+<ul>
+  <li>Fixed an infinite notification loop triggered by sidebar search focus</li>
+  <li>Untitled windows (menus, popovers) no longer incorrectly get centered on screen</li>
+  <li>Renamed &quot;New Group Folder&quot; to &quot;New Connection Group&quot; for clarity</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.4.1...v0.4.2</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.4.2/Quay-0.4.2.dmg"
+                       sparkle:edSignature="ayeUZTVZsAXNWgR+sevJQhoHDpwpCiG3fYcKVKrO6TrRva2pz1LYzUgHvRJiAcFh7sp7z56lU3TgRVVGTHvsDw=="
+                       length="10173018"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.4.1</title>
             <pubDate>Sat, 09 May 2026 01:30:25 +0000</pubDate>
             <sparkle:version>8</sparkle:version>
