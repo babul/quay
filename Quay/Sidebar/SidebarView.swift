@@ -18,6 +18,7 @@ struct SidebarView: View {
     @Query(sort: [SortDescriptor(\ConnectionProfile.sortIndex), SortDescriptor(\ConnectionProfile.name)])
     private var allConnections: [ConnectionProfile]
 
+    let isVisible: Bool
     @State private var searchQuery: String = UserDefaults.standard.string(forKey: SidebarLayoutState.searchQueryStorageKey) ?? ""
     @FocusState private var searchFocused: Bool
     @Binding var selection: UUID?
@@ -25,7 +26,6 @@ struct SidebarView: View {
     var onOpenSFTPConnection: (ConnectionProfile) -> Void = { _ in }
     var onCreateConnection: (Folder?) -> Void = { _ in }
     var onEditConnection: (ConnectionProfile) -> Void = { _ in }
-    var onSearchFocusChange: ((Bool) -> Void)? = nil
     @State private var groupEditTarget: Folder?
     @State private var collapsedFolderIDs = SidebarCollapseState.load()
     @State private var sshConfigExpanded = SidebarCollapseState.loadSSHConfigExpanded()
@@ -56,8 +56,10 @@ struct SidebarView: View {
             .onChange(of: searchQuery) { _, q in
                 UserDefaults.standard.set(q, forKey: SidebarLayoutState.searchQueryStorageKey)
             }
-            .onChange(of: searchFocused) { _, val in
-                onSearchFocusChange?(val)
+            .onChange(of: isVisible) { _, vis in
+                guard !vis else { return }
+                searchFocused = false
+                NSApp.keyWindow?.makeFirstResponder(nil)
             }
             .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { note in
                 guard (note.object as? String) == "focus" else { return }
@@ -126,6 +128,10 @@ struct SidebarView: View {
             TextField("Search connections", text: $searchQuery)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
+                .onExitCommand {
+                    searchFocused = false
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                }
             if !searchQuery.isEmpty {
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -708,6 +714,8 @@ extension Notification.Name {
     static let startImportSettings = Notification.Name("io.github.babul.quay.startImportSettings")
     /// Posted to create a new connection group folder.
     static let createFolder = Notification.Name("io.github.babul.quay.createFolder")
+    /// Posted by the Escape key monitor to ask ContentView to close the snippets sidebar.
+    static let closeRightSidebar = Notification.Name("io.github.babul.quay.closeRightSidebar")
 }
 
 @MainActor

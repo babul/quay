@@ -3,9 +3,9 @@ import SwiftUI
 /// Shared overlay sidebar container for both the left (hover-driven) and right (click-driven) sidebars.
 ///
 /// Animates visibility via `offset` (GPU-accelerated transform) rather than layout changes.
-/// The 1 px separator line is always rendered; the optional `edgeHandle` (9 px drag area)
-/// overlaps it to provide a resize affordance.
-struct OverlaySidebarContainer<Content: View, EdgeHandle: View>: View {
+/// Owns the resize drag state internally so that drag updates don't propagate to the parent view,
+/// preventing full-hierarchy re-renders on every cursor move during resize.
+struct OverlaySidebarContainer<Content: View>: View {
     /// Extra padding added beyond `width` when offsetting offscreen, to ensure the shadow
     /// doesn't peek through during the hide animation.
     private static var hiddenOffsetPadding: CGFloat { 32 }
@@ -13,31 +13,63 @@ struct OverlaySidebarContainer<Content: View, EdgeHandle: View>: View {
     private static var edgeHandleWidth: CGFloat { 9 }
 
     let isVisible: Bool
-    let width: CGFloat
+    @Binding var width: CGFloat
     let edge: HorizontalEdge
+    let range: ClosedRange<CGFloat>
+    let onCommit: (CGFloat) -> Void
     @ViewBuilder let content: () -> Content
-    @ViewBuilder let edgeHandle: () -> EdgeHandle
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Local drag-in-progress width. Initialized from `width`; written back to `width` only on
+    /// gesture end so the parent view doesn't re-render on every drag pixel.
+    @State private var localWidth: CGFloat
+
+    init(
+        isVisible: Bool,
+        width: Binding<CGFloat>,
+        edge: HorizontalEdge,
+        range: ClosedRange<CGFloat>,
+        onCommit: @escaping (CGFloat) -> Void,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.isVisible = isVisible
+        self._width = width
+        self.edge = edge
+        self.range = range
+        self.onCommit = onCommit
+        self.content = content
+        self._localWidth = State(initialValue: width.wrappedValue)
+    }
+
     private var isLeading: Bool { edge == .leading }
     private var hiddenOffset: CGFloat {
-        let magnitude = width + Self.hiddenOffsetPadding
+        let magnitude = localWidth + Self.hiddenOffsetPadding
         return isLeading ? -magnitude : magnitude
     }
     private var innerEdgeAlignment: Alignment { isLeading ? .trailing : .leading }
+    private var outerEdgeAlignment: Alignment { isLeading ? .leading : .trailing }
     private var containerAlignment: Alignment { isLeading ? .leading : .trailing }
     private var shadowOffsetX: CGFloat { isLeading ? 4 : -4 }
 
     var body: some View {
         content()
-            .frame(width: width)
+            .frame(width: localWidth)
             .background(.ultraThinMaterial)
+            .overlay(alignment: outerEdgeAlignment) {
+                Rectangle().fill(.separator).frame(width: 1)
+            }
             .overlay(alignment: innerEdgeAlignment) {
-                ZStack {
-                    Rectangle().fill(.separator).frame(width: 1)
-                    edgeHandle().frame(width: Self.edgeHandleWidth)
-                }
+                SidebarResizeHandle(
+                    edge: edge,
+                    width: $localWidth,
+                    range: range,
+                    onCommit: { committed in
+                        width = committed
+                        onCommit(committed)
+                    }
+                )
+                .frame(width: Self.edgeHandleWidth)
             }
             .compositingGroup()
             .shadow(color: .black.opacity(0.18), radius: 14, x: shadowOffsetX, y: 0)
@@ -49,16 +81,9 @@ struct OverlaySidebarContainer<Content: View, EdgeHandle: View>: View {
             )
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
-    }
-}
-
-extension OverlaySidebarContainer where EdgeHandle == EmptyView {
-    init(
-        isVisible: Bool,
-        width: CGFloat,
-        edge: HorizontalEdge,
-        @ViewBuilder content: @escaping () -> Content
-    ) {
-        self.init(isVisible: isVisible, width: width, edge: edge, content: content) { EmptyView() }
+            .onChange(of: width) { _, newWidth in
+                guard localWidth != newWidth else { return }
+                localWidth = newWidth
+            }
     }
 }

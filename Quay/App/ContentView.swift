@@ -43,7 +43,9 @@ struct ContentView: View {
         .onChange(of: tabManager.tabs.isEmpty) { _, isEmpty in onTabsEmptyChanged(isEmpty) }
         .onChange(of: autoHideSidebar) { _, enabled in onAutoHideChanged(enabled) }
         .onChange(of: mainWindow) { _, window in onMainWindowChanged(window) }
-        .onChange(of: rightSidebarOpen) { _, open in hoverController.rightSidebarOpen = open }
+        .onChange(of: rightSidebarOpen) { _, open in
+            hoverController.rightSidebarOpen = open
+        }
         .onChange(of: rightSidebarWidth) { _, w in hoverController.rightSidebarWidth = w }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
             guard (note.object as? NSWindow) === mainWindow else { return }
@@ -53,6 +55,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .startImportSettings)) { _ in importRequested = true }
         .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in onFocusSearch() }
         .onReceive(NotificationCenter.default.publisher(for: .focusSearchSnippets)) { _ in onFocusSearchSnippets() }
+        .onReceive(NotificationCenter.default.publisher(for: .closeRightSidebar)) { _ in rightSidebarOpen = false }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSnippetsSidebar)) { _ in
             mainWindow?.makeKeyAndOrderFront(nil)
             rightSidebarOpen.toggle()
@@ -146,17 +149,12 @@ struct ContentView: View {
     private var rightSidebarOverlay: some View {
         OverlaySidebarContainer(
             isVisible: rightSidebarOpen,
-            width: rightSidebarWidth,
-            edge: .trailing
+            width: $rightSidebarWidth,
+            edge: .trailing,
+            range: SidebarLayoutState.rightMinimumWidth...SidebarLayoutState.rightMaximumWidth,
+            onCommit: { SidebarLayoutState.saveRightWidth($0) }
         ) {
-            SnippetSidebarView()
-        } edgeHandle: {
-            SidebarResizeHandle(
-                edge: .trailing,
-                width: $rightSidebarWidth,
-                range: SidebarLayoutState.rightMinimumWidth...SidebarLayoutState.rightMaximumWidth,
-                onCommit: { SidebarLayoutState.saveRightWidth($0) }
-            )
+            SnippetSidebarView(isVisible: rightSidebarOpen)
         }
     }
 
@@ -165,19 +163,15 @@ struct ContentView: View {
             detail
             OverlaySidebarContainer(
                 isVisible: hoverController.isVisible,
-                width: hoverController.width,
-                edge: .leading
+                width: $hoverController.width,
+                edge: .leading,
+                range: SidebarLayoutState.minimumWidth...SidebarLayoutState.maximumWidth,
+                onCommit: { SidebarLayoutState.saveWidth($0) }
             ) {
-                sidebarView
-            } edgeHandle: {
-                SidebarResizeHandle(
-                    edge: .leading,
-                    width: $hoverController.width,
-                    range: SidebarLayoutState.minimumWidth...SidebarLayoutState.maximumWidth,
-                    onCommit: { SidebarLayoutState.saveWidth($0) }
-                )
+                sidebarView(isVisible: hoverController.isVisible)
             }
         }
+        .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
         .onContinuousHover(coordinateSpace: .local) { phase in
             switch phase {
             case .active(let location): hoverController.cursorMoved(localX: location.x)
@@ -188,21 +182,21 @@ struct ContentView: View {
 
     private var navigationSplitLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebarView
+            sidebarView(isVisible: columnVisibility != .detailOnly)
         } detail: {
             detail
         }
         .navigationTitle(tabManager.selectedTab?.displayTitle ?? "Quay")
     }
 
-    private var sidebarView: some View {
+    private func sidebarView(isVisible: Bool) -> some View {
         SidebarView(
+            isVisible: isVisible,
             selection: $selectedConnectionID,
             onOpenConnectionInNewTab: { tabManager.openNewTab(for: $0) },
             onOpenSFTPConnection: { tabManager.openSFTPTab(for: $0) },
             onCreateConnection: { openConnectionEditor(.create(folderID: $0?.id)) },
-            onEditConnection: { openConnectionEditor(.edit($0)) },
-            onSearchFocusChange: { hoverController.setSearchFocused($0) }
+            onEditConnection: { openConnectionEditor(.edit($0)) }
         )
     }
 
@@ -240,6 +234,12 @@ struct ContentView: View {
             }
             .labelStyle(.iconOnly)
             .help("Toggle Hosts Sidebar")
+        }
+        ToolbarItem(placement: .principal) {
+            // Invisible anchor: forces SwiftUI to split the toolbar into
+            // leading (.navigation) and trailing (.primaryAction) halves,
+            // even though the window uses .hiddenTitleBar with no visible title.
+            Color.clear.frame(width: 1, height: 1)
         }
         ToolbarItem(placement: .primaryAction) {
             Button { rightSidebarOpen.toggle() } label: {

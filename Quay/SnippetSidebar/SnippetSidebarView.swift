@@ -12,6 +12,7 @@ struct SnippetSidebarView: View {
     @Query(sort: [SortDescriptor(\Snippet.sortIndex), SortDescriptor(\Snippet.name)])
     private var allSnippets: [Snippet]
 
+    let isVisible: Bool
     @State private var searchQuery = ""
     @State private var selectedID: UUID?
     @State private var collapsedGroupIDs = SnippetGroupCollapseState.load()
@@ -40,6 +41,11 @@ struct SnippetSidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusSearchSnippets)) { notification in
             guard (notification.object as? String) == "focus" else { return }
             searchFocused = true
+        }
+        .onChange(of: isVisible) { _, vis in
+            guard !vis else { return }
+            searchFocused = false
+            NSApp.keyWindow?.makeFirstResponder(nil)
         }
         .onChange(of: snippetGroups.map(\.id)) { _, ids in
             SnippetGroupCollapseState.prune(&collapsedGroupIDs, keeping: Set(ids))
@@ -77,6 +83,10 @@ struct SnippetSidebarView: View {
             TextField("Search snippets", text: $searchQuery)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
+                .onExitCommand {
+                    searchFocused = false
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                }
             if !searchQuery.isEmpty {
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")

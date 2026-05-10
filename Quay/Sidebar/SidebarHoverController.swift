@@ -30,8 +30,8 @@ final class SidebarHoverController {
     private(set) var isVisible = false
     var width: CGFloat
     private(set) var pinned = false
+    private(set) var autoHideEnabled = true
 
-    var isFocusedInside = false
     var tabsEmpty = false
 
     // Right sidebar state: set by ContentView so the click monitor can correctly
@@ -46,6 +46,7 @@ final class SidebarHoverController {
     private let clock: any Clock<Duration>
     private var lastLocalX: CGFloat?
     private var clickMonitor: Any?
+    private var keyDownMonitor: Any?
     private weak var mainWindow: NSWindow?
 
     init(clock: any Clock<Duration> = ContinuousClock()) {
@@ -58,10 +59,12 @@ final class SidebarHoverController {
     func start(mainWindow: NSWindow) {
         self.mainWindow = mainWindow
         installClickMonitor()
+        installKeyDownMonitor()
     }
 
     func stop() {
         removeClickMonitor()
+        removeKeyDownMonitor()
         mainWindow = nil
     }
 
@@ -70,12 +73,6 @@ final class SidebarHoverController {
     func cursorMoved(localX: CGFloat?) {
         lastLocalX = localX
         reEvaluate()
-    }
-
-    func setSearchFocused(_ focused: Bool) {
-        guard isFocusedInside != focused else { return }
-        isFocusedInside = focused
-        if !focused { reEvaluate() }
     }
 
     /// Called when `tabManager.tabs.isEmpty` changes.
@@ -104,11 +101,10 @@ final class SidebarHoverController {
         }
     }
 
-    /// Ensures the sidebar is visible and pinned without toggling.
+    /// Shows the sidebar without pinning — used by ⌘L so cursor-leave still auto-hides.
     func ensureVisible() {
         guard !tabsEmpty else { return }
         cancelTasks()
-        pinned = true
         isVisible = true
     }
 
@@ -120,16 +116,13 @@ final class SidebarHoverController {
         scheduleHide()
     }
 
-    /// Called when `autoHideSidebar` changes. Tears down or installs the click monitor
-    /// and resets suppression state.
+    /// Called when `autoHideSidebar` changes. Resets suppression state; monitors stay
+    /// installed throughout the window's lifetime so Escape handling works in both modes.
     func setAutoHide(_ enabled: Bool) {
+        autoHideEnabled = enabled
         cancelTasks()
         pinned = false
-        isFocusedInside = false
-        if enabled {
-            installClickMonitor()
-        } else {
-            removeClickMonitor()
+        if !enabled {
             isVisible = false
         }
     }
@@ -179,7 +172,7 @@ final class SidebarHoverController {
 
     /// Common guard for any auto-hide. False when something should keep the sidebar open.
     private var canAutoHide: Bool {
-        !pinned && !isFocusedInside && !tabsEmpty && !inInteractionWindow
+        !pinned && !tabsEmpty && !inInteractionWindow
     }
 
     private var inInteractionWindow: Bool {
@@ -246,6 +239,41 @@ final class SidebarHoverController {
         }
     }
 
+    private func installKeyDownMonitor() {
+        guard keyDownMonitor == nil else { return }
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event } // 53 = Escape
+            let consumed = self?.handleEscapeKey() == true
+            return consumed ? nil : event // nil = consumed, suppresses beep
+        }
+    }
+
+    private func removeKeyDownMonitor() {
+        if let monitor = keyDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyDownMonitor = nil
+        }
+    }
+
+    /// Handles Escape key. Returns true if the event was consumed (a sidebar was dismissed).
+    @discardableResult
+    private func handleEscapeKey() -> Bool {
+        if autoHideEnabled, isVisible, !tabsEmpty {
+            cancelTasks()
+            pinned = false
+            isVisible = false   // SidebarView.onChange(isVisible) releases focus
+            return true
+        }
+        if rightSidebarOpen {
+            // Right sidebar visibility is owned by ContentView; post a notification to close it.
+            // SnippetSidebarView.onChange(isVisible) will release focus when ContentView responds.
+            mainWindow?.makeFirstResponder(nil)
+            NotificationCenter.default.post(name: .closeRightSidebar, object: nil)
+            return true
+        }
+        return false
+    }
+
     private func handleLocalMouseDown(_ event: NSEvent) {
         guard let mainWindow, event.window === mainWindow else { return }
         guard let contentView = mainWindow.contentView else { return }
@@ -257,8 +285,10 @@ final class SidebarHoverController {
 
         if inLeftSidebar {
             userDidInteract()
-        } else if !inRightSidebar, pinned {
-            manualToggle()
+        } else if !inRightSidebar, isVisible, !tabsEmpty, autoHideEnabled {
+            cancelTasks()
+            pinned = false
+            isVisible = false   // SidebarView.onChange(isVisible) releases focus
         }
     }
 }
