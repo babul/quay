@@ -53,8 +53,14 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .startExportSettings)) { _ in exportRequested = true }
         .onReceive(NotificationCenter.default.publisher(for: .startImportSettings)) { _ in importRequested = true }
-        .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in onFocusSearch() }
-        .onReceive(NotificationCenter.default.publisher(for: .focusSearchSnippets)) { _ in onFocusSearchSnippets() }
+        .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { note in
+            guard !isFocusFollowUp(note) else { return }
+            onFocusSearch()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusSearchSnippets)) { note in
+            guard !isFocusFollowUp(note) else { return }
+            onFocusSearchSnippets()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .closeRightSidebar)) { _ in rightSidebarOpen = false }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSnippetsSidebar)) { _ in
             mainWindow?.makeKeyAndOrderFront(nil)
@@ -64,6 +70,12 @@ struct ContentView: View {
     }
 
     // MARK: - Event handlers
+
+    /// Checks if a notification is a "focus" follow-up (re-posted by handlers)
+    /// to prevent infinite loops in focusSearch/focusSearchSnippets handlers.
+    private func isFocusFollowUp(_ notification: Notification) -> Bool {
+        (notification.object as? String) == "focus"
+    }
 
     private func onAppear() {
         store.send(.onAppear)
