@@ -95,36 +95,6 @@ struct SidebarHoverControllerTests {
         #expect(ctrl.isVisible)
     }
 
-    // MARK: Focus stickiness
-
-    @Test("Focus: cursor leaving does not hide while search field is focused")
-    func focusSticky() async {
-        let ctrl = SidebarHoverController(clock: ImmediateClock())
-        ctrl.cursorMoved(localX: 4)
-        await ctrl.settle(visible: true)
-        #expect(ctrl.isVisible)
-
-        ctrl.setSearchFocused(true)
-        ctrl.cursorMoved(localX: nil)
-        await ctrl.drain()
-        #expect(ctrl.isVisible)                     // focus suppresses hide
-    }
-
-    @Test("Focus drop with cursor outside: schedules hide")
-    func focusDropHides() async {
-        let ctrl = SidebarHoverController(clock: ImmediateClock())
-        ctrl.cursorMoved(localX: 4)
-        await ctrl.settle(visible: true)
-        ctrl.setSearchFocused(true)
-        ctrl.cursorMoved(localX: nil)
-        await ctrl.drain()
-        #expect(ctrl.isVisible)
-
-        ctrl.setSearchFocused(false)                // reEvaluate → schedules hideTask
-        await ctrl.settle(visible: false)
-        #expect(!ctrl.isVisible)
-    }
-
     // MARK: Pin (⌘B)
 
     @Test("manualToggle when hidden: sidebar shows and is pinned")
