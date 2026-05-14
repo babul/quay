@@ -45,6 +45,11 @@ struct ContentView: View {
         .onChange(of: mainWindow) { _, window in onMainWindowChanged(window) }
         .onChange(of: rightSidebarOpen) { _, open in
             hoverController.rightSidebarOpen = open
+            if !open, !hoverController.isVisible { focusSelectedTerminal() }
+        }
+        .onChange(of: hoverController.isVisible) { _, visible in
+            guard !visible, !rightSidebarOpen else { return }
+            focusSelectedTerminal()
         }
         .onChange(of: rightSidebarWidth) { _, w in hoverController.rightSidebarWidth = w }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
@@ -141,6 +146,16 @@ struct ContentView: View {
         rightSidebarOpen = true
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .focusSearchSnippets, object: "focus")
+        }
+    }
+
+    private func focusSelectedTerminal() {
+        guard let surface = tabManager.selectedTab?.surfaceView else { return }
+        DispatchQueue.main.async { [weak surface] in
+            guard let surface,
+                  let window = surface.window,
+                  window.firstResponder !== surface else { return }
+            window.makeFirstResponder(surface)
         }
     }
 
