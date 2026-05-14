@@ -107,8 +107,9 @@ private struct TabButton: View {
         .background(tabBackground)
         .contextMenu {
             Button(action: onReconnect) {
-                Label("Reconnect", systemImage: "arrow.clockwise.circle")
+                Label("Reconnect Tab", systemImage: "arrow.clockwise.circle")
             }
+            .disabled(!phase.isReconnectable)
 
             Button(action: onDisconnect) {
                 Label("Disconnect", systemImage: "bolt.horizontal.circle")

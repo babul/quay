@@ -262,3 +262,12 @@ final class TerminalTabItem: Identifiable {
         }
     }
 }
+
+extension TerminalTabItem.Phase {
+    var isReconnectable: Bool {
+        switch self {
+        case .disconnected, .failed: return true
+        case .idle, .starting, .running: return false
+        }
+    }
+}

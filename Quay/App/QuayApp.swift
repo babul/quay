@@ -126,6 +126,23 @@ private struct TabFileCommands: View {
         .keyboardShortcut("t", modifiers: .command)
         .disabled(tabManager.selectedTab == nil)
 
+        Button("Open SFTP") {
+            guard let tab = tabManager.selectedTab else { return }
+            TerminalTabManager.shared.openSFTPTab(
+                for: tab.profile,
+                localDirectoryOverride: tab.currentWorkingDirectory
+            )
+        }
+        .keyboardShortcut("p", modifiers: .command)
+        .disabled(tabManager.selectedTab == nil || tabManager.selectedTab?.kind == .sftp)
+
+        Button("Reconnect Tab") {
+            guard let tab = tabManager.selectedTab else { return }
+            TerminalTabManager.shared.reconnectTab(tab)
+        }
+        .keyboardShortcut("r", modifiers: .command)
+        .disabled(!(tabManager.selectedTab?.phase.isReconnectable ?? false))
+
         Button("Close Tab") {
             tabManager.requestCloseSelectedTab()
         }

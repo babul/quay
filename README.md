@@ -80,11 +80,16 @@ Press **⌘L** to focus the search field and filter connections by name — resu
 
 | Shortcut | Action |
 |---|---|
+| **⌘T** | New tab (duplicates the selected tab) |
+| **⌘P** | Open SFTP for the selected tab's profile |
+| **⌘R** | Reconnect the selected tab (when disconnected or failed) |
+| **⌘W** | Close the selected tab |
 | **⌃Tab** | Switch to next tab (wraps) |
 | **⌃⇧Tab** | Switch to previous tab (wraps) |
 | **⌘1**…**⌘9** | Switch to tab 1–9 |
 | **⌘L** | Focus sidebar search |
-| **⌘B** | Toggle sidebar |
+| **⌘⇧L** | Focus snippets search |
+| **⌘B** | Toggle hosts sidebar |
 | **⌘⇧R** | Reload Ghostty config |
 
 ## Terminal configuration
