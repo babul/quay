@@ -8,6 +8,25 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.4.3</title>
+            <pubDate>Thu, 14 May 2026 02:53:20 +0000</pubDate>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>0.4.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>⌘P opens SFTP for the active connection; ⌘R reconnects the current tab</li>
+  <li>Terminal focus is correctly restored when the sidebar auto-hides</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.4.2...v0.4.3</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.4.3/Quay-0.4.3.dmg"
+                       sparkle:edSignature="SW3uuLIbCoUIiC7iu0Z8c5fv+VMpzWri/jYojpjF/roBVWsEnbLH+rWb2oSjUr61HpEmJPc1Xe0uNypKu2VmAQ=="
+                       length="10176691"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.4.2</title>
             <pubDate>Sun, 10 May 2026 09:18:22 +0000</pubDate>
             <sparkle:version>9</sparkle:version>
