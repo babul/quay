@@ -49,6 +49,7 @@ final class GhosttySurfaceView: NSView {
 
     isolated deinit {
         for obs in windowObservers { NotificationCenter.default.removeObserver(obs) }
+        NSCursor.setHiddenUntilMouseMoves(false)
         if let bridge { runtime.unregisterSurface(bridge) }
         if let surface { ghostty_surface_free(surface) }
     }
@@ -153,6 +154,7 @@ final class GhosttySurfaceView: NSView {
     override func resignFirstResponder() -> Bool {
         let ok = super.resignFirstResponder()
         if let surface { ghostty_surface_set_focus(surface, false) }
+        NSCursor.setHiddenUntilMouseMoves(false)
         return ok
     }
 
@@ -179,6 +181,11 @@ final class GhosttySurfaceView: NSView {
         guard let surface, let scale = window?.backingScaleFactor else { return }
         ghostty_surface_set_content_scale(surface, scale, scale)
         pushDisplayID()
+    }
+
+    override func resetCursorRects() {
+        guard let state = bridge?.state, state.mouseVisible else { return }
+        addCursorRect(bounds, cursor: state.mouseCursor)
     }
 
     private func pushSize() {

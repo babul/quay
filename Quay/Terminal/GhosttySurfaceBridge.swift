@@ -91,7 +91,8 @@ final class GhosttySurfaceBridge {
         case GHOSTTY_ACTION_MOUSE_VISIBILITY:
             let visible = action.action.mouse_visibility == GHOSTTY_MOUSE_VISIBLE
             state.mouseVisible = visible
-            if visible { NSCursor.unhide() } else { NSCursor.hide() }
+            NSCursor.setHiddenUntilMouseMoves(!visible)
+            view?.resetCursorRects()
             return true
 
         default:
