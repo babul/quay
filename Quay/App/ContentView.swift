@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var mainWindow: NSWindow?
     @State private var hoverController = SidebarHoverController()
     @State private var rightSidebarWidth = SidebarLayoutState.loadRightWidth()
+    @State private var sidebarLaunchedConnectionIDs: Set<UUID> = []
     private let tabManager = TerminalTabManager.shared
 
     init(store: StoreOf<AppFeature>) {
@@ -33,7 +34,7 @@ struct ContentView: View {
                 .toolbar { toolbarContent }
                 .onAppear { onAppear() }
                 .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in onToggleSidebar() }
-                .onReceive(NotificationCenter.default.publisher(for: .connectionConnected)) { _ in onConnectionConnected() }
+                .onReceive(NotificationCenter.default.publisher(for: .connectionConnected)) { onConnectionConnected($0) }
                 .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in ghosttyConfigChangeToken &+= 1 }
         }
         .onChange(of: columnVisibility) { _, visibility in
@@ -101,9 +102,12 @@ struct ContentView: View {
         }
     }
 
-    private func onConnectionConnected() {
+    private func onConnectionConnected(_ notification: Notification) {
+        let connectedID = notification.object as? UUID
+        let forceHide = connectedID.map { sidebarLaunchedConnectionIDs.remove($0) != nil } ?? false
+
         if autoHideSidebar {
-            hoverController.connectionDidConnect()
+            hoverController.connectionDidConnect(forceHide: forceHide)
         } else {
             withAnimation(Self.splitViewAnimation) { columnVisibility = .detailOnly }
         }
@@ -220,11 +224,21 @@ struct ContentView: View {
         SidebarView(
             isVisible: isVisible,
             selection: $selectedConnectionID,
-            onOpenConnectionInNewTab: { tabManager.openNewTab(for: $0) },
-            onOpenSFTPConnection: { tabManager.openSFTPTab(for: $0) },
+            onOpenConnectionInNewTab: { openSidebarLaunchedTab(for: $0) },
+            onOpenSFTPConnection: { openSidebarLaunchedSFTPTab(for: $0) },
             onCreateConnection: { openConnectionEditor(.create(folderID: $0?.id)) },
             onEditConnection: { openConnectionEditor(.edit($0)) }
         )
+    }
+
+    private func openSidebarLaunchedTab(for profile: ConnectionProfile) {
+        let tab = tabManager.openNewTab(for: profile)
+        sidebarLaunchedConnectionIDs.insert(tab.id)
+    }
+
+    private func openSidebarLaunchedSFTPTab(for profile: ConnectionProfile) {
+        let tab = tabManager.openSFTPTab(for: profile)
+        sidebarLaunchedConnectionIDs.insert(tab.id)
     }
 
     // MARK: - Helpers

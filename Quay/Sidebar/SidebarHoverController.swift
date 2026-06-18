@@ -45,6 +45,7 @@ final class SidebarHoverController {
     private var hideTask: Task<Void, Never>?
     private let clock: any Clock<Duration>
     private var lastLocalX: CGFloat?
+    private var suppressShowUntilCursorExitsHotZone = false
     private var clickMonitor: Any?
     private var keyDownMonitor: Any?
     private weak var mainWindow: NSWindow?
@@ -72,6 +73,9 @@ final class SidebarHoverController {
 
     func cursorMoved(localX: CGFloat?) {
         lastLocalX = localX
+        if suppressShowUntilCursorExitsHotZone, !cursorInHotZone {
+            suppressShowUntilCursorExitsHotZone = false
+        }
         reEvaluate()
     }
 
@@ -110,7 +114,18 @@ final class SidebarHoverController {
 
     /// Called when a connection succeeds. Soft-hide: cancels any pending show, then
     /// hides on the standard delay only if the cursor is not currently over the sidebar.
-    func connectionDidConnect() {
+    /// Forced hide is used for sidebar-launched connections so the initiating click does
+    /// not keep the sidebar open or immediately wake it again.
+    func connectionDidConnect(forceHide: Bool = false) {
+        if forceHide {
+            cancelTasks()
+            pinned = false
+            guard isVisible, autoHideEnabled, !tabsEmpty else { return }
+            isVisible = false
+            suppressShowUntilCursorExitsHotZone = cursorInHotZone
+            return
+        }
+
         cancelShow()
         guard isVisible, !cursorWithinExitZone, canAutoHide else { return }
         scheduleHide()
@@ -125,6 +140,7 @@ final class SidebarHoverController {
         if !enabled {
             isVisible = false
         }
+        suppressShowUntilCursorExitsHotZone = false
     }
 
     /// Called when the main window resigns key status.
@@ -148,6 +164,7 @@ final class SidebarHoverController {
     private func reEvaluate() {
         if cursorInActiveZone {
             cancelHide()
+            guard !suppressShowUntilCursorExitsHotZone else { return }
             guard !isVisible, !pinned, !tabsEmpty else { return }
             scheduleShow()
         } else {
@@ -162,6 +179,12 @@ final class SidebarHoverController {
     private var cursorInActiveZone: Bool {
         guard let x = lastLocalX else { return false }
         return isVisible ? x <= width + Self.exitPad : x <= Self.enterPad
+    }
+
+    /// True if the cursor is inside the narrow edge zone that reveals a hidden sidebar.
+    private var cursorInHotZone: Bool {
+        guard let x = lastLocalX else { return false }
+        return x <= Self.enterPad
     }
 
     /// True if the cursor is within the wider hysteresis zone over the visible sidebar.

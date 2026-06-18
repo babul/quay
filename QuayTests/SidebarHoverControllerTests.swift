@@ -216,6 +216,42 @@ struct SidebarHoverControllerTests {
         #expect(ctrl.isVisible)
     }
 
+    @Test("connectionDidConnect forced: hides when cursor is still in hot zone")
+    func forcedHideOnConnectWhenCursorOverSidebar() async {
+        let ctrl = SidebarHoverController(clock: ImmediateClock())
+        ctrl.cursorMoved(localX: 4)
+        await ctrl.settle(visible: true)
+        #expect(ctrl.isVisible)
+
+        ctrl.connectionDidConnect(forceHide: true)
+        #expect(!ctrl.isVisible)
+
+        ctrl.cursorMoved(localX: 4)                 // still in wake zone, but forced hide suppresses re-open
+        await ctrl.drain()
+        #expect(!ctrl.isVisible)
+
+        ctrl.cursorMoved(localX: ctrl.width + 50)   // leaving the hot zone re-arms normal hover reveal
+        ctrl.cursorMoved(localX: 4)
+        await ctrl.settle(visible: true)
+        #expect(ctrl.isVisible)
+    }
+
+    @Test("connectionDidConnect forced: clears pinned state")
+    func forcedHideOnConnectClearsPinnedState() async {
+        let ctrl = SidebarHoverController(clock: ImmediateClock())
+        ctrl.manualToggle()
+        #expect(ctrl.isVisible)
+        #expect(ctrl.pinned)
+
+        ctrl.connectionDidConnect(forceHide: true)
+        #expect(!ctrl.isVisible)
+        #expect(!ctrl.pinned)
+
+        ctrl.cursorMoved(localX: nil)
+        await ctrl.drain()
+        #expect(!ctrl.isVisible)
+    }
+
     @Test("connectionDidConnect cancels a pending show task")
     func connectCancelsPendingShow() async {
         let ctrl = SidebarHoverController(clock: ImmediateClock())
