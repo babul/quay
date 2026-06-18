@@ -8,6 +8,25 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.4.4</title>
+            <pubDate>Thu, 18 Jun 2026 13:28:32 +0000</pubDate>
+            <sparkle:version>11</sparkle:version>
+            <sparkle:shortVersionString>0.4.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>Sidebar now hides automatically after you launch a connection from it</li>
+  <li>Fixed terminal cursor visibility in some states</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.4.3...v0.4.4</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.4.4/Quay-0.4.4.dmg"
+                       sparkle:edSignature="5wThMQe9oLNh0C3MdIlo0Q3U8u7AZNPcxxdn6VHUSiXaj2/2PqgrLObnabKYEkxgRCQEKpYwAsELFYWU17AfCg=="
+                       length="10177653"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.4.3</title>
             <pubDate>Thu, 14 May 2026 02:53:20 +0000</pubDate>
             <sparkle:version>10</sparkle:version>
