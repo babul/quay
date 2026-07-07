@@ -156,6 +156,18 @@ final class GhosttyRuntime {
         return xdg
     }
 
+    /// The version string of the linked libghostty, e.g. `"1.3.2-dev"`.
+    /// Reported by `ghostty_info()`; falls back to `"unknown"` if unavailable.
+    static var libghosttyVersion: String {
+        let info = ghostty_info()
+        guard let version = info.version, info.version_len > 0 else { return "unknown" }
+        let buffer = UnsafeBufferPointer(
+            start: UnsafeRawPointer(version).assumingMemoryBound(to: UInt8.self),
+            count: Int(info.version_len)
+        )
+        return String(decoding: buffer, as: UTF8.self)
+    }
+
     private static func loadUserConfig(into config: ghostty_config_t) {
         if let bundledDefaults = Bundle.main.url(forResource: "default-ghostty", withExtension: "conf") {
             ghostty_config_load_file(config, bundledDefaults.path)

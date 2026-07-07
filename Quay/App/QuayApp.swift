@@ -23,6 +23,19 @@ struct QuayApp: App {
         .windowStyle(.hiddenTitleBar)
         .modelContainer(PersistenceContainer.shared)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Quay") {
+                    NSApplication.shared.orderFrontStandardAboutPanel(options: [
+                        .credits: NSAttributedString(
+                            string: "libghostty \(GhosttyRuntime.libghosttyVersion)",
+                            attributes: [
+                                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                                .foregroundColor: NSColor.secondaryLabelColor
+                            ]
+                        )
+                    ])
+                }
+            }
             CommandGroup(replacing: .newItem) {
                 TabFileCommands()
             }
