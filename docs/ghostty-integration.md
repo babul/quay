@@ -19,7 +19,7 @@ We do the same: `vendor/ghostty` is a git submodule pinned to a known-good SHA, 
 
 ## Current pin
 
-`vendor/ghostty` → `1547dd667ab6d1f4ebcdc7282adc54c95752ee67` (Ghostty `1.3.2-dev`, May 2026)
+`vendor/ghostty` → `160c3c69ea9a47961dfd973a8190b774048c20a1` (Ghostty `1.3.2-dev`, Jul 2026)
 
 ## Build invocation
 
