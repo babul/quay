@@ -59,3 +59,4 @@ Icon
 .env
 .env.*
 *.profraw
+solo.yml
