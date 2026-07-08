@@ -8,6 +8,25 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.4.5</title>
+            <pubDate>Wed, 08 Jul 2026 18:18:32 +0000</pubDate>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>0.4.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>Show the libghostty version in the About panel</li>
+  <li>Update the terminal engine (libghostty) to 160c3c6</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.4.4...v0.4.5</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.4.5/Quay-0.4.5.dmg"
+                       sparkle:edSignature="CQlbIv9nihzxuIw7B06t4pJpB3rGRx9kkUf3efCrQlqzPVmwzppR5adn/iAdGlXh3UrSmc6w0D5xrZGP74iACQ=="
+                       length="10145979"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.4.4</title>
             <pubDate>Thu, 18 Jun 2026 13:28:32 +0000</pubDate>
             <sparkle:version>11</sparkle:version>
