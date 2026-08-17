@@ -207,10 +207,23 @@ final class GhosttyRuntime {
         return String(decoding: buffer, as: UTF8.self)
     }
 
+    /// Quay's bundled base config, shipped in the app bundle.
+    static var bundledDefaultsURL: URL? {
+        Bundle.main.url(forResource: "default-ghostty", withExtension: "conf")
+    }
+
+    /// Loads only Quay's bundled defaults — no user config, no CLI args.
+    ///
+    /// Split out from `loadUserConfig` so the bundled layer can be resolved on
+    /// its own. Tests need that: anything that also reads the developer's
+    /// `~/.config/ghostty/config` resolves differently on every machine.
+    static func loadBundledDefaults(into config: ghostty_config_t) {
+        guard let bundledDefaults = bundledDefaultsURL else { return }
+        ghostty_config_load_file(config, bundledDefaults.path)
+    }
+
     private static func loadUserConfig(into config: ghostty_config_t) {
-        if let bundledDefaults = Bundle.main.url(forResource: "default-ghostty", withExtension: "conf") {
-            ghostty_config_load_file(config, bundledDefaults.path)
-        }
+        loadBundledDefaults(into: config)
         ghostty_config_load_default_files(config)
         ghostty_config_load_cli_args(config)
         ghostty_config_load_recursive_files(config)
