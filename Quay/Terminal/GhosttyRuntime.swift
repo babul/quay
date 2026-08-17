@@ -16,6 +16,7 @@ final class GhosttyRuntime {
     private(set) var config: ghostty_config_t
 
     private var colorSchemeOverride: ghostty_color_scheme_e?
+    private var configInFlight: ghostty_config_t?
     private var liveSurfaces = NSHashTable<GhosttySurfaceBridge>.weakObjects()
 
     private init() {
@@ -57,10 +58,29 @@ final class GhosttyRuntime {
         liveSurfaces.remove(bridge)
     }
 
-    func reloadConfig() {
-        Self.loadUserConfig(into: config)
-        ghostty_config_finalize(config)
-        ghostty_app_update_config(app, config)
+    /// Rebuilds the config and pushes it into libghostty.
+    ///
+    /// A soft reload reuses the config already in memory. libghostty asks for
+    /// one when only its conditional state changed — an appearance switch is
+    /// the common case — and re-reading the files there would be actively
+    /// wrong. `ghostty_config_finalize` resolves `theme = light:…,dark:…` by
+    /// splicing the chosen half's settings into the config's replay history,
+    /// guarded on the scheme that was current at the time. Loading the files
+    /// again on top of that finalized config appends a second, later copy of
+    /// those settings, so the first-resolved half wins every subsequent replay
+    /// and the pair can never flip. A hard reload therefore starts from a fresh
+    /// config rather than layering onto the existing one.
+    func reloadConfig(soft: Bool = false) {
+        if !soft {
+            guard let fresh = ghostty_config_new() else {
+                Self.logger.error("ghostty_config_new returned nil; keeping current config")
+                return
+            }
+            Self.loadUserConfig(into: fresh)
+            ghostty_config_finalize(fresh)
+            replaceConfig(with: fresh)
+        }
+        updateAppConfig()
         refreshRegisteredSurfaces()
         reapplyColorSchemeOverride()
         postConfigDidChange()
@@ -94,9 +114,28 @@ final class GhosttyRuntime {
         }
     }
 
-    private func installConfigClone(_ newConfig: ghostty_config_t) {
-        ghostty_config_free(config)
+    /// Hands the current config to libghostty, which resolves it against the
+    /// app's conditional state and hands the result straight back through a
+    /// `config_change` action — re-entrantly, before this call returns. That
+    /// handler swaps `config` out, so the pointer passed here is kept alive
+    /// until libghostty is finished with it.
+    private func updateAppConfig() {
+        let inFlight = config
+        configInFlight = inFlight
+        defer {
+            configInFlight = nil
+            if config != inFlight { ghostty_config_free(inFlight) }
+        }
+        ghostty_app_update_config(app, inFlight)
+    }
+
+    private func replaceConfig(with newConfig: ghostty_config_t) {
+        if config != configInFlight { ghostty_config_free(config) }
         config = newConfig
+    }
+
+    private func installConfigClone(_ newConfig: ghostty_config_t) {
+        replaceConfig(with: newConfig)
         forEachSurface { _, bridge in
             bridge.state.updateBackground(from: newConfig)
             bridge.view?.applyResolvedBackground()
@@ -217,7 +256,7 @@ private extension GhosttyRuntime {
             else { return false }
 
             if action.tag == GHOSTTY_ACTION_RELOAD_CONFIG {
-                GhosttyRuntime.shared.reloadConfig()
+                GhosttyRuntime.shared.reloadConfig(soft: action.action.reload_config.soft)
                 return true
             }
             return bridge.handleAction(action)
@@ -285,7 +324,7 @@ private extension GhosttyRuntime {
             postConfigDidChange()
             return false
         case GHOSTTY_ACTION_RELOAD_CONFIG:
-            reloadConfig()
+            reloadConfig(soft: action.action.reload_config.soft)
             return true
         default:
             return false

@@ -71,6 +71,19 @@ The practical consequence, which is easy to misread as a Quay bug: a setting in 
 
 The one case worth calling out is `theme`. Quay pushes the macOS appearance into libghostty via `ghostty_app_set_color_scheme` (see `GhosttyRuntime.setColorScheme`), which is what selects between the halves of a `theme = light:A,dark:B` pair. A user config that sets a *single* theme pins the terminal to that palette in both appearances — working as designed, not a light/dark bug.
 
+## Config reloads — never load files into a finalized config
+
+`ghostty_config_load_*` is additive, and `ghostty_config_finalize` is not idempotent for `theme`. Finalize resolves a `theme = light:A,dark:B` pair by loading the chosen half's settings and splicing them into the config's replay history as steps guarded on the scheme that was current at the time. Loading the config files *again* into that same already-finalized `ghostty_config_t` appends a second, unguarded-then-reguarded copy of those settings after the conditional ones, so replaying the history under a new scheme still ends on the first-resolved palette. The pair silently stops flipping.
+
+The rules that follow, both implemented in `GhosttyRuntime.reloadConfig(soft:)`:
+
+- **Honor the `soft` flag on `GHOSTTY_ACTION_RELOAD_CONFIG`.** libghostty sends `soft = true` when only its conditional state changed — an appearance switch is the usual trigger. It is asking for the *existing* config to be re-resolved, not re-read. Just call `ghostty_app_update_config`; it applies the app's conditional state and hands the resolved config back through a `config_change` action.
+- **A hard reload builds a fresh `ghostty_config_t`.** Load and finalize into a new object, then swap it in — never layer onto the live one.
+
+`ghostty_app_update_config` delivers that `config_change` action re-entrantly, before it returns. Since Quay's handler swaps `GhosttyRuntime.config` out from under the call, `updateAppConfig()` keeps the pointer it passed alive until libghostty is done with it.
+
+To verify appearance behavior without launching the app, link `libghostty-internal.a` into a small C harness, replay the same call sequence, and read `background` back with `ghostty_config_get` after each step. That is how this was diagnosed; reasoning about the replay semantics from the outside is unreliable.
+
 ## Swift import path
 
 The xcframework ships `module.modulemap` declaring `module GhosttyKit { umbrella header "ghostty.h" }`. Swift code imports it directly:
