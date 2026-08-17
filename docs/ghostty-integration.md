@@ -54,6 +54,23 @@ The script caches on `(submodule SHA, script SHA)` so subsequent `bootstrap.sh` 
 
 Ghostty has two runtimes: `none` (embedder provides the windowing layer) and `gtk` (Linux GTK app). On macOS, the official Ghostty app uses the `none` runtime and provides its own SwiftUI/AppKit shell. Quay does the same.
 
+## Config inheritance — Quay adopts the user's Ghostty settings
+
+This is deliberate. If you already run Ghostty, Quay's terminal should look and behave like your Ghostty, without configuring anything twice.
+
+`GhosttyRuntime.loadUserConfig()` layers four sources, last-write-wins:
+
+1. `Quay/Resources/default-ghostty.conf` — bundled base, shipped in the app bundle
+2. `ghostty_config_load_default_files()` — **the user's own Ghostty config**, i.e. `~/.config/ghostty/config` and `~/Library/Application Support/com.mitchellh.ghostty/config`
+3. `ghostty_config_load_cli_args()`
+4. `ghostty_config_load_recursive_files()` — any `config-file` includes
+
+So the bundled file sets defaults for someone with no Ghostty install, and **a user's Ghostty config overrides every one of them**. This is not limited to `theme` — font, padding, cursor, scrollback and anything else in that file all win.
+
+The practical consequence, which is easy to misread as a Quay bug: a setting in `default-ghostty.conf` can appear to have no effect on a machine whose Ghostty config sets the same key. Before treating that as a defect, check the user's config. Verify the effective value rather than reasoning about it — load the same sequence through libghostty and read the key back with `ghostty_config_get`.
+
+The one case worth calling out is `theme`. Quay pushes the macOS appearance into libghostty via `ghostty_app_set_color_scheme` (see `GhosttyRuntime.setColorScheme`), which is what selects between the halves of a `theme = light:A,dark:B` pair. A user config that sets a *single* theme pins the terminal to that palette in both appearances — working as designed, not a light/dark bug.
+
 ## Swift import path
 
 The xcframework ships `module.modulemap` declaring `module GhosttyKit { umbrella header "ghostty.h" }`. Swift code imports it directly:

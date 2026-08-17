@@ -101,7 +101,7 @@ Quay's terminal is powered by [Ghostty](https://ghostty.org)'s terminal core and
 | Setting | Value |
 |---|---|
 | Font | SF Mono 13 |
-| Theme | Ghostty default |
+| Theme | One Half Light / One Half Dark, following the macOS appearance |
 | Cursor | Block, no blink |
 | Padding | 8 px horizontal, 6 px vertical |
 | Scrollback | 100,000 lines |
@@ -117,6 +117,8 @@ theme = light:GitHub Light,dark:GitHub Dark
 ```
 
 Quay automatically tells Ghostty which scheme is active as macOS switches appearance.
+
+Note that a **single** theme in your config — `theme = tokyonight` — pins that palette in both light and dark mode. If your terminal stays dark when macOS switches to light, this is why; change it to a `light:…,dark:…` pair. Since your Ghostty config overrides Quay's bundled defaults, Quay's own light/dark pair only applies when you haven't set `theme` yourself.
 
 ## ~/.ssh/config hosts
 

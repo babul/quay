@@ -48,6 +48,8 @@ Swift 6 strict concurrency is enforced (`SWIFT_STRICT_CONCURRENCY=complete`). Al
 ### libghostty integration (`Quay/Terminal/`)
 `GhosttyRuntime` is a per-process singleton wrapping `ghostty_app_t`. It owns a weak-ref registry of `GhosttySurfaceBridge` instances (one per tab) to avoid retain cycles. `GhosttySurfaceView` is an `NSView` subclass implementing `NSTextInputClient` for IME; it is wrapped by `GhosttyTerminalView` for SwiftUI via `NSViewRepresentable`. See `docs/ghostty-integration.md` for the build/pin/bump process.
 
+**Quay intentionally inherits the user's own Ghostty config.** `loadUserConfig()` loads `Quay/Resources/default-ghostty.conf` first, then `ghostty_config_load_default_files()` — so anything in `~/.config/ghostty/config` or `~/Library/Application Support/com.mitchellh.ghostty/config` overrides the bundled defaults. A bundled setting appearing to have no effect is usually this, not a bug; check the user's Ghostty config before investigating. See "Config inheritance" in `docs/ghostty-integration.md`.
+
 ### Secret handling — zero plaintext (`Quay/Secrets/`)
 Credentials are never stored as plaintext — only as reference URIs (`keychain://service/account`). `AskpassServer` is a Unix domain socket server at `$TMPDIR/quay-askpass-<uuid>.sock` (mode 0600) that resolves URIs at connection time and pipes the secret to the bundled `QuayAskpass` CLI (the SSH_ASKPASS helper). The socket is unlinked after one use. The only place Quay writes to Keychain is the login-script step lock action — writes are deferred until profile save. See `docs/secrets-architecture.md` for the full threat model.
 
