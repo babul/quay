@@ -188,8 +188,8 @@ Bundles can be encrypted with a password (AES-256) on export. The export sheet r
 ### Requirements
 
 - macOS 15 (Sequoia) or newer, Apple Silicon (arm64) — Intel Macs are not supported. Ghostty's upstream build system (`GhosttyXCFramework.zig`) only offers `native` (host arch) and `universal` (arm64 + iOS slices) xcframework targets — there is no mac-fat arm64+x86_64 option, so producing a dual-arch `GhosttyKit.xcframework` would require an upstream Ghostty patch or a manual `lipo` step. PRs welcome.
-- Xcode 16+ (Swift 6)
-- [Zig 0.15](https://ziglang.org) (`brew install zig@0.15` — Ghostty 1.3.x requires this exact version)
+- Xcode 16+ (Swift 6), plus the Metal Toolchain component (`xcodebuild -downloadComponent MetalToolchain` — ~690 MB). Xcode 26 no longer bundles the `metal` compiler, and libghostty precompiles its shaders.
+- [Zig 0.16](https://ziglang.org) (`brew install zig` — Ghostty pins this exact series via `minimum_zig_version`)
 - [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
 ### Setup
@@ -203,7 +203,7 @@ open Quay.xcodeproj
 
 `bootstrap.sh` will:
 
-1. Verify `zig@0.15` and `xcodegen` are installed.
+1. Verify `zig` (0.16.x) and `xcodegen` are installed.
 2. Initialize the `vendor/ghostty` submodule (≈300 MB).
 3. Build `libghostty` from source into `Frameworks/GhosttyKit.xcframework` (5–10 min on a fresh box; instant after that thanks to the cache).
 4. Generate `Quay.xcodeproj` from `project.yml`.

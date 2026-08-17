@@ -18,6 +18,12 @@ command -v xcodebuild >/dev/null || fail "xcodebuild not found. Install Xcode 16
 command -v xcodegen   >/dev/null || fail "xcodegen not found. Run: brew install xcodegen"
 command -v zig        >/dev/null || fail "zig not found. Run: brew install zig"
 
+# Xcode 26 ships the `metal` compiler as an optional component, but libghostty
+# precompiles its shaders into a .metallib. Fail here with a clear message
+# rather than ~200 build steps into build-ghostty.sh.
+xcrun -sdk macosx metal --version >/dev/null 2>&1 || \
+    fail "Metal Toolchain not installed. Run: xcodebuild -downloadComponent MetalToolchain"
+
 xcode_ver=$(xcodebuild -version | head -1 | awk '{print $2}')
 zig_ver=$(zig version)
 xg_ver=$(xcodegen --version | awk '{print $2}')

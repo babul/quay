@@ -49,23 +49,30 @@ resources_staged() {
 [[ -d "$GHOSTTY_DIR/.git" || -f "$GHOSTTY_DIR/.git" ]] || \
     fail "vendor/ghostty not initialized. Run: git submodule update --init"
 
-# Pin to Zig 0.15 — Ghostty 1.3.x requires it explicitly (build.zig.zon
-# minimum_zig_version=0.15.2). The unversioned `zig` formula tracks 0.16+,
-# which fails at compile time, so always prefer the keg-only zig@0.15.
-if [[ -d "/opt/homebrew/opt/zig@0.15/bin" ]]; then
-    ZIG="/opt/homebrew/opt/zig@0.15/bin/zig"
-elif [[ -d "/usr/local/opt/zig@0.15/bin" ]]; then
-    ZIG="/usr/local/opt/zig@0.15/bin/zig"
-elif command -v zig >/dev/null 2>&1; then
+# Pin the Zig series Ghostty declares in build.zig.zon (minimum_zig_version).
+# A newer or older series fails at compile time, so resolve deliberately: a
+# keg-only zig@<series> first, then whatever `zig` is on PATH if it matches.
+ZIG_SERIES="0.16"
+ZIG_INSTALL_HINT="brew install zig"
+
+ZIG=""
+for prefix in /opt/homebrew /usr/local; do
+    if [[ -x "$prefix/opt/zig@$ZIG_SERIES/bin/zig" ]]; then
+        ZIG="$prefix/opt/zig@$ZIG_SERIES/bin/zig"
+        break
+    fi
+done
+
+if [[ -z "$ZIG" ]]; then
+    command -v zig >/dev/null 2>&1 || fail "zig not found. Run: $ZIG_INSTALL_HINT"
     ZIG="$(command -v zig)"
-    actual_ver=$("$ZIG" version)
-    case "$actual_ver" in
-        0.15.*) : ;;
-        *) fail "found zig $actual_ver, but Ghostty needs 0.15.x. Run: brew install zig@0.15" ;;
-    esac
-else
-    fail "zig not found. Run: brew install zig@0.15"
 fi
+
+actual_ver=$("$ZIG" version)
+case "$actual_ver" in
+    "$ZIG_SERIES".*) : ;;
+    *) fail "found zig $actual_ver, but Ghostty needs $ZIG_SERIES.x. Run: $ZIG_INSTALL_HINT" ;;
+esac
 
 # Cache key: submodule SHA + this script's SHA. If unchanged and the
 # xcframework exists, no-op.

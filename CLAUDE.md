@@ -8,7 +8,7 @@ Quay is a native macOS SSH connection manager (macOS 15+, Apple Silicon) built o
 
 ## Build commands
 
-**First-time setup** (requires Xcode 16+, `zig@0.15`, `xcodegen`):
+**First-time setup** (requires Xcode 16+, `zig` 0.16.x, `xcodegen`):
 ```sh
 ./scripts/bootstrap.sh
 open Quay.xcodeproj

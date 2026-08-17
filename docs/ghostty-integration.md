@@ -12,14 +12,14 @@ We do the same: `vendor/ghostty` is a git submodule pinned to a known-good SHA, 
 
 | Tool | Version | Why |
 |---|---|---|
-| Zig | **0.15.x** (`brew install zig@0.15`) | Ghostty 1.3.x has `requireZig("0.15.2")`. Zig 0.16 fails at compile time. |
+| Zig | **0.16.x** (`brew install zig`) | Ghostty declares `minimum_zig_version = "0.16.0"`. Both older and newer series fail at compile time. |
 | Xcode | 16+ | Swift 6, Swift Testing, `bundle.unit-test` target type. |
 
-`scripts/build-ghostty.sh` resolves `zig` from `/opt/homebrew/opt/zig@0.15` first, falling back to `$PATH` only if the version is 0.15.x. This guards against a `brew upgrade` accidentally yanking the wrong Zig under us.
+`scripts/build-ghostty.sh` holds the required series in a single `ZIG_SERIES` variable. It prefers a keg-only `zig@$ZIG_SERIES` under `/opt/homebrew` or `/usr/local`, falls back to `zig` on `$PATH`, and version-checks whichever it picks. When upstream moves to a new Zig series, change `ZIG_SERIES` and this table.
 
 ## Current pin
 
-`vendor/ghostty` → `160c3c69ea9a47961dfd973a8190b774048c20a1` (Ghostty `1.3.2-dev`, Jul 2026)
+`vendor/ghostty` → `6c30dc1bfff7e22a9198931411ae862a6bb6277b` (Ghostty `1.3.2-dev`, Aug 2026)
 
 ## Build invocation
 
@@ -36,13 +36,15 @@ zig build install \
   -Demit-{exe,test-exe,bench,helpgen,docs,terminfo,termcap,themes,macos-app}=false
 ```
 
-Output: `vendor/ghostty/macos/GhosttyKit.xcframework` (Ghostty's `XCFrameworkStep` writes to a static path, *not* through Zig's normal install mechanism) → copied to `Frameworks/GhosttyKit.xcframework`. The xcframework binary inside is named `libghostty-internal-fat.a` regardless of slice count.
+Output: `vendor/ghostty/macos/GhosttyKit.xcframework` (Ghostty's `XCFrameworkStep` writes to a static path, *not* through Zig's normal install mechanism) → copied to `Frameworks/GhosttyKit.xcframework`. The xcframework binary inside is named `libghostty-internal.a` (upstream dropped the `-fat` suffix; older notes may still reference it).
 
 The script also stages the minimal runtime resources Quay needs into `Quay/Resources`: compiled terminfo plus Ghostty shell integration. At runtime, `GhosttyRuntime` points `GHOSTTY_RESOURCES_DIR` at the bundled `Contents/Resources/ghostty` directory before calling `ghostty_init`, which lets libghostty set `TERM=xterm-ghostty` and inject shell integration.
 
 ### Why `native` instead of `universal`
 
-`-Dxcframework-target=universal` bundles three slices: macOS universal, iOS, and iOS Simulator. Quay only ships macOS, so the iOS slices are wasted megabytes — and they require the Metal Toolchain installed for iOS shader compilation, which adds ~700MB to the Xcode footprint. `native` skips all of that and produces a single macOS slice for the host arch (arm64 on Apple Silicon).
+`-Dxcframework-target=universal` bundles three slices: macOS universal, iOS, and iOS Simulator. Quay only ships macOS, so the iOS slices are wasted megabytes and build time. `native` produces a single macOS slice for the host arch (arm64 on Apple Silicon).
+
+Note that `native` does **not** avoid the Metal Toolchain. As of Xcode 26 the `metal` compiler is a separately downloadable component rather than part of the macOS SDK, and Ghostty precompiles `src/renderer/shaders/shaders.metal` into a `.metallib` for every Metal build regardless of target. See the troubleshooting table below.
 
 The PRD lists Intel macOS as best-effort via Rosetta. If we later want a fat macOS-only slice (arm64 + x86_64) we'll need to teach Ghostty's `GhosttyXCFramework.zig` a third target value — currently the upstream only offers `native` (host) or `universal` (mac+ios).
 
@@ -87,8 +89,9 @@ Keep the bridging surface narrow (one or two Swift files in `Quay/Terminal/`) so
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `error: Your Zig version v0.16.0 does not meet the required build version` | `zig` from `$PATH` is 0.16+ | `brew install zig@0.15`; the script will pick the keg-only path automatically |
-| `error: 'foo' must be a function` (or similar Zig type error in `build.zig`) | Submodule pin uses a `build.zig` that needs a different Zig minor | Check `vendor/ghostty/build.zig.zon` for `minimum_zig_version`; install the matching `zig@x.y` keg |
+| `cannot execute tool 'metal' due to missing Metal Toolchain` | Xcode 26+ ships the `metal` compiler as an optional component; Ghostty precompiles its shaders into a `.metallib` | `xcodebuild -downloadComponent MetalToolchain`. Independent of the ghostty pin — a fresh Xcode install always needs this. |
+| `error: Your Zig version vX.Y.Z does not meet the required build version` | Resolved `zig` is off the required series | Check `vendor/ghostty/build.zig.zon` for `minimum_zig_version`, install that series, and update `ZIG_SERIES` in `build-ghostty.sh` |
+| `error: 'foo' must be a function` (or similar Zig type error in `build.zig`) | Same cause — a Zig series mismatch the version gate did not catch | As above |
 | `the dependency manifest does not contain hash for 'foo'` | Stale `zig-cache` | `rm -rf vendor/ghostty/.zig-cache vendor/ghostty/zig-out` and rerun |
 | Fetched dep returns 404 | Upstream `deps.files.ghostty.org` rotated a tarball | Bump the submodule to a newer SHA; old build.zig.zon entries get GC'd |
 | Build succeeds but `find … GhosttyKit.xcframework` returns nothing | Upstream renamed the output dir | `find vendor/ghostty/zig-out -type d -name '*.xcframework'` and update the `SRC=` line in `build-ghostty.sh` |
