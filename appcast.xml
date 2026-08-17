@@ -8,6 +8,27 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.5.0</title>
+            <pubDate>Mon, 17 Aug 2026 15:40:27 +0000</pubDate>
+            <sparkle:version>13</sparkle:version>
+            <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>The terminal now follows your macOS appearance. Switching to Light mode gives you a light terminal instead of staying dark. If you set a single <code>theme</code> in your own Ghostty config it still wins — use <code>theme = light:Some Light,dark:Some Dark</code> to follow the system there too.</li>
+  <li>Scrollback now holds 100,000 lines. The previous limit was measured in bytes, not lines, which made the buffer far smaller than intended and discarded long output early.</li>
+  <li>Lower memory use on long-lived sessions. The terminal engine now compresses idle scrollback, cutting its memory footprint substantially — which matters when you keep many tabs open.</li>
+  <li>Faster tab opening, plus fixes for display and font edge cases that could disrupt a session.</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.4.5...v0.5.0</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.5.0/Quay-0.5.0.dmg"
+                       sparkle:edSignature="izDjOzasWzrtsTVkYhlqwfaJ4GloVqjyxOuqGIg4SC+0YM8kHmSFdf4VFMsKTveNFSwkW5CVo1p6OgtL4Uw9CQ=="
+                       length="10458663"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.4.5</title>
             <pubDate>Wed, 08 Jul 2026 18:18:32 +0000</pubDate>
             <sparkle:version>12</sparkle:version>
