@@ -8,6 +8,24 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.5.1</title>
+            <pubDate>Mon, 17 Aug 2026 17:20:22 +0000</pubDate>
+            <sparkle:version>14</sparkle:version>
+            <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>Fixed the terminal staying light while macOS is in Dark mode. The light/dark theme pair resolved once at startup and then stopped following the system, so whichever appearance you launched in was the one you kept. Switching appearance now works in both directions, every time.</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.5.0...v0.5.1</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.5.1/Quay-0.5.1.dmg"
+                       sparkle:edSignature="qgYsmDI7BPiSa9j18bVLCgsOtRjUQkeE3RP1QJn2nuTMHbOFOoZlHwdCalIKHgLIZbS9iI4/yIcnr2rcpmbjAw=="
+                       length="10458745"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.5.0</title>
             <pubDate>Mon, 17 Aug 2026 15:40:27 +0000</pubDate>
             <sparkle:version>13</sparkle:version>
