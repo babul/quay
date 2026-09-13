@@ -370,7 +370,7 @@ struct ContentView: View {
         case .running:
             EmptyView()
         case .disconnected:
-            EmptyView()
+            reconnectHint
         case .failed(let message):
             terminalBackgroundColor
                 .overlay {
@@ -378,12 +378,52 @@ struct ContentView: View {
                         Label("Connection lost", systemImage: "exclamationmark.triangle")
                     } description: {
                         Text(message)
+                        Text("\(Self.reconnectKeyHint).")
                     } actions: {
                         Button("Reconnect") { tab.reconnect() }
-                            .keyboardShortcut(.return, modifiers: .command)
+                            .keyboardShortcut(.defaultAction)
                     }
                 }
+                // A failed connect leaves no surface view behind, so Space has
+                // nothing to bind to in the responder chain — this offscreen
+                // twin carries it, matching the disconnected surface's keys.
+                // (Return comes from the button's .defaultAction; ⌘R still
+                // comes from the File menu.)
+                .background {
+                    Button("Reconnect") { tab.reconnect() }
+                        .keyboardShortcut(.space, modifiers: [])
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                }
         }
+    }
+
+    /// Shared by the disconnected footer and the failure card so both advertise
+    /// the same keys `GhosttySurfaceView.isReconnectKey` actually accepts.
+    private static let reconnectKeyHint = "Press Space or Return to reconnect"
+
+    /// A dead surface keeps its last output on screen, so the hint is a
+    /// non-interactive footer: clicks fall through to the surface, which stays
+    /// first responder and receives the keys advertised here.
+    private var reconnectHint: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.horizontal.circle")
+                    .foregroundStyle(.red)
+                Text("Disconnected")
+                Text(Self.reconnectKeyHint)
+                    .foregroundStyle(.secondary)
+            }
+            .font(.callout)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.bar, in: Capsule())
+            .overlay(Capsule().strokeBorder(.separator))
+            .padding(.bottom, 16)
+        }
+        .allowsHitTesting(false)
     }
 }
 

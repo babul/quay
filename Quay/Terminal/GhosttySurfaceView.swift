@@ -31,6 +31,10 @@ final class GhosttySurfaceView: NSView {
     /// `onCloseRequest`/`onChildExited` without a timing dependency.
     var onBridgeCreated: ((GhosttySurfaceBridge) -> Void)?
 
+    /// Called when Space or Return is pressed after the child process has
+    /// exited. The owning tab item reconnects, mirroring the Cmd-R command.
+    var onReconnectKey: (() -> Void)?
+
     // IME state — owned here; modified by GhosttySurfaceView+IME.
     var markedText = NSMutableAttributedString()
     var keyTextAccumulator: [String]?
@@ -141,6 +145,31 @@ final class GhosttySurfaceView: NSView {
         let pid = pid_t(ghostty_surface_foreground_pid(surface))
         guard pid > 0 else { return }
         _ = Darwin.kill(pid, SIGHUP)
+    }
+
+    /// Consumes a bare Space/Return once the session has ended so a dead
+    /// surface reconnects without reaching for Cmd-R. Returns `false` while the
+    /// child process is alive, leaving normal key delivery untouched.
+    func handleReconnectKey(_ event: NSEvent) -> Bool {
+        guard let onReconnectKey, let surface, ghostty_surface_process_exited(surface),
+              Self.isReconnectKey(keyCode: event.keyCode, modifiers: event.modifierFlags)
+        else { return false }
+        onReconnectKey()
+        return true
+    }
+
+    /// Space, Return, or keypad Enter with no meaningful modifiers held.
+    nonisolated static func isReconnectKey(
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags
+    ) -> Bool {
+        let ignored: NSEvent.ModifierFlags = [.capsLock, .function, .numericPad]
+        let held = modifiers.intersection(.deviceIndependentFlagsMask).subtracting(ignored)
+        guard held.isEmpty else { return false }
+        switch keyCode {
+        case 36, 49, 76: return true  // return, space, keypad enter
+        default: return false
+        }
     }
 
     override var acceptsFirstResponder: Bool { true }

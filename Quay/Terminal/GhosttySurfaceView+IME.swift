@@ -4,6 +4,8 @@ import GhosttyKit
 
 extension GhosttySurfaceView {
     override func keyDown(with event: NSEvent) {
+        if handleReconnectKey(event) { return }
+
         let phase = KeyInputPhase(event: event, hadMarkedText: markedText.length > 0)
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }

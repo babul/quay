@@ -154,6 +154,10 @@ final class TerminalTabItem: Identifiable {
                 askpassServer = askpass
             }
             let view = GhosttySurfaceView(runtime: .shared, config: config)
+            view.onReconnectKey = { [weak self] in
+                guard let self, self.phase.isReconnectable else { return }
+                self.reconnect()
+            }
             view.onBridgeCreated = { [weak self] bridge in
                 guard let self else { return }
                 bridge.onCloseRequest = { [weak self] in
