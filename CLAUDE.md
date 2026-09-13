@@ -46,7 +46,7 @@ Swift 6 strict concurrency is enforced (`SWIFT_STRICT_CONCURRENCY=complete`). Al
 - **Low-latency paths** (tab state, surface render state) use `@Observable` singletons (`TerminalTabManager`, `GhosttySurfaceBridge`) directly, bypassing TCA to avoid view update overhead.
 
 ### libghostty integration (`Quay/Terminal/`)
-`GhosttyRuntime` is a per-process singleton wrapping `ghostty_app_t`. It owns a weak-ref registry of `GhosttySurfaceBridge` instances (one per tab) to avoid retain cycles. `GhosttySurfaceView` is an `NSView` subclass implementing `NSTextInputClient` for IME; it is wrapped by `GhosttyTerminalView` for SwiftUI via `NSViewRepresentable`. See `docs/ghostty-integration.md` for the build/pin/bump process.
+`GhosttyRuntime` is a per-process singleton wrapping `ghostty_app_t`. It owns a weak-ref registry of `GhosttySurfaceBridge` instances (one per tab) to avoid retain cycles. `GhosttySurfaceView` is an `NSView` subclass implementing `NSTextInputClient` for IME; surfaces are hosted for SwiftUI by `TerminalSurfaceHostsView` in `ContentView`, which keeps every tab's surface attached and orders the selected one frontmost. See `docs/ghostty-integration.md` for the build/pin/bump process.
 
 **Quay intentionally inherits the user's own Ghostty config.** `loadUserConfig()` loads `Quay/Resources/default-ghostty.conf` first, then `ghostty_config_load_default_files()` — so anything in `~/.config/ghostty/config` or `~/Library/Application Support/com.mitchellh.ghostty/config` overrides the bundled defaults. A bundled setting appearing to have no effect is usually this, not a bug; check the user's Ghostty config before investigating. See "Config inheritance" in `docs/ghostty-integration.md`.
 
@@ -57,10 +57,35 @@ Credentials are never stored as plaintext — only as reference URIs (`keychain:
 ```
 ConnectionProfile (SwiftData)
   → TerminalTabManager.openOrSelectTab()
-  → SessionBootstrap → GhosttySurfaceConfig + optional AskpassServer
-  → GhosttyRuntime.spawn(SSHCommand) → libghostty fork+exec /usr/bin/ssh
+  → SessionBootstrap → host-shell GhosttySurfaceConfig + command line + optional AskpassServer
+  → GhosttySurfaceView (pty runs the tab's host shell for its whole life)
+  → TerminalTabItem types the ssh command line into that shell
        ↘ (password/passphrase auth) SSH_ASKPASS → QuayAskpass → AskpassServer → KeychainStore
 ```
+
+### Sessions run inside a per-tab host shell
+The pty's child is **not** ssh — it is a quiet local shell that lives for the
+tab (`SessionBootstrap.hostShellCommand()`), and each session is *typed into*
+it. libghostty cannot respawn a surface's command, so this is what lets a
+reconnect continue on the screen the last session left rather than clearing it.
+
+Three consequences worth knowing before changing anything here:
+
+- **Session lifecycle is observed, not reported.** The pty's child no longer
+  exits when a session ends, so `SessionConnectionProbe` polls the pty's
+  foreground process group (libproc) for the client (`ssh`/`sftp`) and its TCP
+  state. That is what drives `TerminalTabItem.Phase` and the retry cycle.
+- **Input must be gated.** Between sessions the pty belongs to the *local*
+  shell, so anything typed or pasted would run on this machine.
+  `GhosttySurfaceView.forwardsUserInput` gates every write path (keys, IME,
+  paste, Services, middle-click, snippets, login scripts) and fails closed.
+  Use `sendUserInput(_:appendReturn:)` rather than reaching for the bridge.
+- **The host shell's `PS1` is load-bearing.** It prints nothing visible; it
+  resets terminal modes a dead remote left behind. Without the bracketed-paste
+  reset the next typed command arrives wrapped in `ESC[200~`. Never add
+  `ESC[?1049l` to it — that restores a saved cursor and clobbers scrollback.
+  `stty -echo` in the shell command is likewise load-bearing: it hides the typed
+  command *and* is how the tab detects the shell is ready (`tcgetattr` ECHO).
 
 ### Persistence (`Quay/Persistence/`)
 SwiftData `ModelContainer` stored at `~/Library/Application Support/<bundleID>/Quay.store`. CloudKit sync is intentionally disabled for v0.1. Settings export/import uses AES-GCM-256 encryption with PBKDF2-HMAC-SHA256 key derivation (`SettingsBundle.swift`). SSH credentials and key passphrases are exported only as their reference URIs. Locked login-script step values are resolved to plaintext inside the bundle so it's portable to a new machine; the bundle password is what protects them.
@@ -76,6 +101,8 @@ SwiftData `ModelContainer` stored at `~/Library/Application Support/<bundleID>/Q
 | `Quay/Terminal/GhosttyRuntime.swift` | libghostty app singleton, surface registry, config reload |
 | `Quay/Terminal/GhosttySurfaceBridge.swift` | Per-surface `@Observable` bridge between C callbacks and Swift |
 | `Quay/Secrets/AskpassServer.swift` | Unix domain socket secret delivery to SSH_ASKPASS |
+| `Quay/Terminal/SessionConnectionProbe.swift` | libproc probe: what the pty's foreground process group is doing |
+| `Quay/Tabs/SessionBootstrap.swift` | Host-shell command, typed session command line, session marker |
 
 ## Conventions
 
