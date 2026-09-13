@@ -15,8 +15,7 @@ enum SnippetActions {
         into tab: TerminalTabItem?,
         appendReturn: Bool? = nil
     ) async {
-        // Between sessions the pty belongs to Quay's host shell — a snippet
-        // pasted there would run on this machine, not the remote one.
+        // Between sessions there is no session for a snippet to reach.
         guard let tab, let view = tab.surfaceView, view.forwardsUserInput else { return }
         guard let text = await resolveBody(snippet) else { return }
         // Re-checked after the await, and against the same surface: resolving a

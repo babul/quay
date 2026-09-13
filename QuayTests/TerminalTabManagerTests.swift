@@ -379,35 +379,4 @@ struct TerminalTabManagerTests {
 
         #expect(manager.selectedTabID == tab.id)
     }
-
-    // MARK: Host loss is evidence about other tabs
-
-    /// A drop says something about the host, not just the tab that noticed —
-    /// an sftp client like lftp keeps its prompt through an outage and would
-    /// otherwise look connected until its own timers expire.
-    @Test("A live session on the same host is asked to check")
-    func dropSelectsLiveSiblingsOnTheSameHost() {
-        let reporter = TerminalTabItem(profile: ConnectionProfile(name: "ssh", hostname: "prod"))
-        let sibling = TerminalTabItem(
-            profile: ConnectionProfile(name: "sftp", hostname: "prod"),
-            launchSession: {}
-        )
-        let elsewhere = TerminalTabItem(
-            profile: ConnectionProfile(name: "other", hostname: "stage"),
-            launchSession: {}
-        )
-        let idle = TerminalTabItem(profile: ConnectionProfile(name: "idle", hostname: "prod"))
-        sibling.connect()
-        elsewhere.connect()
-
-        let selected = TerminalTabManager.tabsSharingHost(
-            "prod",
-            excluding: reporter.id,
-            in: [reporter, sibling, elsewhere, idle]
-        )
-
-        // The live one on that host, and only it: not the reporter, not another
-        // host, not a tab with no session to lose.
-        #expect(selected.map(\.id) == [sibling.id])
-    }
 }

@@ -23,15 +23,15 @@ The reference goes in `ConnectionProfile.secretRef`. For password auth that's th
 When the user opens a connection that needs a secret:
 
 ```
-SessionView.onAppear
+TerminalTabItem.connect
   ├── SSHCommandBuilder.build(target, askpass: nil)
-  │     -> command string with ssh args
+  │     -> argv for the ssh client
   ├── if auth has secretRef:
   │     ├── AskpassServer(secretURI: "keychain://...")
   │     ├── server.start()  // bind UDS at $TMPDIR/quay-askpass-<uuid>.sock, mode 0600
   │     └── rebuild SSHCommand with askpass env vars
-  └── GhosttyTerminalView(config: { command, environment, ... })
-        └── libghostty fork+exec /usr/bin/ssh
+  └── SupervisorClient.send(.spawn(argv, environment, ...))
+        └── quay-supervisor fork+exec /usr/bin/ssh
               └── ssh sees a password prompt -> exec quay-askpass
                     └── connect(AF_UNIX, $QUAY_ASKPASS_SOCKET)
                           └── server resolves the URI:
@@ -43,7 +43,7 @@ SessionView.onAppear
                                             -> ssh consumes as password
 ```
 
-After the server's single `serveOnce()` cycle, the socket is closed and the file is `unlink()`ed. The askpass server dies when the `SessionView` disappears.
+After the server's single `serveOnce()` cycle, the socket is closed and the file is `unlink()`ed. The askpass server lives for the tab, not one attempt, so a reconnect can re-authenticate.
 
 ## Process boundaries
 
@@ -51,21 +51,33 @@ After the server's single `serveOnce()` cycle, the socket is closed and the file
 +-----------------------------+
 | Quay.app (Swift)            |
 |   AskpassServer (UDS)       |
+|   SupervisorClient (UDS)    |
 |   KeychainStore             |
 |   SensitiveBytes (memset_s) |
-+--------------+--------------+
-               ^ socket (chmod 0600, $TMPDIR)
-               |
-+--------------v--------------+      +-------------------------+
-| quay-askpass (helper, CLI)  | <----+ /usr/bin/ssh             |
-|   reads socket -> stdout    |      | spawned by libghostty   |
-+-----------------------------+      | (PTY-owning process)    |
-                                     +-------------------------+
++------+---------------+------+
+       |               ^ askpass socket (chmod 0600, $TMPDIR)
+       | supervisor    |
+       | socket        |
++------v-----------+   |  +-----------------------------+
+| quay-supervisor  |   +--+ quay-askpass (helper, CLI)  |
+|  pty's child     |      |   reads socket -> stdout    |
+|  forks sessions  |      +--------------+--------------+
++------+-----------+                     ^ exec'd on demand
+       | fork/exec                       |
++------v----------------------+          |
+| /usr/bin/ssh (foreground    +----------+
+| process group of the pty)   |
++-----------------------------+
 ```
+
+The two sockets are separate by design. The supervisor's carries argv and
+environment; the askpass server's carries the secret, and only ever to the
+process OpenSSH spawns for it. A supervisor that were also the secret channel
+would put plaintext on the path that names commands.
 
 The helper:
 - Lives bundled at `Quay.app/Contents/MacOS/quay-askpass`.
-- Is execed by OpenSSH (not by Quay) when it sees `SSH_ASKPASS=…`, `SSH_ASKPASS_REQUIRE=force`, `DISPLAY=:0`, and the process is in its own session (libghostty starts ssh under `setsid`).
+- Is execed by OpenSSH (not by Quay) when it sees `SSH_ASKPASS=…`, `SSH_ASKPASS_REQUIRE=force`, and `DISPLAY=:0`.
 - Reads `QUAY_ASKPASS_SOCKET`, opens the UDS, pipes bytes to stdout, exits.
 - ~25 lines of Swift. No retries, no logging, no buffering.
 

@@ -78,7 +78,7 @@ enum ConnectionProbe {
         var askpassEnv: SSHCommandBuilder.AskpassEnv?
 
         if let secretURI = SessionBootstrap.secretRef(for: target) {
-            guard let helperPath = SessionBootstrap.bundledHelperPath() else {
+            guard let helperPath = SessionBootstrap.bundledExecutable(named: SessionBootstrap.askpassName) else {
                 return .failure(message: "quay-askpass helper not found in bundle.", exitCode: nil)
             }
             let s = AskpassServer(secretURI: secretURI)
@@ -95,7 +95,7 @@ enum ConnectionProbe {
         let argv = probeArgv(for: target)
         let env  = probeEnv(askpass: askpassEnv)
         let inner = argv.map(probeShellQuote).joined(separator: " ")
-        let cmd   = SessionBootstrap.wrapInLoginShell(inner, askpassEnv: env)
+        let cmd   = SessionBootstrap.wrapInLoginShell(inner, environment: env)
 
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let process = Process()

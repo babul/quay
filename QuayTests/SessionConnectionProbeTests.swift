@@ -89,11 +89,11 @@ struct SessionConnectionProbeTests {
     func seesEstablishedConnection() throws {
         let pair = try #require(LoopbackPair(), "could not open a loopback connection")
         _ = pair  // held open for the duration of the check
-        // The address the session actually reached is what a later reachability
-        // check has to probe — the profile's hostname can be an ssh_config
-        // alias, or rewritten by HostName/Port/ProxyJump before ssh dials. Both
-        // ends of the pair belong to this process, so which one answers first
-        // is not fixed; that it is a real endpoint is the point.
+        // The address the session actually reached — the profile's hostname
+        // can be an ssh_config alias, or rewritten by HostName/Port/ProxyJump
+        // before ssh dials. Both ends of the pair belong to this process, so
+        // which one answers first is not fixed; that it is a real endpoint is
+        // the point.
         let peer = try #require(SessionConnectionProbe.establishedPeer(pid: getpid()))
         #expect(peer.host == "127.0.0.1")
         #expect(peer.port > 0)
@@ -103,59 +103,6 @@ struct SessionConnectionProbeTests {
     func ignoresProcessWithoutSockets() {
         // pid 0 (the kernel) is never a session process and exposes no fds.
         #expect(SessionConnectionProbe.establishedPeer(pid: 0) == nil)
-    }
-
-    @Test("Session lookup finds this process by its own process group")
-    func findsProcessesByGroup() {
-        let group = SessionConnectionProbe.sessionProcesses(pgid: getpgrp())
-        #expect(group.contains(getpid()))
-    }
-
-    @Test("A process group with no members yields nothing")
-    func emptyGroupYieldsNothing() {
-        // A pgid this high cannot exist: pids wrap well below it.
-        #expect(SessionConnectionProbe.sessionProcesses(pgid: .max).isEmpty)
-    }
-
-    @Test("This process is found by name in its own group")
-    func findsClientByName() {
-        let name = try? #require(SessionConnectionProbe.processName(of: getpid()))
-        let found = SessionConnectionProbe.foreground(
-            pgid: getpgrp(),
-            clientNames: [name ?? ""]
-        )
-        #expect(found.names.contains(name ?? ""))
-        #expect(found.state != .noClient)
-    }
-
-    @Test("A group with no matching client reports no client")
-    func reportsNoClientWhenAbsent() {
-        let found = SessionConnectionProbe.foreground(
-            pgid: getpgrp(),
-            clientNames: ["definitely-not-a-running-binary"]
-        )
-        #expect(found.state == .noClient)
-        // The group's own processes are still reported, which is how the tab
-        // knows its host shell is ready for a command.
-        #expect(!found.names.isEmpty)
-    }
-
-    @Test("Client presence is answered without walking sockets")
-    func clientPresenceCheck() {
-        let name = SessionConnectionProbe.processName(of: getpid()) ?? ""
-        #expect(SessionConnectionProbe.clientIsRunning(pgid: getpgrp(), clientNames: [name]))
-        #expect(!SessionConnectionProbe.clientIsRunning(pgid: getpgrp(), clientNames: ["nope"]))
-    }
-
-    /// The host shell turns echo off as the last step of its startup, which is
-    /// how the tab knows it is ready to be typed into.
-    @Test("Echo state is read from the tty, and a bad path reports not-ready")
-    func echoDisabledReadsTheTty() {
-        #expect(!SessionConnectionProbe.echoDisabled(ttyPath: "/dev/definitely-not-a-tty"))
-        // This test runs under a pipe, not a tty, so /dev/tty may not exist —
-        // assert only that a readable non-tty device answers false rather than
-        // crashing or reporting ready.
-        #expect(!SessionConnectionProbe.echoDisabled(ttyPath: "/dev/null"))
     }
 
     /// lftp opens no socket itself — it spawns `ssh` in its own session and
@@ -201,9 +148,9 @@ struct SessionConnectionProbeTests {
         try #require(accepted >= 0)
         defer { close(accepted) }
 
-        // The helper's far end is the listener above — which is the address a
-        // reachability check on an lftp-style session has to probe, since the
-        // client itself never holds the socket.
+        // The helper's far end is the listener above: an lftp-style client
+        // never holds the socket itself, so this is where its connection state
+        // comes from.
         let peer = SessionConnectionProbe.establishedHelperPeer(of: [getpid()])
         #expect(peer?.host == "127.0.0.1")
         #expect(peer?.port == Int(port))
@@ -213,32 +160,5 @@ struct SessionConnectionProbeTests {
     func ignoresUnrelatedProcesses() {
         // pid 1 is not this test's client, and nothing it owns should answer.
         #expect(SessionConnectionProbe.establishedHelperPeer(of: []) == nil)
-    }
-
-    /// Writing to a pty is asynchronous, so keystrokes meant for a remote
-    /// session can still be unread when it dies — and the host shell then reads
-    /// and *runs* them. That is how a login script's `htop` ended up owning a
-    /// tab locally.
-    @Test("Input typed for a dead session is discarded, not left for the shell")
-    func flushDiscardsUnreadInput() throws {
-        var primary: Int32 = 0
-        var replica: Int32 = 0
-        try #require(openpty(&primary, &replica, nil, nil, nil) == 0)
-        defer { close(primary); close(replica) }
-
-        let path = String(cString: try #require(ptsname(primary)))
-        _ = fcntl(replica, F_SETFL, fcntl(replica, F_GETFL, 0) | O_NONBLOCK)
-
-        // Something typed for the session that is about to die.
-        let pending = "htop\n"
-        _ = pending.withCString { write(primary, $0, strlen($0)) }
-        usleep(50_000)
-
-        SessionConnectionProbe.flushInput(ttyPath: path)
-
-        var buffer = [CChar](repeating: 0, count: 64)
-        let read = Darwin.read(replica, &buffer, buffer.count)
-        // Nothing left for the shell to run: -1/EAGAIN on an empty queue.
-        #expect(read <= 0)
     }
 }

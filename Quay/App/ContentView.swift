@@ -431,7 +431,8 @@ struct ContentView: View {
     /// the same keys `GhosttySurfaceView.deadSessionKey` actually accepts.
     private static let reconnectKeyHint = "Press Space or Return to reconnect"
 
-    @ViewBuilder
+    // No `@ViewBuilder`: the body computes a value before returning one view,
+    // and an explicit `return` turns the attribute off anyway.
     private func connectingPill(
         verb: String,
         host: String,
@@ -467,7 +468,7 @@ struct ContentView: View {
     }
 
     /// The pills advertise Space/Return and Escape, which the surface handles.
-    /// When the host shell has died there is no surface, so the same keys are
+    /// When the supervisor has died there is no surface, so the same keys are
     /// carried here instead — otherwise the hint names keys that do nothing.
     @ViewBuilder
     private func keyboardFallbacks(for tab: TerminalTabItem) -> some View {

@@ -122,6 +122,9 @@ targets:
       - target: QuayAskpass
         copy:
           destination: executables
+      - target: QuaySupervisor
+        copy:
+          destination: executables
       - package: Sparkle
         product: Sparkle
       - framework: Frameworks/GhosttyKit.xcframework
@@ -150,6 +153,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.babul.quay.askpass
         PRODUCT_NAME: quay-askpass
+        SKIP_INSTALL: NO
+        INSTALL_PATH: $(LOCAL_APPS_DIR)
+        ENABLE_HARDENED_RUNTIME: YES
+
+  QuaySupervisor:
+    type: tool
+    platform: macOS
+    sources:
+      - path: QuaySupervisor
+      - path: Quay/Supervisor/SupervisorProtocol.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.babul.quay.supervisor
+        PRODUCT_NAME: quay-supervisor
         SKIP_INSTALL: NO
         INSTALL_PATH: $(LOCAL_APPS_DIR)
         ENABLE_HARDENED_RUNTIME: YES

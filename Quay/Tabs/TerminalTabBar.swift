@@ -18,6 +18,7 @@ struct TerminalTabBar: View {
                     TabButton(
                         title: tab.displayTitle,
                         phase: tab.phase,
+                        transportIsLive: tab.transportIsLive,
                         iconName: tab.profile.iconName,
                         colorTag: tab.profile.colorTag,
                         showColorBar: showTabColorBars,
@@ -62,6 +63,7 @@ struct TerminalTabBar: View {
 private struct TabButton: View {
     var title: String
     var phase: TerminalTabItem.Phase
+    var transportIsLive: Bool
     var iconName: String?
     var colorTag: String?
     var showColorBar: Bool
@@ -88,7 +90,7 @@ private struct TabButton: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(title)
+            .accessibilityLabel(isIdle ? "\(title), idle" : title)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
 
             Button(action: onClose) {
@@ -161,6 +163,11 @@ private struct TabButton: View {
         return phase.hasLiveSession
     }
 
+    /// A running session whose client holds no connection — lftp at an idle
+    /// prompt — is still running, so the dot stays green but dims rather than
+    /// claiming a transport that isn't there.
+    private var isIdle: Bool { phase == .running && !transportIsLive }
+
     @ViewBuilder
     private var phaseDot: some View {
         let color: Color = switch phase {
@@ -172,7 +179,11 @@ private struct TabButton: View {
         case .disconnected,
              .failed:           .red
         }
-        Circle().fill(color).frame(width: 6, height: 6)
+        Circle()
+            .fill(color)
+            .opacity(isIdle ? 0.4 : 1)
+            .frame(width: 6, height: 6)
+            .help(isIdle ? "Connected, idle — no live transport" : "")
     }
 }
 

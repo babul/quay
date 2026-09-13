@@ -283,6 +283,26 @@ struct SSHCommandBuilderTests {
         #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
 
+    /// lftp's shipped defaults wait 5 minutes for a reply and then retry 1000
+    /// times, which at an interactive prompt is indistinguishable from a hang:
+    /// a dead host produced a command that simply never returned, and nothing
+    /// on screen or in the tab said why.
+    @Test("lftp is told to give up on a dead host rather than retry forever")
+    func lftpReportsADeadHost() {
+        let cmd = SSHCommandBuilder.buildSFTP(
+            SSHTarget(hostname: "host.internal", auth: .sshAgent),
+            client: .lftp
+        )
+        for setting in SSHCommandBuilder.lftpInteractiveTimeouts {
+            #expect(cmd.command.contains(setting))
+        }
+        // Near ssh's own ServerAliveInterval * ServerAliveCountMax, so lftp
+        // gives up on roughly the same evidence its transport does.
+        #expect(cmd.command.contains("set net:timeout 15"))
+        // Bounded, where the default 1000 is not.
+        #expect(cmd.command.contains("set net:max-retries 3"))
+    }
+
     @Test("lftp encodes remote directory in URL")
     func lftpRemoteDirectory() {
         let cmd = SSHCommandBuilder.buildSFTP(
@@ -324,58 +344,43 @@ struct SSHCommandBuilderTests {
     }
 }
 
-/// The tab's pty runs a host shell for its whole life and sessions are typed
-/// into it — that is what lets a reconnect continue on the same screen. These
-/// pin the two strings that make it work.
-@Suite("Session host shell")
-struct SessionHostShellTests {
-    @Test("The host shell loads the user's environment, then hands over quietly")
-    func hostShellCommand() {
-        let command = SessionBootstrap.hostShellCommand()
+/// The tab's pty runs `quay-supervisor` for its whole life and sessions are
+/// spawned through it — that is what lets a reconnect continue on the same
+/// screen.
+@Suite("Session supervisor")
+struct SessionSupervisorTests {
+    @Test("The supervisor is reached through the user's login shell")
+    func supervisorCommand() {
+        let command = SessionBootstrap.wrapInLoginShell("'/Applications/Quay.app/Contents/MacOS/quay-supervisor'", environment: [:])
         // A login shell first: a launchd-started app otherwise lacks
-        // SSH_AUTH_SOCK and PATH.
+        // SSH_AUTH_SOCK and PATH, and every session inherits them from the
+        // supervisor — which then replaces the shell rather than running under it.
         #expect(command.contains(" -l -c "))
-        // Then a bare shell with no visible prompt and no startup file.
-        #expect(command.contains("PS1="))
-        // Echo off and the line editor disabled, so Quay's typed command never
-        // reaches the screen — the session announces itself instead.
-        #expect(command.contains("stty -echo"))
-        #expect(command.contains("+o emacs"))
-        // The prompt clears the modes a dead remote left behind — without the
-        // bracketed-paste reset, the next command Quay types arrives wrapped in
-        // ESC[200~ and the shell runs "00~/usr/bin/ssh".
-        #expect(SessionBootstrap.hostShellPrompt.contains("\u{1B}[?2004l"))
-        // Leaves the alt screen a full-screen program died in...
-        #expect(SessionBootstrap.hostShellPrompt.contains("\u{1B}[?1047l"))
-        // ...but never via 1049, which restores a saved cursor and so makes the
-        // next session overwrite the scrollback.
-        #expect(!SessionBootstrap.hostShellPrompt.contains("1049"))
-        #expect(command.contains("?2004l"))
-        #expect(command.contains("ENV="))
-        #expect(command.contains("/bin/sh -i"))
+        #expect(command.contains("exec "))
+        #expect(command.contains("quay-supervisor"))
     }
 
-    @Test("A session with no per-attempt environment is typed bare")
-    func plainCommandLine() {
-        let cmd = SSHCommand(command: "/usr/bin/ssh host", environment: ["TERM": "xterm-256color"])
-        // TERM is set on the host shell once, so it never appears on screen.
-        #expect(SessionBootstrap.sessionCommandLine(cmd) == "/usr/bin/ssh host")
+    @Test("An sftp session is spawned in its local directory")
+    func sftpSpawnsInLocalDirectory() throws {
+        let profile = ConnectionProfile(name: "p", hostname: "h", username: "u")
+        let session = try SessionBootstrap.start(
+            for: profile,
+            kind: .sftp,
+            localDirectoryOverride: NSTemporaryDirectory()
+        )
+        #expect(session.spawn.workingDirectory == SessionBootstrap.normalizedLocalDirectory(NSTemporaryDirectory()))
+        #expect(session.spawn.argv.first == SFTPClient.preferred.binaryPath)
+        #expect(session.spawn.environment["TERM"] == "xterm-256color")
+        // The marker is the tab's to add: it knows the attempt number.
+        #expect(session.spawn.announce == nil)
     }
 
-    @Test("Per-attempt askpass plumbing is inlined, since the socket changes each try")
-    func commandLineInlinesAskpass() {
-        let cmd = SSHCommand(
-            command: "/usr/bin/ssh host",
-            environment: [
-                "TERM": "xterm-256color",
-                "SSH_ASKPASS": "/tmp/quay askpass.sock",
-                "SSH_ASKPASS_REQUIRE": "force",
-            ]
-        )
-        #expect(
-            SessionBootstrap.sessionCommandLine(cmd)
-                == "env SSH_ASKPASS='/tmp/quay askpass.sock' SSH_ASKPASS_REQUIRE='force' /usr/bin/ssh host"
-        )
+    @Test("An ssh session carries no working directory of its own")
+    func sshSpawnsWherever() throws {
+        let profile = ConnectionProfile(name: "p", hostname: "h", username: "u")
+        let session = try SessionBootstrap.start(for: profile, kind: .ssh)
+        #expect(session.spawn.workingDirectory == nil)
+        #expect(session.spawn.argv.first == SSHCommandBuilder.sshBinary)
     }
 
     /// An sftp client prints its own prompt and owns its transport — lftp
@@ -393,29 +398,10 @@ struct SessionHostShellTests {
         #expect(!ssh.connectedWhenClientRuns)
     }
 
-    @Test("Each session kind knows which client to look for in the pty")
-    func clientNames() {
-        #expect(SessionBootstrap.clientNames(for: .ssh, sftpClient: .macOSOpenSSH) == ["ssh"])
-        #expect(SessionBootstrap.clientNames(for: .sftp, sftpClient: .macOSOpenSSH).contains("sftp"))
-        #expect(SessionBootstrap.clientNames(for: .sftp, sftpClient: .lftp).contains("lftp"))
-    }
-
-    @Test("A session announces itself in place of the command it runs")
-    func announcesSession() {
-        let line = SessionBootstrap.announced(
-            "/usr/bin/ssh host",
-            marker: "→ ssh babul@host  (attempt 2)"
-        )
-        // %s, not interpolation: a target containing % would otherwise be read
-        // as a format specifier.
-        #expect(line.contains("printf '\\033[2m%s\\033[0m\\n' "))
-        #expect(line.contains("'→ ssh babul@host  (attempt 2)'"))
-        #expect(line.contains("; /usr/bin/ssh host; "))
-        // Echo is on for the session — a local client like sftp or lftp shows
-        // nothing as you type without it — and off again afterwards, so the
-        // next command Quay types stays hidden.
-        #expect(line.hasPrefix("stty echo; "))
-        #expect(line.hasSuffix("; stty sane -echo"))
+    @Test("The marker is written dimmed, so it reads as a note and not output")
+    func announcementIsDimmed() {
+        let line = SessionBootstrap.announcement("→ ssh babul@host  (attempt 2)")
+        #expect(line == "\u{1B}[2m→ ssh babul@host  (attempt 2)\u{1B}[0m")
     }
 
     /// ssh takes the first value of a repeated `-o`, so a per-profile override

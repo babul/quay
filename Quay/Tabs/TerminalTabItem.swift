@@ -83,10 +83,10 @@ final class LoginScriptRunner {
 
 /// A single SSH tab.
 ///
-/// The pty runs a host shell for the tab's whole life and sessions are *typed
-/// into it*, so the surface — and the screen it holds — survive a reconnect.
-/// A new surface is built only when that host shell dies. See
-/// `SessionBootstrap.hostShellCommand()`.
+/// The pty runs `quay-supervisor` for the tab's whole life and sessions are
+/// spawned through it, so the surface — and the screen it holds — survive a
+/// reconnect. A new surface is built only when that supervisor dies. See
+/// `SessionBootstrap.supervisorConfig(socketPath:)`.
 ///
 /// - The `AskpassServer` lives for the duration of the tab (not just one surface
 ///   lifetime) so re-auth on reconnect still works.
@@ -120,85 +120,69 @@ final class TerminalTabItem: Identifiable {
     private(set) var displayedUsername: String?
     private var reachedRemoteShell = false
 
-    /// The tab's surface. `nil` before the first connect, and after the host
-    /// shell dies or the tab closes.
+    /// The tab's surface. `nil` before the first connect, and after the
+    /// supervisor dies or the tab closes.
     private(set) var surfaceView: GhosttySurfaceView?
 
     /// `AskpassServer` owned for the tab's lifetime, stopped only on tab close.
     private var askpassServer: AskpassServer?
+    /// The tab's end of its `quay-supervisor`, for the surface's lifetime.
+    private var supervisor: SupervisorClient?
+    private var supervisorIsReady = false
+    /// The attempt waiting to be spawned — for the supervisor to come up, or
+    /// for the previous session to finish leaving.
+    private var pendingSpawn: SupervisorProtocol.Spawn?
+    /// Which attempt each session belongs to.
+    ///
+    /// A spawn is asked for and acknowledged as two separate events, and the
+    /// user can disconnect or reconnect in between. Without this, the `spawned`
+    /// meant for an abandoned attempt is adopted by whatever replaced it — and
+    /// a disconnect issued in that window signals nothing, because there is no
+    /// pid yet to signal.
+    private var attemptGeneration = 0
+    /// The generation whose spawn has been sent but not yet acknowledged.
+    private var spawnInFlight: Int?
+    /// Fails an attempt whose supervisor never reports ready.
+    private var spawnDeadlineTask: Task<Void, Never>?
+    /// The session the supervisor reports running, whoever started it.
+    private var livePID: pid_t?
+    /// The session this attempt started. Differs from `livePID` only while a
+    /// previous session is still on its way out.
+    private var attemptPID: pid_t?
     private var loginScriptRunner: LoginScriptRunner?
-    /// Watches the pty's foreground process group for the tab's whole life:
-    /// it types the session in, sees it connect, and sees it end. libghostty
-    /// has no callback for any of that once a host shell owns the pty.
+    /// Polls the running client's TCP state: it is what turns an attempt into
+    /// a connection, and what keeps `transportIsLive` honest.
     private var sessionWatch: Task<Void, Never>?
     /// Holds the indicator on screen long enough to be read — purely cosmetic,
-    /// kept apart from `connectWatch` so cancelling one never means the other.
+    /// kept apart from the watch so cancelling one never means the other.
     private var connectedHoldTask: Task<Void, Never>?
     private var connectStartedAt: Date
     /// When the current session's connection came up, or `nil` if it never did.
     private var connectedAt: Date?
-    /// Executable names that count as this session's client.
-    private var clientNames: Set<String> = ["ssh"]
     /// See `SessionBootstrap.Session.connectedWhenClientRuns`.
     private var connectedWhenClientRuns = false
-    /// When the attempt's command was typed, to bound the wait for its client
-    /// to appear.
-    private var commandSentAt: Date?
-    /// Consecutive polls that found no client. See `sessionEndConfirmations`.
-    private var noClientStreak = 0
-    /// The pty's foreground group when the host shell is at its prompt, learned
-    /// the first time this tab types into it. It is how the tab tells "the
-    /// shell is ready" from "something else owns this terminal" — a local
-    /// program that a stray keystroke started would otherwise swallow every
-    /// command Quay types, and no attempt would ever connect.
-    private var hostShellPgid: pid_t?
-    /// Escalates a disconnect that the client ignored. See `disconnectSignals`.
+    /// Escalates a disconnect that the client ignored. See `hangUpClient`.
     private var disconnectTask: Task<Void, Never>?
-    /// When this session's transport went missing, for clients that outlive it.
-    /// See `transportLossGrace`.
-    private var transportMissingSince: Date?
-    private var reachabilityTask: Task<Void, Never>?
+    /// Whether the session's client currently holds a connection.
+    ///
+    /// Only ever *stays* false for a client that outlives its transport
+    /// (lftp): it keeps its prompt when the connection drops or idles out, and
+    /// reopens one on the next command, so the session is still `.running` —
+    /// the indicator just stops claiming a transport that isn't there. Every
+    /// other client exits with its transport, and the session ends with it.
+    private(set) var transportIsLive = true
     /// Whether this attempt's login script has been started yet.
     private var didStartLoginScript = false
-    /// The screen as it was when this attempt's command was typed. Everything
-    /// in it belongs to the previous session, so the login script matches only
+    /// The screen as it was when this attempt was spawned. Everything in it
+    /// belongs to the previous session, so the login script matches only
     /// against what this one adds.
     private var loginScriptBaseline = ""
-    /// The attempt's command line, waiting for the host shell to be ready for
-    /// it. Typing before the shell takes over the pty makes it echo twice.
-    private var pendingCommandLine: String?
 
-    /// The host shell is ready for a command once something owns the pty's
-    /// foreground group and it isn't the session client.
-    ///
-    /// Deliberately not matched by name: `proc_name` reports the real
-    /// executable, and `/bin/sh` on macOS *is* bash, so the host shell shows up
-    /// as "bash". What matters is only that the client isn't running yet.
-    static func isReadyForCommand(
-        _ snapshot: SessionConnectionProbe.Foreground,
-        echoDisabled: Bool,
-        shellIsForeground: Bool
-    ) -> Bool {
-        snapshot.state == .noClient && !snapshot.names.isEmpty && echoDisabled && shellIsForeground
-    }
-
-    /// How long to wait for the host shell to quiet the terminal before typing
-    /// anyway.
-    ///
-    /// Generous on purpose. The shell is reached through libghostty's
-    /// `login -flp` (PAM, utmp) and a login shell sourcing the user's profile,
-    /// which together can take several seconds on a real machine — and typing
-    /// before `stty -echo` lands smears the whole command line across the
-    /// screen. Waiting costs a slower first connect and nothing else; this is
-    /// only the escape hatch for an `stty` that never ran at all, where an
-    /// echoed line is a blemish and never typing would be a dead tab.
-    static let hostShellQuietGrace: TimeInterval = 12
-
-    /// How long to wait for the host shell to appear at all before failing the
-    /// attempt. Strictly greater than `hostShellQuietGrace`, or the grace could
-    /// never fire and a shell slower than this bound would fail every attempt
-    /// rather than connecting with an echoed line.
-    static let hostShellStartTimeout: TimeInterval = hostShellQuietGrace + 8
+    /// How long to wait for the supervisor to report ready before failing the
+    /// attempt. It is reached through libghostty's `login -flp` (PAM, utmp)
+    /// and a login shell sourcing the user's profile, which together can take
+    /// several seconds on a real machine.
+    static let supervisorStartTimeout: TimeInterval = 20
     /// Sleeps out the backoff between automatic attempts.
     private var retryTask: Task<Void, Never>?
     private var retryAttempt = 0
@@ -211,21 +195,14 @@ final class TerminalTabItem: Identifiable {
     /// `TerminalClient`) to receive cross-feature child-exit events.
     var onChildExited: (() -> Void)?
 
-    /// Called with this tab's hostname when a session drops on its own. A drop
-    /// is evidence about the *host*, so the manager passes it to the other tabs
-    /// connected there — a client like lftp will not notice by itself.
-    var onSessionLost: ((String) -> Void)?
-
-    /// Starts one attempt. Spawning ssh is the production behaviour; tests
-    /// substitute a launcher so the retry cycle can be driven without a host.
+    /// Starts one attempt. Spawning the session is the production behaviour;
+    /// tests substitute a launcher so the retry cycle can be driven without a
+    /// host.
     private let launchSession: (@MainActor () -> Void)?
     /// Waits out a delay. Tests substitute an instant one.
     private let sleepFor: (@MainActor (TimeInterval) async -> Void)?
     /// Reads the wall clock, so tests can age a session without waiting.
     private let now: @MainActor () -> Date
-    /// Asks whether a peer still answers. Tests substitute a scripted answer so
-    /// the confirmation rounds can be driven without a network.
-    private let checkReachable: ((SessionConnectionProbe.Peer) async -> Bool)?
 
     init(
         profile: ConnectionProfile,
@@ -233,8 +210,7 @@ final class TerminalTabItem: Identifiable {
         localDirectoryOverride: String? = nil,
         launchSession: (@MainActor () -> Void)? = nil,
         sleepFor: (@MainActor (TimeInterval) async -> Void)? = nil,
-        now: @escaping @MainActor () -> Date = Date.init,
-        checkReachable: ((SessionConnectionProbe.Peer) async -> Bool)? = nil
+        now: @escaping @MainActor () -> Date = Date.init
     ) {
         self.id = UUID()
         self.profile = profile
@@ -245,7 +221,6 @@ final class TerminalTabItem: Identifiable {
         self.launchSession = launchSession
         self.sleepFor = sleepFor
         self.now = now
-        self.checkReachable = checkReachable
         self.connectStartedAt = now()
     }
 
@@ -263,11 +238,6 @@ final class TerminalTabItem: Identifiable {
         await retryTask?.value
     }
 
-    /// Awaits an in-flight reachability check, so tests need no timing guesses.
-    func awaitReachabilityCheck() async {
-        await reachabilityTask?.value
-    }
-
     /// Awaits the cosmetic hold before a connected session reads as running.
     func awaitConnectedHold() async {
         await connectedHoldTask?.value
@@ -277,11 +247,6 @@ final class TerminalTabItem: Identifiable {
 
     /// Connect at the user's request: cancels any retry cycle and starts over.
     func connect() {
-        // The escalation from a previous disconnect is deliberately left to
-        // run: it is aimed at the pids captured when that hangup was sent, so
-        // it cannot touch this attempt — and cancelling it would strand a
-        // client that ignored the hangup, which the new attempt would then
-        // adopt as its own session.
         stopRetrying()
         retryAttempt = 0
         userDisconnected = false
@@ -292,6 +257,11 @@ final class TerminalTabItem: Identifiable {
         // Stop the previous attempt's tasks but keep the surface: reusing it is
         // what lets the new session continue on the screen already there.
         stopSessionTasks()
+        // A session still running belongs to the attempt before this one. Hang
+        // it up; the supervisor spawns the new one once it has gone.
+        hangUpClient()
+        attemptPID = nil
+        attemptGeneration += 1
         reachedRemoteShell = false
         didStartLoginScript = false
         connectStartedAt = now()
@@ -316,40 +286,155 @@ final class TerminalTabItem: Identifiable {
                 askpassServer?.stop()
                 askpassServer = askpass
             }
-            clientNames = session.clientNames
             connectedWhenClientRuns = session.connectedWhenClientRuns
 
-            // Typed by the watch once the host shell is ready for it — the
-            // same path whether the shell is new or left over from the last
-            // session, which is what keeps the screen.
-            let marker = SessionBootstrap.sessionMarker(
-                target: session.displayTarget,
-                attempt: retryAttempt,
-                // A manual reconnect resets the count, so this only ever
-                // reports a backoff that was actually waited out.
-                backoff: retryAttempt > 0 ? Self.retryDelay(attempt: retryAttempt) : 0,
-                at: now()
+            var spawn = session.spawn
+            spawn.announce = SessionBootstrap.announcement(
+                SessionBootstrap.sessionMarker(
+                    target: session.displayTarget,
+                    attempt: retryAttempt,
+                    // A manual reconnect resets the count, so this only ever
+                    // reports a backoff that was actually waited out.
+                    backoff: retryAttempt > 0 ? Self.retryDelay(attempt: retryAttempt) : 0,
+                    at: now()
+                )
             )
-            pendingCommandLine = SessionBootstrap.announced(session.commandLine, marker: marker)
-            if surfaceView?.hasLiveHostShell != true {
-                surfaceView = makeSurfaceView(config: session.config)
+            pendingSpawn = spawn
+
+            if surfaceView?.hasLiveSupervisor != true {
+                try startSupervisor()
             }
-            startSessionWatch()
+            sendPendingSpawn()
         } catch {
-            phase = .failed("\(error)")
+            failAttempt("\(error)")
         }
+    }
+
+    /// A fresh supervisor and the surface that hosts it. The socket is listening
+    /// before the surface exists, so the helper can never connect to nothing.
+    private func startSupervisor() throws {
+        supervisor?.stop()
+        supervisorIsReady = false
+        livePID = nil
+        let client = try SupervisorClient()
+        client.onEvent = { [weak self] event in self?.handleSupervisorEvent(event) }
+        client.start()
+        supervisor = client
+        surfaceView = makeSurfaceView(
+            config: try SessionBootstrap.supervisorConfig(socketPath: client.socketPath)
+        )
+    }
+
+    private func handleSupervisorEvent(_ event: SupervisorProtocol.Event) {
+        switch event {
+        case .ready:
+            supervisorIsReady = true
+            sendPendingSpawn()
+
+        case .spawned(let pid):
+            let generation = spawnInFlight
+            spawnInFlight = nil
+            livePID = pid
+            guard Self.adoptsSession(
+                spawnGeneration: generation,
+                attemptGeneration: attemptGeneration,
+                userDisconnected: userDisconnected
+            ) else {
+                hangUpClient()
+                return
+            }
+            attemptPID = pid
+            // The connect clock starts when the client does, not when the
+            // supervisor was asked for.
+            connectStartedAt = now()
+            startSessionWatch()
+
+        case .exited(let pid, _, _):
+            guard pid == livePID else { return }
+            livePID = nil
+            spawnInFlight = nil
+            if pid == attemptPID {
+                attemptPID = nil
+                markSessionEnded()
+            }
+            // A previous session finishing is what a waiting attempt was
+            // waiting for.
+            sendPendingSpawn()
+
+        case .error(let message):
+            // The request is over, however it ended. Leaving it outstanding
+            // would block every later spawn in this tab behind a deadline that
+            // nothing can now satisfy — no session was started, so no
+            // `spawned` or `exited` is coming to clear it.
+            spawnInFlight = nil
+            failAttempt(message)
+        }
+    }
+
+    /// Whether a session the supervisor has just reported belongs to the
+    /// attempt still in progress.
+    ///
+    /// A spawn is asked for and acknowledged as two separate events, and the
+    /// user can disconnect or reconnect in between. A session that arrives for
+    /// an abandoned attempt is not ignored — it is running, so the caller hangs
+    /// it up.
+    static func adoptsSession(
+        spawnGeneration: Int?,
+        attemptGeneration: Int,
+        userDisconnected: Bool
+    ) -> Bool {
+        guard !userDisconnected else { return false }
+        return spawnGeneration == attemptGeneration
+    }
+
+    /// Spawns the waiting attempt once the supervisor is ready and nothing
+    /// else is running. Bounded, so a supervisor that never comes up fails
+    /// the attempt instead of leaving the tab in "Connecting…" forever.
+    private func sendPendingSpawn() {
+        guard let spawn = pendingSpawn else { return }
+        // `spawnInFlight` as well as `livePID`: between asking for a session and
+        // hearing about it there is no pid, and asking twice would start two.
+        guard supervisorIsReady, livePID == nil, spawnInFlight == nil, let supervisor else {
+            armSpawnDeadline()
+            return
+        }
+        pendingSpawn = nil
+        spawnDeadlineTask?.cancel()
+        spawnDeadlineTask = nil
+        // Captured before the client starts: a prompt printed before the next
+        // poll would otherwise land in the baseline and never match.
+        loginScriptBaseline = surfaceView?.bridge?.visibleText() ?? ""
+        do {
+            try supervisor.send(.spawn(spawn))
+            spawnInFlight = attemptGeneration
+        } catch {
+            failAttempt("\(error)")
+        }
+    }
+
+    private func armSpawnDeadline() {
+        guard spawnDeadlineTask == nil else { return }
+        spawnDeadlineTask = Task { [weak self] in
+            await self?.sleep(Self.supervisorStartTimeout)
+            guard !Task.isCancelled, let self, self.pendingSpawn != nil else { return }
+            self.failAttempt("The session supervisor did not start.")
+        }
+    }
+
+    /// An attempt that cannot be made at all — the helper is missing, the
+    /// client's binary is not there — is a configuration problem, not a drop,
+    /// so it stops the cycle rather than burning retries on it.
+    private func failAttempt(_ message: String) {
+        stopRetrying()
+        stopSessionTasks()
+        pendingSpawn = nil
+        phase = .failed(message)
     }
 
     private func makeSurfaceView(config: GhosttySurfaceConfig) -> GhosttySurfaceView {
         let view = GhosttySurfaceView(runtime: .shared, config: config)
         view.sessionIsEstablished = { [weak self] in self?.phase == .running }
-        view.sessionOwnsTerminal = { [weak self, weak view] in
-            guard let self, let view else { return false }
-            // Asked at write time rather than read from the poll: a session that
-            // exited since the last poll would otherwise leave input reaching
-            // the host shell for the rest of the interval.
-            return view.hasRunningClient(clientNames: self.clientNames)
-        }
+        view.sessionOwnsTerminal = { [weak self] in self?.livePID != nil }
         view.onDeadSessionKey = { [weak self] key in
             guard let self else { return false }
             switch key {
@@ -370,7 +455,7 @@ final class TerminalTabItem: Identifiable {
         view.onBridgeCreated = { [weak self] bridge in
             guard let self else { return }
             bridge.onCloseRequest = { [weak self] in
-                self?.hostShellEnded()
+                self?.supervisorEnded()
             }
             bridge.onTitleChange = { [weak self] title in
                 guard let self else { return }
@@ -378,143 +463,24 @@ final class TerminalTabItem: Identifiable {
                 if !title.isEmpty { self.markRemoteShellReached() }
             }
             bridge.onChildExited = { [weak self] _ in
-                // The host shell itself died — the surface is spent.
-                self?.hostShellEnded()
+                // The supervisor itself died — the surface is spent.
+                self?.supervisorEnded()
                 self?.onChildExited?()
             }
         }
         return view
     }
 
-    /// Started only once the session's client owns the terminal.
-    ///
-    /// Starting it earlier is unsafe on two counts: the screen still holds the
-    /// *previous* session's text, so a retained prompt matches immediately; and
-    /// the pty still belongs to the host shell, so the step's value — which may
-    /// be a resolved secret — would be typed into a local shell.
-    /// Watches the transport of a client that outlives it, and asks the host
-    /// directly once it has been gone a while.
-    private func trackTransport(present: Bool) {
-        guard connectedWhenClientRuns else { return }
-        guard !present else {
-            transportMissingSince = nil
-            return
-        }
-        guard let missingSince = transportMissingSince else {
-            transportMissingSince = now()
-            return
-        }
-        guard now().timeIntervalSince(missingSince) >= Self.transportLossGrace else { return }
-        probeHost()
+    /// Records what the poll saw of the client's transport. Loss is not acted
+    /// on: the client's own keepalives (`ServerAlive*`) end a dead connection
+    /// in-band, and a client that outlives its transport reconnects itself.
+    func noteTransport(present: Bool) {
+        transportIsLive = present
     }
 
-    /// Asks another tab's bad news about this one: if the host is gone, end the
-    /// session rather than waiting for a client that may never notice.
-    ///
-    /// Only an established session is worth checking. A tab that is already
-    /// attempting knows the host is doubtful — `ConnectTimeout` bounds it — and
-    /// killing its in-flight attempt on a sibling's say-so only burns retries:
-    /// with several tabs on one host, each one's attempts get shot by the
-    /// others' reports, and the unlucky tab never gets a clean try.
-    func verifyHostReachable() {
-        guard phase == .running, !userDisconnected else { return }
-        probeHost()
-    }
-
-    /// Where this tab's session was last seen connected. Remembered so a check
-    /// run after the transport is gone still probes the right address.
-    var lastKnownPeer: SessionConnectionProbe.Peer?
-
-    private func probeHost() {
-        // The session's own peer, not the profile's hostname: ssh_config can
-        // rewrite where a profile actually dials (alias, `HostName`, `Port`,
-        // `ProxyJump`), and probing the wrong address reads as "host gone" and
-        // kills a healthy session. No peer means nothing was ever seen
-        // connected, so there is nothing to check.
-        guard reachabilityTask == nil, let peer = lastKnownPeer else { return }
-
-        reachabilityTask = Task { [weak self] in
-            guard let self else { return }
-            let verdict = await self.confirmReachability(of: peer)
-            guard !Task.isCancelled else { return }
-            self.reachabilityTask = nil
-            switch verdict {
-            case .reachable:
-                // The client closed an idle connection; wait out another grace
-                // before asking again.
-                self.transportMissingSince = self.now()
-            case .unreachable:
-                self.endUnreachableSession()
-            case .abandoned:
-                break
-            }
-        }
-    }
-
-    private enum ReachabilityVerdict {
-        case reachable
-        case unreachable
-        /// The question stopped mattering while it was being asked.
-        case abandoned
-    }
-
-    /// Unreachable has to be confirmed: a host that is up but refusing *new*
-    /// connections — sshd restarting, a connection-rate limit — answers this
-    /// probe exactly like one that is gone, while the session's own long-lived
-    /// connection is fine. And the probe is slow, so between rounds the
-    /// evidence that prompted it is rechecked: applying a stale negative to a
-    /// session that recovered meanwhile is how a working tab gets killed.
-    private func confirmReachability(
-        of peer: SessionConnectionProbe.Peer
-    ) async -> ReachabilityVerdict {
-        for round in 1...Self.reachabilityConfirmations {
-            if round > 1 { await sleep(Self.reachabilityRetryDelay) }
-            guard !Task.isCancelled else { return .abandoned }
-            if await isReachable(peer) { return .reachable }
-            guard !Task.isCancelled, sessionStillLooksLost else { return .abandoned }
-        }
-        return .unreachable
-    }
-
-    /// Whether the evidence that started a reachability check still holds.
-    ///
-    /// A client that outlives its transport is the case this exists for, and
-    /// `trackTransport` clears the timestamp the moment the transport returns.
-    /// A client that dies with its transport has no such signal, and is covered
-    /// by the confirmation round instead.
-    private var sessionStillLooksLost: Bool {
-        guard phase.hasLiveSession, !userDisconnected else { return false }
-        return connectedWhenClientRuns ? transportMissingSince != nil : true
-    }
-
-    private func isReachable(_ peer: SessionConnectionProbe.Peer) async -> Bool {
-        if let checkReachable { return await checkReachable(peer) }
-        // Off the main actor, and off the cooperative pool: the connect blocks,
-        // and parking a cooperative thread per tab would stall unrelated awaits
-        // app-wide when several tabs check at once.
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
-                continuation.resume(
-                    returning: HostReachability.isReachable(
-                        host: peer.host,
-                        port: peer.port,
-                        timeout: Self.reachabilityTimeout
-                    )
-                )
-            }
-        }
-    }
-
-    /// The host is gone but the client hasn't noticed. End the session on its
-    /// behalf so the retry cycle can take over.
-    private func endUnreachableSession() {
-        transportMissingSince = nil
-        // The client this path exists for is the one documented to ignore
-        // SIGHUP, so it gets the same escalation a manual disconnect does.
-        hangUpClient()
-        markSessionEnded()
-    }
-
+    /// Started only once the session is established: the screen still holds
+    /// the *previous* session's text until then, so a retained prompt would
+    /// match immediately, and a step typed at a password prompt is wrong.
     private func startLoginScriptOnce() {
         guard !didStartLoginScript else { return }
         didStartLoginScript = true
@@ -531,9 +497,6 @@ final class TerminalTabItem: Identifiable {
                 guard current.hasPrefix(baseline) else { return current }
                 return String(current.dropFirst(baseline.count))
             },
-            // `sendAutomatedInput` requires an established session, which is
-            // what keeps a step's value — possibly a resolved secret — out of
-            // the host shell during a connect or a teardown.
             sendText: { [weak view] text in
                 view?.sendAutomatedInput(text, appendReturn: true)
             }
@@ -542,12 +505,27 @@ final class TerminalTabItem: Identifiable {
         runner.start()
     }
 
+    /// Drops the tab's end of the supervisor and the surface that hosted it.
+    /// Nothing spawned through it can still be running, so the session pids go
+    /// with it.
+    private func releaseSupervisor() {
+        supervisor?.stop()
+        supervisor = nil
+        supervisorIsReady = false
+        pendingSpawn = nil
+        // Nothing outstanding survives the supervisor that was asked: a request
+        // it died before acknowledging is never answered, and holding it would
+        // stall the replacement.
+        spawnInFlight = nil
+        livePID = nil
+        attemptPID = nil
+        surfaceView = nil
+    }
+
     /// The pty's own child is gone, so the screen can't be reused: the next
     /// attempt builds a fresh surface.
-    private func hostShellEnded() {
-        pendingCommandLine = nil
-        hostShellPgid = nil
-        surfaceView = nil
+    private func supervisorEnded() {
+        releaseSupervisor()
         markSessionEnded()
     }
 
@@ -555,54 +533,15 @@ final class TerminalTabItem: Identifiable {
         connect()
     }
 
-    /// How long to wait for a typed command to show up as a running client
-    /// before calling the attempt failed.
-    static let clientStartTimeout: TimeInterval = 5
-
-    /// How long a session may run without a transport before the host is
-    /// checked on.
-    ///
-    /// Only clients that outlive their transport get here: lftp keeps its
-    /// prompt when the connection drops and reopens one on the next command,
-    /// so "no socket" alone means nothing. It also idle-closes connections by
-    /// design, which is why the answer comes from reaching the host rather than
-    /// from the absence itself.
-    static let transportLossGrace: TimeInterval = 20
-    static let reachabilityTimeout: TimeInterval = 3
-    /// Consecutive failed probes before a host counts as gone. See
-    /// `confirmReachability(of:for:)` for why one is not enough.
-    static let reachabilityConfirmations = 2
-    /// Long enough for a restarting sshd to finish, short enough that a genuinely
-    /// dead host is noticed well inside the keepalive window.
-    static let reachabilityRetryDelay: TimeInterval = 2
-
-    /// How many consecutive polls must agree the client is gone before the
-    /// session is called over.
-    ///
-    /// The host shell runs a list — `stty echo; …; <client>; stty sane -echo` —
-    /// so between its items the pty's foreground group belongs to `stty` or
-    /// `printf` rather than to the client. A single sample landing there is not
-    /// a session ending, and treating it as one puts a live session behind a
-    /// "press Space to reconnect" pill.
-    static let sessionEndConfirmations = 2
-
-    /// Watches the pty's foreground process group for this tab's whole life.
-    ///
-    /// With the session running inside a long-lived host shell, the pty's child
-    /// no longer exits when a session ends — so the client appearing and
-    /// disappearing in that group *is* the session lifecycle, and it is also
-    /// what decides whether keystrokes may reach the terminal.
-    /// Polled while a session is being established, where latency is visible:
-    /// the command is typed on the first poll that finds the shell ready.
+    /// Polled while a session is being established, where latency is visible.
     static let attemptingPollInterval: Duration = .milliseconds(150)
-    /// Polled once connected, where the only event left is the session ending —
-    /// a second of latency there is imperceptible, and a tab can sit connected
-    /// for hours.
+    /// Polled once connected, where the only thing left to notice is a
+    /// transport coming or going — a second of latency there is imperceptible,
+    /// and a tab can sit connected for hours.
     static let connectedPollInterval: Duration = .milliseconds(1500)
 
     private func startSessionWatch() {
         sessionWatch?.cancel()
-        commandSentAt = nil
         sessionWatch = Task { [weak self] in
             while !Task.isCancelled {
                 // Poll first: sleeping first adds latency to the very thing the
@@ -616,153 +555,19 @@ final class TerminalTabItem: Identifiable {
         }
     }
 
-    /// What one look at the foreground process group means.
-    enum PollOutcome: Equatable {
-        /// Nothing to do yet — the host shell hasn't taken the pty, or the
-        /// command's client hasn't appeared.
-        case wait
-        /// The host shell is ready; type the session into it.
-        case typeCommand
-        /// The client is up but its connection isn't established.
-        case connecting
-        case connected
-        /// The client is gone and a session was expected — it ended.
-        case sessionEnded
-        /// No session is expected; stop watching until the user asks for one.
-        case stopWatching
-    }
-
-    static func pollOutcome(
-        snapshot: SessionConnectionProbe.Foreground,
-        hasPendingCommand: Bool,
-        echoDisabled: Bool,
-        shellIsForeground: Bool,
-        noClientStreak: Int,
-        secondsSinceAttemptStart: TimeInterval,
-        secondsSinceCommand: TimeInterval?,
-        phase: Phase
-    ) -> PollOutcome {
-        switch snapshot.state {
-        case .connected, .connecting:
-            // Nothing has been typed yet, so the client in the terminal cannot
-            // be this attempt's — it is the previous session, still dying.
-            // Adopting it would mark the tab connected to a session being torn
-            // down, and replay the login script into it.
-            if hasPendingCommand { return .wait }
-            return snapshot.state == .connected ? .connected : .connecting
-        case .noClient:
-            // An empty group is "we can't see anything" — a surface that hasn't
-            // started, or a probe that failed — not "the client is gone". It
-            // must never be read as a session ending.
-            let sawProcesses = !snapshot.names.isEmpty
-
-            if hasPendingCommand {
-                // Something that isn't the host shell owns the terminal — a
-                // local program started by a stray keystroke or a login script
-                // that landed as the session died. Typing now would feed it
-                // keystrokes, not run a command, and every attempt would time
-                // out against it forever. Wait for the prompt instead.
-                guard shellIsForeground else { return .wait }
-                // Ready, or past the grace — a shell whose `stty` never ran
-                // still gets its command, just with an echoed line.
-                if sawProcesses,
-                   echoDisabled || secondsSinceAttemptStart >= hostShellQuietGrace {
-                    return .typeCommand
-                }
-                // Bounded, so a shell that never appears fails the attempt
-                // instead of hanging the tab in "Connecting…" forever. This is
-                // the shell's clock — the client gets its own, from the moment
-                // the command is typed.
-                return secondsSinceAttemptStart >= hostShellStartTimeout ? .sessionEnded : .wait
-            }
-
-            // The command was typed but its client hasn't shown up yet.
-            if let secondsSinceCommand, secondsSinceCommand < clientStartTimeout {
-                return .wait
-            }
-            guard sawProcesses else { return .wait }
-            // See `sessionEndConfirmations`.
-            guard noClientStreak >= sessionEndConfirmations else { return .wait }
-            return phase.hasLiveSession ? .sessionEnded : .stopWatching
-        }
-    }
-
-    /// One poll. Returns `false` when the watch has nothing left to do.
+    /// One look at the client's sockets. Returns `false` when there is no
+    /// client left to watch.
     private func pollSession() -> Bool {
-        guard let view = surfaceView else { return false }
-
-        let snapshot = view.foregroundSnapshot(clientNames: clientNames)
-        // From the snapshot, so the group compared against `hostShellPgid` is
-        // the same sample its names and state came from.
-        let foreground = snapshot.pgid
-        // Short-circuited: only read while a command is pending.
-        let echoOff = pendingCommandLine == nil || view.hostShellHasQuietedTerminal
-        if snapshot.state == .noClient, noClientStreak == 0, phase.hasLiveSession {
-            // The moment the client is first missed, not when its departure is
-            // confirmed a poll later: anything still queued for it is bytes the
-            // host shell would otherwise read and run, and every poll of delay
-            // is another second in which it can.
-            view.flushPendingInput()
+        guard let pid = attemptPID, pid == livePID else { return false }
+        let connected = SessionConnectionProbe.connection(of: pid) != nil
+        noteTransport(present: connected)
+        // A client still alive past the connect timeout counts as connected
+        // even without a socket of its own — see `assumeConnectedAfter`.
+        let pastTimeout = now().timeIntervalSince(connectStartedAt) >= Self.assumeConnectedAfter
+        if phase.isAttemptingConnection, connected || connectedWhenClientRuns || pastTimeout {
+            markConnected()
         }
-        noClientStreak = snapshot.state == .noClient ? noClientStreak + 1 : 0
-        let outcome = Self.pollOutcome(
-            snapshot: snapshot,
-            hasPendingCommand: pendingCommandLine != nil,
-            echoDisabled: echoOff,
-            shellIsForeground: hostShellPgid.map { $0 == foreground } ?? true,
-            noClientStreak: noClientStreak,
-            secondsSinceAttemptStart: now().timeIntervalSince(connectStartedAt),
-            secondsSinceCommand: commandSentAt.map { now().timeIntervalSince($0) },
-            phase: phase
-        )
-
-        switch outcome {
-        case .wait:
-            return true
-
-        case .typeCommand:
-            // Learned here rather than at startup: until this moment the
-            // foreground group belongs to libghostty's login/bash/zsh wrapper
-            // chain, not to the shell that ends up owning the pty. Nothing else
-            // can be running the first time a tab types, so this is the shell.
-            // Only when echo is off, which is the proof our shell — rather
-            // than the wrapper chain still starting up — owns the pty. Typing
-            // via the grace fallback teaches us nothing, and learning the
-            // wrapper's group here would wedge every later attempt.
-            if hostShellPgid == nil, echoOff { hostShellPgid = foreground }
-            let command = pendingCommandLine
-            pendingCommandLine = nil
-            commandSentAt = now()
-            // Captured before the command is sent: a prompt printed before the
-            // next poll would otherwise land in the baseline and never match.
-            loginScriptBaseline = view.bridge?.visibleText() ?? ""
-            // No control-character prefix to clear the line editor: ghostty's
-            // paste path replaces VKILL and friends with spaces
-            // (vendor/ghostty/src/input/paste.zig), so it would only insert one.
-            if let command { view.bridge?.sendText(command + "\n") }
-            return true
-
-        case .connecting, .connected:
-            commandSentAt = nil
-            if let peer = snapshot.peer { lastKnownPeer = peer }
-            trackTransport(present: outcome == .connected)
-            // A client still alive past the connect timeout counts as connected
-            // even without a socket of its own — see `assumeConnectedAfter`.
-            let pastTimeout = now().timeIntervalSince(connectStartedAt) >= Self.assumeConnectedAfter
-            if phase.isAttemptingConnection,
-               outcome == .connected || connectedWhenClientRuns || pastTimeout {
-                markConnected()
-            }
-            return true
-
-        case .sessionEnded:
-            commandSentAt = nil
-            markSessionEnded()
-            return false
-
-        case .stopWatching:
-            return false
-        }
+        return true
     }
 
     /// ssh abandons an unanswered SYN at `ConnectTimeout`, so a client still
@@ -794,10 +599,10 @@ final class TerminalTabItem: Identifiable {
     }
 
     func markConnected() {
-        // Note the session watch keeps running: it is what later notices the
-        // session ending. Only the cosmetic hold is replaced here — the probe
-        // and a remote title can both land, and the loser must not leave a
-        // sleeping task behind that wakes onto a later attempt.
+        // Note the session watch keeps running: it is what keeps the transport
+        // indicator honest. Only the cosmetic hold is replaced here — the
+        // probe and a remote title can both land, and the loser must not leave
+        // a sleeping task behind that wakes onto a later attempt.
         connectedHoldTask?.cancel()
         connectedHoldTask = nil
         guard phase.isAttemptingConnection else { return }
@@ -937,48 +742,42 @@ final class TerminalTabItem: Identifiable {
         userDisconnected = true
         stopRetrying()
         stopSessionTasks()
+        pendingSpawn = nil
         phase = .disconnected
         hangUpClient()
-        // The same reason `markSessionEnded` flushes: input written for the
-        // session it is tearing down must not be left for the host shell.
-        surfaceView?.flushPendingInput()
     }
 
     /// Hangs the client up, and keeps asking until it goes.
     ///
-    /// The escalation follows the processes this hangup was aimed at rather
-    /// than re-reading the foreground group each round: a client that responds
-    /// to SIGHUP by forking a detached copy and exiting takes itself out of
-    /// that group, and rediscovering it there would find only the host shell
-    /// and give up — leaving a live session behind a disconnected tab.
+    /// Signals go to the session's whole process group, which is what reaches a
+    /// client that forks to background itself — lftp does exactly that on
+    /// SIGHUP, to finish transfers. The escalation deliberately outlives the
+    /// leader's exit for the same reason: the leader going away is what such a
+    /// client does *instead* of ending the session, so stopping there is how a
+    /// disconnected tab used to leave a live session behind.
+    ///
+    /// Every signal names the session it is aimed at, because outliving the
+    /// leader means outliving the attempt too: a reconnect can start a
+    /// replacement while this is still counting down, and the supervisor drops
+    /// anything aimed at the session before it. Tying it to the attempt instead
+    /// would do both the wrong things — a hangup issued *by* a reconnect is
+    /// already a generation behind and would never escalate, while one issued
+    /// just before it would escalate onto the new session.
     private func hangUpClient() {
-        guard let view = surfaceView else { return }
-        let clients = view.sessionClientPIDs(clientNames: clientNames)
-        guard !clients.isEmpty else { return }
-        view.signal(pids: clients, signal: Self.hangupSignal)
+        guard let target = livePID, let supervisor else { return }
+        try? supervisor.send(.signal(number: Self.hangupSignal, session: target))
 
         disconnectTask?.cancel()
         disconnectTask = Task { [weak self] in
             for signal in Self.escalationSignals {
                 await self?.sleep(Self.disconnectEscalationDelay)
-                guard !Task.isCancelled, let self, let view = self.surfaceView else { return }
-                // Plus anything they spawned that is a client in its own right,
-                // which is where a self-backgrounding client goes to hide.
-                let survivors = SessionConnectionProbe.liveClients(
-                    among: clients,
-                    clientNames: self.clientNames
-                )
-                guard !survivors.isEmpty else { return }
-                view.signal(pids: survivors, signal: signal)
+                guard !Task.isCancelled, let self else { return }
+                try? self.supervisor?.send(.signal(number: signal, session: target))
             }
         }
     }
 
     func markSessionEnded() {
-        // Before anything else: a session that died with input still in flight
-        // would otherwise hand those bytes to the host shell, which runs them.
-        surfaceView?.flushPendingInput()
-
         let outcome = Self.sessionEndOutcome(
             phase: phase,
             reachedRemoteShell: reachedRemoteShell,
@@ -990,8 +789,6 @@ final class TerminalTabItem: Identifiable {
 
         stopSessionTasks()
         connectedAt = nil
-
-        if !userDisconnected { onSessionLost?(profile.hostname) }
 
         if case .retry(let attempt) = outcome {
             scheduleRetry(attempt: attempt)
@@ -1006,25 +803,25 @@ final class TerminalTabItem: Identifiable {
     /// Stops everything tied to one attempt. Leaves the surface in place — a
     /// dead session keeps its last output on screen.
     private func stopSessionTasks() {
-        reachabilityTask?.cancel()
-        reachabilityTask = nil
-        transportMissingSince = nil
+        transportIsLive = true
         sessionWatch?.cancel()
         sessionWatch = nil
+        spawnDeadlineTask?.cancel()
+        spawnDeadlineTask = nil
         connectedHoldTask?.cancel()
         connectedHoldTask = nil
         loginScriptRunner?.stop()
         loginScriptRunner = nil
     }
 
-    /// Called when the tab is permanently closed. Stops the askpass server.
+    /// Called when the tab is permanently closed. Stops the askpass server and
+    /// the supervisor, which hangs up whatever it was running.
     func close() {
         disconnectTask?.cancel()
         disconnectTask = nil
         stopRetrying()
         stopSessionTasks()
-        pendingCommandLine = nil
-        surfaceView = nil
+        releaseSupervisor()
         askpassServer?.stop()
         askpassServer = nil
         phase = .idle

@@ -1,15 +1,14 @@
 import AppKit
 import Foundation
 
-/// Pure functions for building an SSH surface config from a `ConnectionProfile`.
-///
-/// Previously embedded in `SessionView.SessionBundle`. Extracted so both the
-/// old single-surface path and the new `TerminalTabItem` can share them.
+/// Pure functions for turning a `ConnectionProfile` into what a tab runs: the
+/// surface that hosts the tab's `quay-supervisor`, and one spawn request per
+/// attempt.
 enum SessionBootstrap {
     enum StartError: Error, CustomStringConvertible {
         case incompleteProfile
         case askpassFailed(Error)
-        case helperMissing
+        case helperMissing(String)
 
         var description: String {
             switch self {
@@ -17,24 +16,18 @@ enum SessionBootstrap {
                 return "This connection's auth fields are incomplete. Edit it and try again."
             case .askpassFailed(let e):
                 return "Failed to start the askpass server: \(e)"
-            case .helperMissing:
-                return "Bundled quay-askpass helper not found inside the app."
+            case .helperMissing(let name):
+                return "Bundled \(name) helper not found inside the app."
             }
         }
     }
 
-    /// One attempt's worth of session: the surface to host it (only needed for
-    /// the first attempt in a tab) and the command line that starts it.
+    /// One attempt's worth of session.
     struct Session {
-        /// Config for the tab's host shell. Used once per tab; later attempts
-        /// are typed into the shell that is already running.
-        var config: GhosttySurfaceConfig
         var askpass: AskpassServer?
-        /// What to type into the host shell to start the session.
-        var commandLine: String
-        /// Executable names that count as this session's client, for spotting
-        /// it in the pty's foreground process group.
-        var clientNames: Set<String>
+        /// What the supervisor is asked to run. `announce` is left for the
+        /// tab, which knows the attempt number.
+        var spawn: SupervisorProtocol.Spawn
         /// Short human name for the session, e.g. `ssh babul@host`.
         var displayTarget: String
         /// Whether the client running is itself proof enough of a session.
@@ -47,8 +40,10 @@ enum SessionBootstrap {
         var connectedWhenClientRuns: Bool
     }
 
-    /// Build the host-shell config, an optional `AskpassServer`, and the command
-    /// line for one attempt.
+    static let supervisorName = "quay-supervisor"
+    static let askpassName = "quay-askpass"
+
+    /// Build an optional `AskpassServer` and the spawn request for one attempt.
     ///
     /// The caller is responsible for calling `askpass.stop()` when the tab closes
     /// (NOT on reconnect — the server must outlive the surface for re-auth).
@@ -66,8 +61,8 @@ enum SessionBootstrap {
         let sftpClient = SFTPClient.preferred
 
         if let secretURI = secretRef(for: target) {
-            guard let helperPath = bundledHelperPath() else {
-                throw StartError.helperMissing
+            guard let helperPath = bundledExecutable(named: askpassName) else {
+                throw StartError.helperMissing(askpassName)
             }
             let server = AskpassServer(secretURI: secretURI)
             do { try server.start() } catch { throw StartError.askpassFailed(error) }
@@ -79,57 +74,41 @@ enum SessionBootstrap {
         case .ssh:
             SSHCommandBuilder.build(target, askpass: askpassEnv)
         case .sftp:
-            SSHCommandBuilder.buildSFTP(
-                target,
-                askpass: askpassEnv,
-                client: sftpClient
-            )
+            SSHCommandBuilder.buildSFTP(target, askpass: askpassEnv, client: sftpClient)
         }
-        var cfg = GhosttySurfaceConfig()
-        cfg.command = hostShellCommand()
+
+        var spawn = SupervisorProtocol.Spawn(argv: cmd.argv, environment: cmd.environment)
         if kind == .sftp {
-            cfg.workingDirectory = normalizedLocalDirectory(localDirectoryOverride)
+            spawn.workingDirectory = normalizedLocalDirectory(localDirectoryOverride)
                 ?? normalizedLocalDirectory(target.localDirectory)
                 ?? defaultLocalDirectory()
         }
-        // Stable for the tab, so it doesn't have to be retyped per attempt —
-        // which also means editing a profile's terminal type only takes effect
-        // in a new tab. `sessionCommandLine` filters "TERM" back out to match.
-        cfg.environment = ["TERM": target.remoteTerminalType.rawValue]
-        cfg.waitAfterCommand = true
-        cfg.scaleFactor = NSScreen.main.map { Double($0.backingScaleFactor) } ?? 2.0
 
         return Session(
-            config: cfg,
             askpass: askpass,
-            commandLine: sessionCommandLine(cmd),
-            clientNames: clientNames(for: kind, sftpClient: sftpClient),
+            spawn: spawn,
             displayTarget: displayTarget(for: target, kind: kind),
             connectedWhenClientRuns: kind == .sftp && sftpClient.outlivesTransport
         )
     }
 
-    /// The tab's pty runs this for the tab's whole life; sessions are typed into
-    /// it, so a reconnect continues on the screen it already has.
+    /// The surface config for a tab: its pty runs `quay-supervisor` for the
+    /// tab's whole life, and sessions are spawned through it — so a reconnect
+    /// continues on the screen the last session left.
     ///
     /// The user's login shell restores the environment a launchd-started app
-    /// lacks (`SSH_AUTH_SOCK`, `PATH`), then hands the pty to a bare `sh` with
-    /// no prompt and no startup file of its own, so the only thing on screen is
-    /// the session.
-    static func hostShellCommand() -> String {
-        // `stty -echo` runs as an argument, before the interactive shell reads
-        // anything, so it is never echoed itself; `+o emacs` turns off the line
-        // editor, which does its own echoing regardless of tty settings.
-        // Together they keep Quay's typed command off the screen — the session
-        // announces itself instead (see `announced`).
-        //
-        // PS1 is re-applied on the inner exec: a shell imports it as a plain
-        // variable, not an exported one, so it would be lost across the exec.
-        let interactive = "exec env PS1=\(shellSingleQuote(hostShellPrompt)) ENV= /bin/sh -i +o emacs"
-        return wrapInLoginShell(
-            "env ENV= /bin/sh -c \(shellSingleQuote("stty -echo; " + interactive))",
-            askpassEnv: [:]
-        )
+    /// lacks (`SSH_AUTH_SOCK`, `PATH`), then execs the helper, which every
+    /// session inherits it from.
+    static func supervisorConfig(socketPath: String) throws -> GhosttySurfaceConfig {
+        guard let helper = bundledExecutable(named: supervisorName) else {
+            throw StartError.helperMissing(supervisorName)
+        }
+        var cfg = GhosttySurfaceConfig()
+        cfg.command = wrapInLoginShell(shellSingleQuote(helper), environment: [:])
+        cfg.environment = [SupervisorProtocol.socketEnvironmentKey: socketPath]
+        cfg.waitAfterCommand = true
+        cfg.scaleFactor = NSScreen.main.map { Double($0.backingScaleFactor) } ?? 2.0
+        return cfg
     }
 
     /// The marker line: when it happened, what is being run, and which attempt.
@@ -152,6 +131,12 @@ enum SessionBootstrap {
         return "→ \(stamp)  \(target)  (attempt \(attempt) · waited \(waited)s)"
     }
 
+    /// The marker as written to the terminal: dimmed, so it reads as Quay's
+    /// note rather than the session's output.
+    static func announcement(_ marker: String) -> String {
+        "\u{1B}[2m\(marker)\u{1B}[0m"
+    }
+
     /// Fixed format, not locale-dependent: this lands in terminal output that
     /// gets scrolled back through, copied into tickets, and grepped.
     private static let markerTimestampFormatter: DateFormatter = {
@@ -161,84 +146,6 @@ enum SessionBootstrap {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter
     }()
-
-    /// Wrap a session's command line: announce it, and hand the terminal back
-    /// to it in a state it can work in.
-    ///
-    /// The host shell keeps echo off so Quay's own typed line stays off the
-    /// screen — but the session needs it back. ssh doesn't care (it takes the
-    /// tty raw and the remote echoes), yet a *local* interactive client does:
-    /// with echo off, sftp and lftp run what you type while showing nothing,
-    /// which reads as a terminal that has stopped accepting keys.
-    ///
-    /// `stty sane -echo` afterwards restores the quiet state for the next typed
-    /// command, and repairs a tty left raw by a client that was killed rather
-    /// than allowed to exit.
-    ///
-    /// `printf '%s'` rather than interpolating: a target containing `%` would
-    /// otherwise be read as a format specifier.
-    static func announced(_ commandLine: String, marker: String) -> String {
-        "stty echo; "
-            + "printf '\\033[2m%s\\033[0m\\n' \(shellSingleQuote(marker)); "
-            + "\(commandLine); "
-            + "stty sane -echo"
-    }
-
-    /// The host shell's prompt: invisible, and it puts the terminal back to a
-    /// sane state.
-    ///
-    /// A prompt is printed right after each session exits, which is exactly
-    /// when the remote's leftover modes need clearing. Without this, a remote
-    /// shell that enabled bracketed paste (mode 2004) and died without
-    /// disabling it leaves the emulator wrapping the next command Quay types in
-    /// `ESC[200~ … ESC[201~`, and the host shell tries to run `00~/usr/bin/ssh`.
-    /// The same goes for an editor killed mid-session leaving mouse reporting
-    /// on.
-    ///
-    /// The alt-screen reset is `1047`, never `1049`. Both return to the primary
-    /// screen, but `1049` *restores a saved cursor* — on a terminal that was
-    /// never in the alt screen that sends the cursor home and the next session
-    /// overwrites the scrollback this whole design exists to keep. `1047` only
-    /// touches the cursor when the screen actually changed, so it is a no-op
-    /// unless a full-screen program (htop, vim) died in there — in which case
-    /// its frozen display is exactly what needs clearing before the reconnect
-    /// markers can be seen.
-    ///
-    /// Mouse input is reset here for a second reason: wheel and motion events
-    /// are forwarded to the pty without the input gate, so a session that died
-    /// with reporting on would write `ESC[M…` into the host shell's stdin — and
-    /// one that died inside a full-screen program would turn every scroll into
-    /// arrow keys (mode 1007) and corrupt the next typed command.
-    ///
-    /// Wrapped in `\[ \]` so the shell's line editor doesn't count these
-    /// zero-width bytes when it places the cursor.
-    static let hostShellPrompt =
-        "\\["
-        + "\u{1B}[?1047l"   // leave the alternate screen, cursor untouched
-        + "\u{1B}[?2004l"   // bracketed paste off
-        + "\u{1B}[?1000l\u{1B}[?1002l\u{1B}[?1003l\u{1B}[?1006l"  // mouse reporting off
-        + "\u{1B}[?1007l"  // wheel scrolls, rather than sending arrow keys
-        + "\u{1B}[?1l"     // normal cursor keys
-        + "\u{1B}[?25h"    // cursor visible
-        + "\u{1B}[0m"      // no leftover colours
-        + "\\]"
-
-
-    /// The command line typed into the host shell. Per-attempt environment —
-    /// the askpass socket, which is re-created for every attempt — is inlined,
-    /// since the shell's own environment was fixed when the tab started.
-    static func sessionCommandLine(_ cmd: SSHCommand) -> String {
-        let perAttempt = cmd.environment.filter { $0.key != "TERM" }
-        guard !perAttempt.isEmpty else { return cmd.command }
-        return "env \(envAssignments(perAttempt)) \(cmd.command)"
-    }
-
-    /// `K=V K=V` in a stable order, shell-quoted.
-    static func envAssignments(_ env: [String: String]) -> String {
-        env.sorted { $0.key < $1.key }
-            .map { "\($0.key)=\(shellSingleQuote($0.value))" }
-            .joined(separator: " ")
-    }
 
     static func displayTarget(for target: SSHTarget, kind: TerminalSessionKind) -> String {
         let verb = kind == .sftp ? "sftp" : "ssh"
@@ -253,28 +160,15 @@ enum SessionBootstrap {
         return "\(verb) \(username)@\(target.hostname)"
     }
 
-    static func clientNames(for kind: TerminalSessionKind, sftpClient: SFTPClient) -> Set<String> {
-        switch kind {
-        case .ssh:
-            return [URL(fileURLWithPath: SSHCommandBuilder.sshBinary).lastPathComponent]
-        case .sftp:
-            // Derived from the client's own path: repathing a client would
-            // otherwise silently break detection, and detection is what decides
-            // whether keystrokes reach the terminal.
-            return [
-                URL(fileURLWithPath: sftpClient.binaryPath).lastPathComponent,
-                URL(fileURLWithPath: SSHCommandBuilder.sshBinary).lastPathComponent,
-            ]
-        }
-    }
-
-    /// Wrap `inner` so it runs as: `$SHELL -l -c '<askpass env> exec <inner>'`.
+    /// Wrap `inner` so it runs as: `$SHELL -l -c '<environment> exec <inner>'`.
     ///
     /// macOS apps launched by launchd have a minimal env. The login-shell wrap
     /// sources the user's profile, restoring SSH_AUTH_SOCK, PATH, etc.
-    static func wrapInLoginShell(_ inner: String, askpassEnv: [String: String]) -> String {
+    static func wrapInLoginShell(_ inner: String, environment: [String: String]) -> String {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        let envPrefix = envAssignments(askpassEnv)
+        let envPrefix = environment.sorted { $0.key < $1.key }
+            .map { "\($0.key)=\(shellSingleQuote($0.value))" }
+            .joined(separator: " ")
         let wrapped = envPrefix.isEmpty ? "exec \(inner)" : "exec env \(envPrefix) \(inner)"
         return "\(shell) -l -c \(shellSingleQuote(wrapped))"
     }
@@ -291,8 +185,8 @@ enum SessionBootstrap {
         }
     }
 
-    static func bundledHelperPath() -> String? {
-        let url = Bundle.main.bundleURL.appending(path: "Contents/MacOS/quay-askpass")
+    static func bundledExecutable(named name: String) -> String? {
+        let url = Bundle.main.bundleURL.appending(path: "Contents/MacOS/\(name)")
         return FileManager.default.isExecutableFile(atPath: url.path) ? url.path : nil
     }
 

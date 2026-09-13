@@ -45,18 +45,19 @@ final class GhosttySurfaceView: NSView {
     var onDeadSessionKey: ((DeadSessionKey) -> Bool)?
 
     /// Whether a session owns the terminal right now. Between sessions the pty
-    /// belongs to Quay's host shell, and anything written to it would run on
-    /// this machine instead of the remote one.
+    /// belongs to the tab's supervisor, which discards whatever reaches it —
+    /// so the gate is what makes Space, Return and Escape the tab's to act
+    /// on, not what keeps input off a local shell.
     ///
-    /// Defaults closed: a surface whose owner hasn't wired this up must not
-    /// pass input to a host shell.
+    /// Defaults closed: a surface whose owner hasn't wired this up answers
+    /// those keys itself.
     var sessionOwnsTerminal: () -> Bool = { false }
 
     /// Whether the session is fully established, as opposed to merely having a
     /// live client. Input Quay sends *on the user's behalf* — login script
-    /// steps, snippets — requires this: during a connect or a teardown those
-    /// bytes are read by the host shell and run on this machine, and a login
-    /// step's value may be a resolved secret. Defaults closed.
+    /// steps, snippets — requires this: during a connect the client is at a
+    /// host-key or password prompt, which is not where a step belongs.
+    /// Defaults closed.
     var sessionIsEstablished: () -> Bool = { false }
 
     // IME state — owned here; modified by GhosttySurfaceView+IME.
@@ -164,44 +165,6 @@ final class GhosttySurfaceView: NSView {
         ghostty_surface_set_occlusion(surface, !occluded)
     }
 
-    /// The pty's foreground process group leader while the child is alive.
-    /// libghostty names it a pid, but it is `tcgetpgrp` — see
-    /// `SessionConnectionProbe`, which relies on that.
-    private var liveForegroundPID: pid_t? {
-        guard hasLiveHostShell, let surface else { return nil }
-        let pid = pid_t(ghostty_surface_foreground_pid(surface))
-        return pid > 0 ? pid : nil
-    }
-
-    /// Signals the session client, leaving the host shell — and with it the
-    /// screen — alone. Signalling the foreground pid blindly would kill the
-    /// shell whenever no session is running.
-    @discardableResult
-    func sessionClientPIDs(clientNames: Set<String>) -> [pid_t] {
-        guard let pgid = liveForegroundPID else { return [] }
-        return SessionConnectionProbe.sessionProcesses(pgid: pgid).filter {
-            clientNames.contains(SessionConnectionProbe.processName(of: $0) ?? "")
-        }
-    }
-
-    func signal(pids: [pid_t], signal: Int32) {
-        for pid in pids { _ = Darwin.kill(pid, signal) }
-    }
-
-
-    /// What the pty's foreground process group is doing. See
-    /// `SessionConnectionProbe` for why the screen can't answer this.
-    func foregroundSnapshot(clientNames: Set<String>) -> SessionConnectionProbe.Foreground {
-        guard let pgid = liveForegroundPID else { return .init() }
-        return SessionConnectionProbe.foreground(pgid: pgid, clientNames: clientNames)
-    }
-
-    /// Presence only — what the input gate needs, without the socket walk.
-    func hasRunningClient(clientNames: Set<String>) -> Bool {
-        guard let pgid = liveForegroundPID else { return false }
-        return SessionConnectionProbe.clientIsRunning(pgid: pgid, clientNames: clientNames)
-    }
-
     /// Writes text to the session, and only to a session. Every caller that
     /// sends on the user's behalf goes through here rather than reaching for
     /// the bridge, so the gate can't be forgotten.
@@ -216,42 +179,16 @@ final class GhosttySurfaceView: NSView {
     /// Writes text Quay is sending on the user's behalf. Requires an
     /// established session, not just a live client — see `sessionIsEstablished`.
     /// The rule lives here rather than at each caller so it cannot be dropped
-    /// by a refactor; the consequence of dropping it is a secret typed into a
-    /// local shell.
+    /// by a refactor.
     @discardableResult
     func sendAutomatedInput(_ text: String, appendReturn: Bool = false) -> Bool {
         guard sessionIsEstablished() else { return false }
         return sendUserInput(text, appendReturn: appendReturn)
     }
 
-    /// True once the host shell has turned the terminal's echo off, which is
-    /// the last thing its startup does — so it doubles as "ready to be typed
-    /// into".
-    ///
-    /// Without this, a command typed while the login shell is still sourcing
-    /// the user's profile is echoed by the line discipline, printing the whole
-    /// ssh invocation on screen before the shell ever reads it.
-    var hostShellHasQuietedTerminal: Bool {
-        withTTYPath { SessionConnectionProbe.echoDisabled(ttyPath: $0) } ?? false
-    }
-
-    /// Throws away input typed for a session that has gone, so the host shell
-    /// never reads it — see `SessionConnectionProbe.flushInput`.
-    func flushPendingInput() {
-        withTTYPath { SessionConnectionProbe.flushInput(ttyPath: $0) }
-    }
-
-    private func withTTYPath<T>(_ body: (String) -> T) -> T? {
-        guard let surface else { return nil }
-        let name = ghostty_surface_tty_name(surface)
-        defer { ghostty_string_free(name) }
-        guard let ptr = name.ptr, name.len > 0 else { return nil }
-        return body(String(cString: ptr))
-    }
-
-    /// True while the tab's host shell is still running, so the next session can
-    /// be typed into the screen this one leaves behind.
-    var hasLiveHostShell: Bool {
+    /// True while the tab's supervisor is still running, so the next session
+    /// can be spawned onto the screen this one leaves behind.
+    var hasLiveSupervisor: Bool {
         guard let surface else { return false }
         return !ghostty_surface_process_exited(surface)
     }
@@ -273,21 +210,16 @@ final class GhosttySurfaceView: NSView {
 
     /// Whether user input may reach the terminal. Every path that writes to the
     /// pty on the user's behalf — keys, IME, paste, Services, middle-click —
-    /// must check this, or that input runs in Quay's host shell instead of the
-    /// session. Defaults to `true` so a surface with no owner wired up behaves
-    /// like a plain terminal.
-    ///
-    /// The owner answers by asking the kernel *now* rather than from a polled
-    /// flag: a session that exited since the last poll would otherwise leave
-    /// this open for the rest of the interval.
+    /// checks this, so that between sessions the keys are the tab's to answer
+    /// and a paste lands nowhere rather than on the next session. Defaults to
+    /// `true` so a surface with no owner wired up behaves like a plain
+    /// terminal.
     var forwardsUserInput: Bool {
-        // Decided once per key event: the answer is a syscall, and one
-        // keystroke otherwise asks four times (the dead-session check, keyDown,
-        // insertText, keyUp). Memoising per event also keeps those four
-        // consistent — a session dying mid-stack would otherwise decline the
-        // key *and* swallow it.
+        // Decided once per key event, so the four asks a keystroke makes (the
+        // dead-session check, keyDown, insertText, keyUp) agree — a session
+        // dying mid-stack would otherwise decline the key *and* swallow it.
         if let inputGateForCurrentEvent { return inputGateForCurrentEvent }
-        return hasLiveHostShell && sessionOwnsTerminal()
+        return hasLiveSupervisor && sessionOwnsTerminal()
     }
 
     /// Set for the duration of one key event. See `forwardsUserInput`.
@@ -394,8 +326,8 @@ final class GhosttySurfaceView: NSView {
     }
 
     override func otherMouseDown(with event: NSEvent) {
-        // Ghostty starts a clipboard paste on middle-click, which would land in
-        // the host shell between sessions.
+        // Ghostty starts a clipboard paste on middle-click, which between
+        // sessions is nobody's to receive.
         guard forwardsUserInput else { return }
         sendMousePos(event)
         sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_MIDDLE)

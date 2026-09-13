@@ -123,10 +123,14 @@ struct SSHTarget: Sendable, Equatable {
 
 /// Output of `SSHCommandBuilder.build`.
 struct SSHCommand: Sendable, Equatable {
-    /// Single shell-parseable command line for `ghostty_surface_config_s.command`.
-    var command: String
+    /// The client and its arguments, ready to exec. `argv[0]` is an absolute
+    /// path.
+    var argv: [String]
     /// Environment variables to inject into the spawned process.
     var environment: [String: String]
+
+    /// `argv` as one shell-parseable line.
+    var command: String { argv.map(shellQuote).joined(separator: " ") }
 }
 
 /// Pure function: `(SSHTarget, askpass info) -> SSHCommand`.
@@ -214,10 +218,7 @@ enum SSHCommandBuilder {
             installAskpass(askpass, into: &env)
         }
 
-        return SSHCommand(
-            command: argv.map(shellQuote).joined(separator: " "),
-            environment: env
-        )
+        return SSHCommand(argv: argv, environment: env)
     }
 
     static func buildSFTP(
@@ -269,10 +270,7 @@ enum SSHCommandBuilder {
 
         argv.append(sftpDestination(target))
 
-        return SSHCommand(
-            command: argv.map(shellQuote).joined(separator: " "),
-            environment: env
-        )
+        return SSHCommand(argv: argv, environment: env)
     }
 
     private static func buildLFTP(_ target: SSHTarget, askpass: AskpassEnv?) -> SSHCommand {
@@ -280,12 +278,13 @@ enum SSHCommandBuilder {
         var env: [String: String] = ["TERM": target.remoteTerminalType.rawValue]
 
         let connectProgram = lftpSSHConnectProgram(target)
-        let initScript = [
+        let initScript = ([
             "set color:use-color yes",
             "set color:dir-colors \"\(Self.lftpDirColors)\"",
             "alias ls cls",
+        ] + Self.lftpInteractiveTimeouts + [
             "set sftp:connect-program \(lftpDoubleQuote(connectProgram))"
-        ].joined(separator: "; ")
+        ]).joined(separator: "; ")
         argv.append(contentsOf: ["-e", initScript, lftpURL(target)])
 
         switch target.auth {
@@ -295,10 +294,7 @@ enum SSHCommandBuilder {
             break
         }
 
-        return SSHCommand(
-            command: argv.map(shellQuote).joined(separator: " "),
-            environment: env
-        )
+        return SSHCommand(argv: argv, environment: env)
     }
 
     private static func hostFlags(_ target: SSHTarget) -> [String] {
@@ -406,6 +402,27 @@ enum SSHCommandBuilder {
         let prefixed = value.hasPrefix("/") ? value : "/\(value)"
         return prefixed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? prefixed
     }
+
+    /// Makes lftp report a dead host instead of retrying at it forever.
+    ///
+    /// lftp ships defaults built for unattended mirroring: it waits
+    /// `net:timeout` (5 minutes) for a reply, then retries `net:max-retries`
+    /// (1000) times, with `net:reconnect-interval-base` growing from 15s to 5
+    /// minutes. At an interactive prompt that reads as a hang — the command
+    /// simply never comes back, and nothing says why.
+    ///
+    /// These are the interactive equivalents. The timeout is deliberately near
+    /// ssh's own `ServerAliveInterval * ServerAliveCountMax` (~45s), so lftp
+    /// gives up on roughly the same evidence its transport does rather than
+    /// long after. A handful of quick retries still rides out a blip, and what
+    /// is left is a visible error the user can act on — lftp reconnects on the
+    /// next command anyway, so giving up costs only the command in flight.
+    static let lftpInteractiveTimeouts = [
+        "set net:timeout 15",
+        "set net:max-retries 3",
+        "set net:reconnect-interval-base 3",
+        "set net:reconnect-interval-max 10",
+    ]
 
     // Standard GNU dir-colors palette. Used when LS_COLORS is unset (common on macOS).
     private static let lftpDirColors =

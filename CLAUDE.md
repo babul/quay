@@ -65,83 +65,87 @@ Credentials are never stored as plaintext — only as reference URIs (`keychain:
 ```
 ConnectionProfile (SwiftData)
   → TerminalTabManager.openOrSelectTab()
-  → SessionBootstrap → host-shell GhosttySurfaceConfig + command line + optional AskpassServer
-  → GhosttySurfaceView (pty runs the tab's host shell for its whole life)
-  → TerminalTabItem types the ssh command line into that shell
+  → SessionBootstrap → spawn request (argv + env + cwd) + optional AskpassServer
+  → GhosttySurfaceView (pty runs the tab's quay-supervisor for its whole life)
+  → SupervisorClient sends "spawn this" over a per-tab socket
+  → quay-supervisor forks the client as the terminal's foreground process group
        ↘ (password/passphrase auth) SSH_ASKPASS → QuayAskpass → AskpassServer → KeychainStore
 ```
 
-### Sessions run inside a per-tab host shell
-The pty's child is **not** ssh — it is a quiet local shell that lives for the
-tab (`SessionBootstrap.hostShellCommand()`), and each session is *typed into*
-it. libghostty cannot respawn a surface's command, so this is what lets a
-reconnect continue on the screen the last session left rather than clearing it.
+### Sessions run under a per-tab supervisor
+The pty's child is **not** ssh — it is `quay-supervisor`, a bundled helper that
+lives for the tab and spawns each session on request
+(`SessionBootstrap.supervisorConfig(socketPath:)`). libghostty cannot respawn a
+surface's command, so this is what lets a reconnect continue on the screen the
+last session left rather than clearing it.
 
-Three consequences worth knowing before changing anything here:
+It is the `QuayAskpass`/`AskpassServer` pattern applied to spawning: a per-tab
+Unix domain socket at mode 0600, one connection accepted, the path unlinked
+immediately after. The protocol is newline-delimited JSON
+(`Quay/Supervisor/SupervisorProtocol.swift`, compiled into both targets):
+`spawn` and `signal` in, `ready`/`spawned`/`exited`/`error` out.
 
-- **Session lifecycle is observed, not reported.** The pty's child no longer
-  exits when a session ends, so `SessionConnectionProbe` polls the pty's
-  foreground process group (libproc) for the client (`ssh`/`sftp`) and its TCP
-  state. That is what drives `TerminalTabItem.Phase` and the retry cycle.
-- **Input must be gated.** Between sessions the pty belongs to the *local*
-  shell, so anything typed or pasted would run on this machine.
-  `GhosttySurfaceView.forwardsUserInput` gates every write path (keys, IME,
-  paste, Services, middle-click, snippets, login scripts) and fails closed.
-  Use `sendUserInput(_:appendReturn:)` rather than reaching for the bridge.
-- **The host shell's `PS1` is load-bearing.** It prints nothing visible; it
-  resets terminal modes a dead remote left behind. Without the bracketed-paste
-  reset (`ESC[?2004l`) the next typed command arrives wrapped in `ESC[200~` and
-  the shell runs `00~/usr/bin/ssh`. Leaving the alt screen must use
-  **`ESC[?1047l`, never `ESC[?1049l`** — 1049 restores a *saved cursor*, which
-  sends the cursor home and overwrites the scrollback this design exists to
-  keep; 1047 only acts when a full-screen program actually died in there.
-- **`stty` is load-bearing twice over.** `stty -echo` in the shell command hides
-  Quay's typed command *and* is how the tab detects the shell is ready
-  (`tcgetattr` ECHO). Each session's command line then re-enables echo for the
-  session — sftp and lftp show nothing as you type without it — and quiets it
-  again afterwards.
+Four things follow from it:
 
-### The host shell is a stopgap, and these are its consequences
-libghostty cannot respawn a surface's command, so sessions are *typed into a
-tty*. That makes the pty a command channel, and most of the machinery around it
-is compensation for that one fact:
-
-- the shell must be the pty's foreground process group before anything is typed,
-  or a local program that grabbed the terminal eats every command;
-- a session ending needs two consecutive polls to agree, because the typed line
-  is a *list* (`stty echo; …; <client>; stty sane -echo`) and the foreground
-  group legitimately flickers between its items;
-- the tty's input queue is flushed when a session ends, since bytes written for
-  a dead session are otherwise read and run by the host shell — that is how a
-  login script's keystrokes once started a *local* `htop`;
-- login-script steps and snippets go through `sendAutomatedInput`, which
-  requires an established session: a step's value may be a resolved secret.
-
-A bundled supervisor helper — the `QuayAskpass`/`AskpassServer` pattern applied
-to spawning, a process that accepts "spawn this" over a socket and cannot be fed
-keystrokes — removes all four by construction. Prefer that over adding a fifth
-compensation here.
+- **Session lifecycle is reported, not inferred.** The helper knows its child's
+  pid and exit status, so `exited` drives `TerminalTabItem.Phase` and the retry
+  cycle. `SessionConnectionProbe` is now only about the *connection* — it reads
+  the client's TCP state to tell connecting from connected, and never asks what
+  the foreground process group is.
+- **The pty is not a command channel.** Nothing is typed into it, so between
+  sessions there is no interpreter to receive a stray byte: the helper reads
+  the idle terminal and discards what arrives. `forwardsUserInput` still gates
+  every write path, but as UX (Space/Return reconnect, Escape stops retrying),
+  not as the thing standing between a keystroke and a local shell.
+- **The helper restores the terminal between sessions.** Saved `termios` back,
+  then the mode resets a dead remote left behind (`Supervisor.terminalReset`).
+  Without the bracketed-paste reset (`ESC[?2004l`) the next session's input
+  arrives wrapped in `ESC[200~`. Leaving the alt screen must use **`ESC[?1047l`,
+  never `ESC[?1049l`** — 1049 restores a *saved cursor*, which sends the cursor
+  home and overwrites the scrollback this design exists to keep; 1047 only acts
+  when a full-screen program actually died in there.
+- **A session owns the terminal properly.** It is spawned suspended into its
+  own process group, made the foreground group with `tcsetpgrp`, then
+  continued — so it can read the tty, Ctrl-C reaches it, and `signal` reaches
+  its whole group (which is where a self-backgrounding lftp goes to hide).
+  Two traps live here. `tcsetpgrp` needs a *controlling* terminal, which on
+  macOS takes `TIOCSCTTY` and is not granted by opening the tty; the helper
+  claims one if nothing else has and refuses to start otherwise, because the
+  only symptom is Ctrl-C quietly doing nothing. And suspend is disabled
+  (`VSUSP`), since a stopped child fires no `NOTE_EXIT` and Ctrl-Z would
+  otherwise freeze a tab that still claimed to be connected.
 
 ### Client behaviour lives with the client
 `SFTPClient.outlivesTransport` is the flag for "this client keeps its prompt
 when the connection drops, and opens one lazily" — true for lftp, false for
 OpenSSH's `sftp`, which connects eagerly and exits with its transport. It
-decides whether a running client counts as connected and whether the host is
-probed when the transport goes missing (`HostReachability`). Client quirks
-belong there, not keyed on `TerminalSessionKind`.
+decides whether a running client counts as connected. Client quirks belong
+there, not keyed on `TerminalSessionKind`.
 
-### Reachability probes the socket's peer, never the profile's hostname
-`HostReachability` is destructive — a negative answer tears the session down —
-so it is only ever pointed at an address a session was actually seen connected
-to, read from the client's own socket (`SessionConnectionProbe.Peer`, remembered
-as `lastKnownPeer`). `ConnectionProfile.hostname` is not that address: it is an
-ssh_config alias for alias profiles, and `HostName`, `Port`, `ProxyJump`, and
-`ProxyCommand` can rewrite where ssh dials for any profile. Probing it reports a
-healthy session dead. Two guards follow from the same fact — a probe is slow and
-its answer can be stale: "unreachable" must be confirmed twice
-(`reachabilityConfirmations`, since a host refusing *new* connections while
-serving existing ones looks identical to a dead one), and the evidence that
-prompted the check is rechecked between rounds.
+### Transport loss is noted, never acted on
+Every client carries `ServerAliveInterval`/`ServerAliveCountMax`
+(`SSHCommandBuilder.commonOptionArguments`, which also reaches lftp's
+`sftp:connect-program`), so a dead connection is noticed in-band and ssh and
+OpenSSH `sftp` exit with it — that is the session ending, and the retry cycle
+takes over. lftp keeps its prompt and reconnects on the next command, so its
+session is left alone and only `TerminalTabItem.transportIsLive` changes; the
+tab dot dims.
+
+For lftp that only works because `SSHCommandBuilder.lftpInteractiveTimeouts`
+replaces its shipped defaults (`net:timeout` 5 minutes, `net:max-retries` 1000,
+reconnect intervals growing to 5 minutes), which are built for unattended
+mirroring and at a prompt are indistinguishable from a hang — a dead host gave
+a command that never returned and said nothing. Leaving detection to the client
+means the client has to be configured to actually report. There is deliberately no out-of-band reachability probe and no
+propagation between tabs on the same host: an earlier version asked "can a
+*new* connection be made?" as a proxy for "is *this* connection alive?", and
+every guard it needed was compensation for that mismatch. See
+`docs/session-supervision.md` §2 before adding one back.
+
+`SessionConnectionProbe.Peer` — the far end of the client's own socket — is
+what decides connected vs connecting. `ConnectionProfile.hostname` is not an
+address: it is an ssh_config alias for alias profiles, and `HostName`, `Port`,
+`ProxyJump`, and `ProxyCommand` can rewrite where ssh dials for any profile.
 
 ### Persistence (`Quay/Persistence/`)
 SwiftData `ModelContainer` stored at `~/Library/Application Support/<bundleID>/Quay.store`. CloudKit sync is intentionally disabled for v0.1. Settings export/import uses AES-GCM-256 encryption with PBKDF2-HMAC-SHA256 key derivation (`SettingsBundle.swift`). SSH credentials and key passphrases are exported only as their reference URIs. Locked login-script step values are resolved to plaintext inside the bundle so it's portable to a new machine; the bundle password is what protects them.
@@ -157,8 +161,11 @@ SwiftData `ModelContainer` stored at `~/Library/Application Support/<bundleID>/Q
 | `Quay/Terminal/GhosttyRuntime.swift` | libghostty app singleton, surface registry, config reload |
 | `Quay/Terminal/GhosttySurfaceBridge.swift` | Per-surface `@Observable` bridge between C callbacks and Swift |
 | `Quay/Secrets/AskpassServer.swift` | Unix domain socket secret delivery to SSH_ASKPASS |
-| `Quay/Terminal/SessionConnectionProbe.swift` | libproc probe: what the pty's foreground process group is doing |
-| `Quay/Tabs/SessionBootstrap.swift` | Host-shell command, typed session command line, session marker |
+| `Quay/Terminal/SessionConnectionProbe.swift` | libproc probe: whether the session client holds an established connection, and to where |
+| `Quay/Supervisor/SupervisorProtocol.swift` | Wire format shared by the app and `quay-supervisor` |
+| `Quay/Supervisor/SupervisorClient.swift` | Quay's end of a tab's supervisor socket |
+| `QuaySupervisor/Supervisor.swift` | The bundled helper: the pty's child, spawns sessions, owns the terminal between them |
+| `Quay/Tabs/SessionBootstrap.swift` | Supervisor surface config, per-attempt spawn request, session marker |
 | `Quay/PTY/SSHCommandBuilder.swift` | Builds every session command line; owns `TerminalSessionKind` and `SFTPClient` |
 
 ## Conventions
@@ -168,3 +175,22 @@ SwiftData `ModelContainer` stored at `~/Library/Application Support/<bundleID>/Q
 - Run `xcodegen generate` immediately after modifying `project.yml` **or adding/removing/renaming any source file** — the `.xcodeproj` lists files explicitly and is not committed. A new file that hasn't been regenerated in simply isn't compiled; a new test file fails silently, with the run reporting the old test count and passing.
 - `GhosttyKit.xcframework` in `Frameworks/` is gitignored. Never commit it; it is rebuilt from `vendor/ghostty` via the build script.
 - **Any new user-facing preference added to `AppSettingsView` must also be added to `PreferencesDTO` in `Quay/Persistence/SettingsBundle.swift`** — one optional field, one encode line, one decode line in `applyPreferences`. This keeps export/import in sync with the Settings UI. Sidebar layout and window geometry keys are intentionally excluded.
+
+## Work tracking
+
+Follow-on work, deferred ideas, and live-verification checklists are tracked
+as Shortcut stories, not as files under `docs/`. `docs/` is for how things
+work and why; what is left to do lives in Shortcut so it is not forgotten.
+
+- Org: `myoss` (workspace "OSS"), team **Quay**:
+  https://app.shortcut.com/myoss/stories/space/16891
+- Workflow "Standard": Backlog → To Do → In Progress → In Review → Done.
+- From Claude Code, use the `shortcut-myoss` MCP server (Shortcut's hosted
+  endpoint, `https://mcp.shortcut.com/mcp`, authorized against the OSS
+  workspace). Add it with
+  `claude mcp add --transport http --scope local shortcut-myoss https://mcp.shortcut.com/mcp`,
+  then `/mcp` to log in. The `shortcut-aliada` and `shortcut-clayton` servers
+  are other workspaces and cannot see Quay stories.
+- When a design note in `docs/` spawns implementation steps, file them as
+  stories under an epic and link the note from the epic, rather than adding
+  a plan file next to it.

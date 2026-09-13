@@ -8,9 +8,8 @@ extension GhosttySurfaceView {
         inputGateForCurrentEvent = forwards
         defer { inputGateForCurrentEvent = nil }
 
-        // Between sessions the pty belongs to Quay's host shell: the key is
-        // ours to act on (reconnect, stop retrying) or to swallow — never to
-        // run locally.
+        // Between sessions the key is ours to act on (reconnect, stop
+        // retrying) or to swallow; nothing behind the pty would run it.
         guard forwards else {
             _ = handleDeadSessionKey(event)
             return

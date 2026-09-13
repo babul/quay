@@ -100,6 +100,34 @@ struct SessionRetryTests {
         #expect(!TerminalTabItem.Phase.running.isReconnectable)
     }
 
+    /// lftp keeps its prompt through a dropped or idled-out connection and
+    /// reopens one on the next command. The session is genuinely alive, so
+    /// losing the transport must not end it — only the indicator changes.
+    @Test("Losing the transport is noted, not acted on")
+    func transportLossIsOnlyNoted() async {
+        let tab = TerminalTabItem(
+            profile: ConnectionProfile(name: "files", hostname: "prod.example.com"),
+            kind: .sftp,
+            launchSession: {},
+            sleepFor: { _ in }
+        )
+        tab.connect()
+        tab.markRemoteShellReached()
+        await tab.awaitConnectedHold()
+
+        tab.noteTransport(present: false)
+        #expect(tab.phase == .running)
+        #expect(!tab.transportIsLive)
+
+        tab.noteTransport(present: true)
+        #expect(tab.transportIsLive)
+
+        // A session that ends leaves nothing for the flag to describe.
+        tab.noteTransport(present: false)
+        tab.disconnect()
+        #expect(tab.transportIsLive)
+    }
+
     @Test("Closing during a backoff wait needs no confirmation — nothing is live")
     func waitingTabClosesWithoutPrompt() {
         #expect(
@@ -117,79 +145,42 @@ struct SessionRetryTests {
         }
     }
 
-    // MARK: Typing the session into the host shell
-
-    /// Regression: this gate used to match the host shell by name, which never
-    /// fired — `proc_name` reports the real executable, and `/bin/sh` on macOS
-    /// *is* bash, so the shell shows up as "bash". The tab sat with an idle
-    /// shell, a blank screen and no way to type into it.
-    @Test("The host shell is ready whatever it is called")
-    func readyWhateverTheShellIsCalled() {
-        for name in ["bash", "sh", "zsh", "fish"] {
-            #expect(
-                TerminalTabItem.isReadyForCommand(
-                    .init(names: [name], state: .noClient),
-                    echoDisabled: true,
-                    shellIsForeground: true
-                ),
-                "a host shell named \(name) should be typed into"
-            )
-        }
-    }
-
-    @Test("Nothing in the foreground group yet means not ready")
-    func notReadyWhileGroupIsEmpty() {
+    /// A spawn is asked for and acknowledged separately, and the user can act
+    /// in between. A session that comes back for an attempt that no longer
+    /// exists must not be adopted by whatever replaced it.
+    @Test("A session is adopted only by the attempt that asked for it")
+    func adoptsOnlyItsOwnSession() {
+        // The attempt that asked is still the current one.
         #expect(
-            !TerminalTabItem.isReadyForCommand(
-                .init(names: [], state: .noClient),
-                echoDisabled: true,
-                shellIsForeground: true
+            TerminalTabItem.adoptsSession(
+                spawnGeneration: 4,
+                attemptGeneration: 4,
+                userDisconnected: false
             )
         )
-    }
-
-    /// Regression: typing while the login shell is still sourcing the user's
-    /// profile means the line discipline echoes the whole ssh invocation onto
-    /// the screen, because `stty -echo` hasn't run yet.
-    @Test("A shell that still echoes has not finished starting")
-    func notReadyWhileTerminalStillEchoes() {
+        // Reconnected while the request was in flight.
         #expect(
-            !TerminalTabItem.isReadyForCommand(
-                .init(names: ["bash"], state: .noClient),
-                echoDisabled: false,
-                shellIsForeground: true
+            !TerminalTabItem.adoptsSession(
+                spawnGeneration: 4,
+                attemptGeneration: 5,
+                userDisconnected: false
             )
         )
-        #expect(poll(.init(names: ["bash"], state: .noClient), pending: true, echoDisabled: false)
-            == .wait)
-    }
-
-    @Test("A shell that never quiets is typed into anyway rather than hanging")
-    func typesAnywayAfterGrace() {
+        // Disconnected while the request was in flight — there was no pid to
+        // signal at the time, so the session arrives already unwanted.
         #expect(
-            poll(
-                .init(names: ["bash"], state: .noClient),
-                pending: true,
-                echoDisabled: false,
-                sinceAttemptStart: TerminalTabItem.hostShellQuietGrace + 0.5
-            ) == .typeCommand
-        )
-    }
-
-    @Test("A running client is not something to type a command into")
-    func notReadyWhileClientRuns() {
-        #expect(
-            !TerminalTabItem.isReadyForCommand(
-                .init(names: ["ssh"], state: .connecting),
-                echoDisabled: true,
-                shellIsForeground: true
+            !TerminalTabItem.adoptsSession(
+                spawnGeneration: 4,
+                attemptGeneration: 4,
+                userDisconnected: true
             )
         )
+        // Nothing was asked for, so nothing is ours to adopt.
         #expect(
-            !TerminalTabItem.isReadyForCommand(
-                .init(names: ["ssh"], state: .connected),
-                echoDisabled: true,
-                shellIsForeground: true
+            !TerminalTabItem.adoptsSession(
+                spawnGeneration: nil,
+                attemptGeneration: 4,
+                userDisconnected: false
             )
         )
     }
@@ -204,180 +195,6 @@ struct SessionRetryTests {
         // SIGKILL cannot be caught, so the sequence always terminates.
         #expect(TerminalTabItem.escalationSignals.last == SIGKILL)
         #expect(TerminalTabItem.disconnectEscalationDelay > 0)
-    }
-
-    /// The grace exists so a slow host shell still gets its command typed. If
-    /// the attempt could fail first, a shell slower than that bound would fail
-    /// every attempt instead of connecting with an echoed line.
-    @Test("The shell may take longer to quiet than the grace, and still connect")
-    func shellBoundsAreOrdered() {
-        #expect(TerminalTabItem.hostShellStartTimeout > TerminalTabItem.hostShellQuietGrace)
-        #expect(
-            poll(
-                .init(names: ["bash"], state: .noClient),
-                pending: true,
-                echoDisabled: false,
-                sinceAttemptStart: TerminalTabItem.hostShellQuietGrace + 0.5
-            ) == .typeCommand
-        )
-        #expect(
-            poll(
-                .init(names: ["bash"], state: .noClient),
-                pending: true,
-                echoDisabled: false,
-                sinceAttemptStart: TerminalTabItem.hostShellStartTimeout + 0.5
-            ) == .typeCommand
-        )
-    }
-
-    // MARK: What each poll of the foreground group means
-
-    private func poll(
-        _ snapshot: SessionConnectionProbe.Foreground,
-        pending: Bool = false,
-        echoDisabled: Bool = true,
-        shellIsForeground: Bool = true,
-        noClientStreak: Int = TerminalTabItem.sessionEndConfirmations,
-        sinceAttemptStart: TimeInterval = 0,
-        sinceCommand: TimeInterval? = nil,
-        phase: TerminalTabItem.Phase = .running
-    ) -> TerminalTabItem.PollOutcome {
-        TerminalTabItem.pollOutcome(
-            snapshot: snapshot,
-            hasPendingCommand: pending,
-            echoDisabled: echoDisabled,
-            shellIsForeground: shellIsForeground,
-            noClientStreak: noClientStreak,
-            secondsSinceAttemptStart: sinceAttemptStart,
-            secondsSinceCommand: sinceCommand,
-            phase: phase
-        )
-    }
-
-    /// Disconnect, then Space before the old client has finished dying: the
-    /// client still in the terminal is the previous session, and marking the
-    /// tab connected to it would also replay the login script into a session
-    /// being torn down.
-    @Test("A client still running before this attempt has typed is not adopted")
-    func doesNotAdoptTheDyingClient() {
-        #expect(poll(.init(names: ["ssh"], state: .connected), pending: true) == .wait)
-        #expect(poll(.init(names: ["ssh"], state: .connecting), pending: true) == .wait)
-        // Once the command is out, the client that appears is this attempt's.
-        #expect(poll(.init(names: ["ssh"], state: .connected), pending: false) == .connected)
-    }
-
-    @Test("A waiting command is typed as soon as the host shell owns the pty")
-    func typesWhenShellIsReady() {
-        #expect(poll(.init(names: ["bash"], state: .noClient), pending: true) == .typeCommand)
-        // Nothing has the pty yet — the wrapper chain is still exec'ing.
-        #expect(poll(.init(names: [], state: .noClient), pending: true) == .wait)
-    }
-
-    @Test("A client that is up but not yet through is still connecting")
-    func reportsConnecting() {
-        #expect(poll(.init(names: ["ssh"], state: .connecting), phase: .starting) == .connecting)
-        #expect(poll(.init(names: ["ssh"], state: .connected), phase: .starting) == .connected)
-    }
-
-    /// Regression: the session watch used to be cancelled the moment a session
-    /// connected, so nothing ever noticed it ending. The tab stayed "running"
-    /// with no retry, and Space was forwarded to a dead terminal instead of
-    /// reconnecting.
-    @Test("A live session whose client disappears has ended")
-    func detectsSessionEnd() {
-        #expect(poll(.init(names: ["bash"], state: .noClient), phase: .running) == .sessionEnded)
-        #expect(
-            poll(.init(names: ["bash"], state: .noClient), phase: .reconnecting(attempt: 2))
-                == .sessionEnded
-        )
-    }
-
-    /// Between the items of the host shell's command list the foreground group
-    /// belongs to `stty` or `printf`. Calling that a disconnect puts a live
-    /// session behind a "press Space to reconnect" pill.
-    @Test("One poll without the client is not a session ending")
-    func singleMissIsNotAnEnding() {
-        #expect(
-            poll(.init(names: ["stty"], state: .noClient), noClientStreak: 1, phase: .running)
-                == .wait
-        )
-        #expect(
-            poll(.init(names: ["bash"], state: .noClient), noClientStreak: 2, phase: .running)
-                == .sessionEnded
-        )
-    }
-
-    /// A local program can end up owning the tab's terminal — a login script's
-    /// keystrokes landing in the host shell as the session dies will start one.
-    /// Typing the next command into *that* feeds it keystrokes, so every
-    /// attempt times out against it and the tab never reconnects.
-    @Test("A foreign process on the terminal is waited out, not typed into")
-    func foreignProcessIsNotTypedInto() {
-        #expect(
-            poll(
-                .init(names: ["htop"], state: .noClient),
-                pending: true,
-                shellIsForeground: false
-            ) == .wait
-        )
-        // Even long past the point where a missing shell would fail the attempt:
-        // failing repeatedly against a program that will never answer is worse
-        // than waiting for the prompt to come back.
-        #expect(
-            poll(
-                .init(names: ["htop"], state: .noClient),
-                pending: true,
-                shellIsForeground: false,
-                sinceAttemptStart: TerminalTabItem.clientStartTimeout + 30
-            ) == .wait
-        )
-        // The same snapshot, with the shell back at its prompt, is typed into.
-        #expect(
-            poll(.init(names: ["bash"], state: .noClient), pending: true) == .typeCommand
-        )
-    }
-
-    @Test("A command just typed is given time for its client to appear")
-    func waitsForClientToStart() {
-        #expect(poll(.init(names: ["bash"], state: .noClient), sinceCommand: 0.5) == .wait)
-        #expect(
-            poll(
-                .init(names: ["bash"], state: .noClient),
-                sinceCommand: TerminalTabItem.clientStartTimeout + 1
-            ) == .sessionEnded
-        )
-    }
-
-    /// An empty foreground group means the probe saw nothing — a surface still
-    /// starting, or a failed enumeration. Reading that as "the client exited"
-    /// would end a perfectly live session.
-    @Test("An unreadable foreground group is not a session ending")
-    func emptySnapshotIsNotAnEnding() {
-        #expect(poll(.init(names: [], state: .noClient), phase: .running) == .wait)
-        #expect(
-            poll(.init(names: [], state: .noClient), phase: .reconnecting(attempt: 2)) == .wait
-        )
-    }
-
-    @Test("Waiting for a host shell that never appears fails the attempt")
-    func pendingCommandIsBounded() {
-        #expect(poll(.init(names: [], state: .noClient), pending: true, sinceAttemptStart: 1) == .wait)
-        #expect(
-            poll(
-                .init(names: [], state: .noClient),
-                pending: true,
-                sinceAttemptStart: TerminalTabItem.hostShellStartTimeout + 1
-            ) == .sessionEnded
-        )
-    }
-
-    @Test("With no session expected there is nothing to watch")
-    func stopsWatchingWhenIdle() {
-        #expect(poll(.init(names: ["bash"], state: .noClient), phase: .disconnected) == .stopWatching)
-        #expect(
-            poll(.init(names: ["bash"], state: .noClient), phase: .waitingToRetry(attempt: 1))
-                == .stopWatching
-        )
     }
 
     // MARK: Session-end decisions
@@ -493,6 +310,7 @@ struct SessionRetryTests {
         )
     }
 }
+
 
 /// The waiting pill counts down to the next attempt, so the text has to stay
 /// sensible at both ends: no negative seconds as the attempt fires, and no
