@@ -307,11 +307,11 @@ info "saved $COMMITTED_NOTES"
 
 if [[ "$CHANGED_YML" -eq 1 ]]; then
   git add project.yml "$COMMITTED_NOTES"
-  git commit -m "chore(release): bump to ${TAG}"
+  git commit -m "[sc-0] chore(release): bump to ${TAG}"
   info "committed version bump + notes → ${TAG}"
 elif [[ -n "$(git status --porcelain "$COMMITTED_NOTES")" ]]; then
   git add "$COMMITTED_NOTES"
-  git commit -m "chore(release): notes for ${TAG}"
+  git commit -m "[sc-0] chore(release): notes for ${TAG}"
   info "committed release notes for ${TAG}"
 fi
 
