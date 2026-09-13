@@ -8,6 +8,30 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.6.0</title>
+            <pubDate>Sun, 13 Sep 2026 11:08:12 +0000</pubDate>
+            <sparkle:version>15</sparkle:version>
+            <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>Reconnecting no longer clears the terminal. A new session continues on the screen the last one left, so the output you were reading survives the reconnect.</li>
+  <li>A dropped session now retries on its own with backoff, which makes a remote reboot something a tab recovers from rather than something you restart.</li>
+  <li>Press Space or Return on a disconnected tab to reconnect, and the tab now says so. ⌘R still works; before, it was the only way back and nothing on screen mentioned it.</li>
+  <li>Connecting to a host that is still booting now gives up in seconds instead of burning about 75 seconds of silent retries, and a peer that vanishes without closing the connection is noticed instead of leaving the tab hanging on a dead socket.</li>
+  <li>SFTP tabs report their real state. A usable lftp tab no longer sits on &quot;Connecting…&quot;, a live session no longer offers to reconnect, and a dropped lftp connection dims the tab indicator instead of tearing down a prompt still holding your working directory, bookmarks, and queued transfers.</li>
+  <li>lftp now uses interactive timeouts in place of its shipped defaults, which are built for unattended mirroring. A dead host reports in about 14 seconds and names itself, rather than hanging silently for over a minute.</li>
+  <li>⌘S now toggles the hosts sidebar and ⌘B toggles the snippets sidebar — ⌘B was the hosts sidebar before. In the snippet editor, Save moves to ⌘Return.</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.5.1...v0.6.0</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.6.0/Quay-0.6.0.dmg"
+                       sparkle:edSignature="pn4h1jpUkQRNdHb6Q01x+TfBljtxlDvEGykNzk7e5w7YbzSeie7Xsp56PPgkQVBtGWaHh3ZdBTsuhmBit0dHDQ=="
+                       length="10568331"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.5.1</title>
             <pubDate>Mon, 17 Aug 2026 17:20:22 +0000</pubDate>
             <sparkle:version>14</sparkle:version>
