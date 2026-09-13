@@ -138,13 +138,46 @@ enum SSHCommandBuilder {
 
     static let sshBinary = "/usr/bin/ssh"
 
+    /// How long ssh spends on an unanswered SYN before giving up. Read by the
+    /// session watch too — see `TerminalTabItem.assumeConnectedAfter`.
+    static let connectTimeoutSeconds = 10
+
+    /// Options every session gets.
+    ///
+    /// - `BatchMode=no` makes ssh ask for prompts via the askpass helper
+    ///   rather than failing silently.
+    /// - `ConnectTimeout` bounds an unanswered SYN. Without it a connect to a
+    ///   host that is still booting burns ~75s of kernel retransmits before it
+    ///   reports anything, which is far longer than a retry cycle should wait.
+    /// - `ServerAlive*` is what notices a peer that vanished without a FIN — a
+    ///   hard reset or a dropped tunnel. Otherwise the socket stays
+    ///   `ESTABLISHED` forever and the session hangs with no output instead of
+    ///   disconnecting.
+    ///
+    /// ssh takes the *first* value of a repeated `-o`, so these win over
+    /// `~/.ssh/config` — and every builder emits `target.extraOptions` ahead of
+    /// them so a per-profile override still wins.
+
+    static let commonOptionArguments: [String] = optionArguments([
+        "BatchMode": "no",
+        "ConnectTimeout": "\(connectTimeoutSeconds)",
+        "ServerAliveInterval": "15",
+        "ServerAliveCountMax": "3",
+    ])
+
+    /// `-o key=value` pairs in a stable order, so command lines are
+    /// deterministic and testable.
+    static func optionArguments(_ options: [String: String]) -> [String] {
+        options.sorted { $0.key < $1.key }.flatMap { ["-o", "\($0.key)=\($0.value)"] }
+    }
+
     static func build(_ target: SSHTarget, askpass: AskpassEnv? = nil) -> SSHCommand {
         var argv: [String] = [sshBinary]
         var env: [String: String] = ["TERM": target.remoteTerminalType.rawValue]
 
-        // Common flags. `BatchMode=no` makes sure ssh asks for prompts via
-        // the askpass helper rather than failing silently.
-        argv.append(contentsOf: ["-o", "BatchMode=no"])
+        // Per-profile overrides first — see `commonOptionArguments`.
+        argv.append(contentsOf: optionArguments(target.extraOptions))
+        argv.append(contentsOf: commonOptionArguments)
 
         switch target.auth {
         case .sshAgent:
@@ -170,10 +203,6 @@ enum SSHCommandBuilder {
             // The alias may use a key with a passphrase or a password —
             // wire askpass anyway so secrets flow if requested.
             installAskpass(askpass, into: &env)
-        }
-
-        for (k, v) in target.extraOptions.sorted(by: { $0.key < $1.key }) {
-            argv.append(contentsOf: ["-o", "\(k)=\(v)"])
         }
 
         return SSHCommand(
@@ -203,7 +232,9 @@ enum SSHCommandBuilder {
         var argv: [String] = [binary]
         var env: [String: String] = ["TERM": target.remoteTerminalType.rawValue]
 
-        argv.append(contentsOf: ["-o", "BatchMode=no"])
+        // Per-profile overrides first — see `commonOptionArguments`.
+        argv.append(contentsOf: optionArguments(target.extraOptions))
+        argv.append(contentsOf: commonOptionArguments)
 
         switch target.auth {
         case .sshAgent:
@@ -225,10 +256,6 @@ enum SSHCommandBuilder {
 
         case .sshConfigAlias:
             installAskpass(askpass, into: &env)
-        }
-
-        for (k, v) in target.extraOptions.sorted(by: { $0.key < $1.key }) {
-            argv.append(contentsOf: ["-o", "\(k)=\(v)"])
         }
 
         argv.append(sftpDestination(target))
@@ -311,13 +338,9 @@ enum SSHCommandBuilder {
     }
 
     private static func lftpSSHConnectProgram(_ target: SSHTarget) -> String {
-        var argv: [String] = [
-            "/usr/bin/ssh",
-            "-a",
-            "-x",
-            "-o",
-            "BatchMode=no"
-        ]
+        var argv: [String] = ["/usr/bin/ssh", "-a", "-x"]
+            + optionArguments(target.extraOptions)
+            + commonOptionArguments
 
         switch target.auth {
         case .sshAgent, .sshConfigAlias:
@@ -338,10 +361,6 @@ enum SSHCommandBuilder {
 
         if let port = target.port {
             argv.append(contentsOf: ["-p", String(port)])
-        }
-
-        for (k, v) in target.extraOptions.sorted(by: { $0.key < $1.key }) {
-            argv.append(contentsOf: ["-o", "\(k)=\(v)"])
         }
 
         return argv.map(shellQuote).joined(separator: " ")

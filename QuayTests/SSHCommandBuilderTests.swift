@@ -1,8 +1,24 @@
+import Foundation
 import Testing
 @testable import Quay
 
 @Suite("SSHCommandBuilder")
 struct SSHCommandBuilderTests {
+    /// Pinned once, below, so the per-case assertions stay about what varies.
+    private let common = SSHCommandBuilder.commonOptionArguments.joined(separator: " ")
+
+    @Test("Every session carries the connect timeout and keepalives, in a stable order")
+    func commonOptions() {
+        #expect(
+            SSHCommandBuilder.commonOptionArguments == [
+                "-o", "BatchMode=no",
+                "-o", "ConnectTimeout=10",
+                "-o", "ServerAliveCountMax=3",
+                "-o", "ServerAliveInterval=15",
+            ]
+        )
+    }
+
 
     // MARK: ssh-agent (no secrets)
 
@@ -11,7 +27,7 @@ struct SSHCommandBuilderTests {
         let cmd = SSHCommandBuilder.build(
             SSHTarget(hostname: "example.com", port: nil, username: nil, auth: .sshAgent)
         )
-        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no example.com")
+        #expect(cmd.command == "/usr/bin/ssh \(common) example.com")
         #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
 
@@ -20,7 +36,7 @@ struct SSHCommandBuilderTests {
         let cmd = SSHCommandBuilder.build(
             SSHTarget(hostname: "host.internal", port: 2222, username: "deploy", auth: .sshAgent)
         )
-        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no -p 2222 deploy@host.internal")
+        #expect(cmd.command == "/usr/bin/ssh \(common) -p 2222 deploy@host.internal")
         #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
 
@@ -131,7 +147,7 @@ struct SSHCommandBuilderTests {
             SSHTarget(hostname: "ignored", port: nil, username: nil,
                       auth: .sshConfigAlias(alias: "prod-bastion"))
         )
-        #expect(cmd.command == "/usr/bin/ssh -o BatchMode=no prod-bastion")
+        #expect(cmd.command == "/usr/bin/ssh \(common) prod-bastion")
     }
 
     @Test("alias with non-trivial chars is quoted")
@@ -163,7 +179,7 @@ struct SSHCommandBuilderTests {
         let cmd = SSHCommandBuilder.buildSFTP(
             SSHTarget(hostname: "host.internal", port: 2222, username: "deploy", auth: .sshAgent)
         )
-        #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no -P 2222 deploy@host.internal")
+        #expect(cmd.command == "/usr/bin/sftp \(common) -P 2222 deploy@host.internal")
         #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
 
@@ -173,7 +189,7 @@ struct SSHCommandBuilderTests {
             SSHTarget(hostname: "host.internal", port: nil, username: nil, auth: .sshAgent),
             client: .homebrewOpenSSH
         )
-        #expect(cmd.command == "/opt/homebrew/bin/sftp -o BatchMode=no host.internal")
+        #expect(cmd.command == "/opt/homebrew/bin/sftp \(common) host.internal")
     }
 
     @Test("sftp private key path containing spaces is quoted")
@@ -213,7 +229,7 @@ struct SSHCommandBuilderTests {
             SSHTarget(hostname: "ignored", port: nil, username: nil,
                       auth: .sshConfigAlias(alias: "prod-bastion"))
         )
-        #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no prod-bastion")
+        #expect(cmd.command == "/usr/bin/sftp \(common) prod-bastion")
     }
 
     @Test("sftp remote directory is appended to destination and quoted")
@@ -227,7 +243,7 @@ struct SSHCommandBuilderTests {
                 remoteDirectory: "/var/www/site assets/"
             )
         )
-        #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no 'deploy@host.internal:/var/www/site assets/'")
+        #expect(cmd.command == "/usr/bin/sftp \(common) 'deploy@host.internal:/var/www/site assets/'")
     }
 
     @Test("sftp IPv6 destination brackets host when remote directory is set")
@@ -241,7 +257,7 @@ struct SSHCommandBuilderTests {
                 remoteDirectory: "/srv"
             )
         )
-        #expect(cmd.command == "/usr/bin/sftp -o BatchMode=no 'deploy@[2001:db8::1]:/srv'")
+        #expect(cmd.command == "/usr/bin/sftp \(common) 'deploy@[2001:db8::1]:/srv'")
     }
 
     @Test("lftp uses lftp binary and OpenSSH connect program")
@@ -262,7 +278,7 @@ struct SSHCommandBuilderTests {
         #expect(cmd.command.contains("alias ls cls"))
         #expect(cmd.command.contains("set sftp:connect-program"))
         #expect(!cmd.command.contains("--user"))
-        #expect(cmd.command.contains("/usr/bin/ssh -a -x -o BatchMode=no -l deploy -p 2222"))
+        #expect(cmd.command.contains("/usr/bin/ssh -a -x \(common) -l deploy -p 2222"))
         #expect(cmd.command.hasSuffix(" sftp://host.internal"))
         #expect(cmd.environment == ["TERM": "xterm-256color"])
     }
