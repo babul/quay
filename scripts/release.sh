@@ -444,6 +444,11 @@ gh release create "$TAG" \
   --target "$(git rev-parse main)"
 rm -f "$NOTES_TMP" "$NOTES_HTML_PATH"
 
+# gh creates the tag server-side, so fetch it back — otherwise this clone has
+# no v* tag for the release it just cut until the next release's preflight.
+git fetch --tags --quiet origin
+info "fetched tag ${TAG}"
+
 bold "==> Done"
 printf "\n  Release:  https://github.com/babul/quay/releases/tag/%s\n" "$TAG"
 printf "  Appcast:  https://babul.github.io/quay/appcast.xml\n\n"
