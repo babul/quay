@@ -31,9 +31,26 @@ final class GhosttySurfaceView: NSView {
     /// `onCloseRequest`/`onChildExited` without a timing dependency.
     var onBridgeCreated: ((GhosttySurfaceBridge) -> Void)?
 
-    /// Called when Space or Return is pressed after the child process has
-    /// exited. The owning tab item reconnects, mirroring the Cmd-R command.
-    var onReconnectKey: (() -> Void)?
+    /// Keys the surface answers on its owner's behalf once its child process
+    /// has exited, instead of forwarding them to the (gone) terminal.
+    enum DeadSessionKey {
+        /// Space or Return — reconnect, mirroring the Cmd-R command.
+        case reconnect
+        /// Escape — call off an automatic retry cycle.
+        case cancel
+    }
+
+    /// Called when a `DeadSessionKey` is pressed. Returns `true` if the owner
+    /// acted on it, in which case the key is not forwarded to the terminal.
+    var onDeadSessionKey: ((DeadSessionKey) -> Bool)?
+
+    /// Whether a session owns the terminal right now. Between sessions the pty
+    /// belongs to Quay's host shell, and anything written to it would run on
+    /// this machine instead of the remote one.
+    ///
+    /// Defaults closed: a surface whose owner hasn't wired this up must not
+    /// pass input to a host shell.
+    var sessionOwnsTerminal: () -> Bool = { false }
 
     // IME state — owned here; modified by GhosttySurfaceView+IME.
     var markedText = NSMutableAttributedString()
@@ -140,35 +157,121 @@ final class GhosttySurfaceView: NSView {
         ghostty_surface_set_occlusion(surface, !occluded)
     }
 
-    func disconnectProcess() {
-        guard let surface, !ghostty_surface_process_exited(surface) else { return }
+    /// The pty's foreground process group leader while the child is alive.
+    /// libghostty names it a pid, but it is `tcgetpgrp` — see
+    /// `SessionConnectionProbe`, which relies on that.
+    private var liveForegroundPID: pid_t? {
+        guard hasLiveHostShell, let surface else { return nil }
         let pid = pid_t(ghostty_surface_foreground_pid(surface))
-        guard pid > 0 else { return }
-        _ = Darwin.kill(pid, SIGHUP)
+        return pid > 0 ? pid : nil
     }
 
-    /// Consumes a bare Space/Return once the session has ended so a dead
-    /// surface reconnects without reaching for Cmd-R. Returns `false` while the
-    /// child process is alive, leaving normal key delivery untouched.
-    func handleReconnectKey(_ event: NSEvent) -> Bool {
-        guard let onReconnectKey, let surface, ghostty_surface_process_exited(surface),
-              Self.isReconnectKey(keyCode: event.keyCode, modifiers: event.modifierFlags)
-        else { return false }
-        onReconnectKey()
+    /// Hangs up the session client, leaving the host shell — and with it the
+    /// screen — alone. Signalling the foreground pid blindly would kill the
+    /// shell whenever no session is running.
+    func disconnectSessionClient(clientNames: Set<String>) {
+        guard let pid = liveForegroundPID else { return }
+        for member in SessionConnectionProbe.sessionProcesses(pgid: pid)
+        where clientNames.contains(SessionConnectionProbe.processName(of: member) ?? "") {
+            _ = Darwin.kill(member, SIGHUP)
+        }
+    }
+
+    /// What the pty's foreground process group is doing. See
+    /// `SessionConnectionProbe` for why the screen can't answer this.
+    func foregroundSnapshot(clientNames: Set<String>) -> SessionConnectionProbe.Foreground {
+        guard let pgid = liveForegroundPID else { return .init() }
+        return SessionConnectionProbe.foreground(pgid: pgid, clientNames: clientNames)
+    }
+
+    /// Presence only — what the input gate needs, without the socket walk.
+    func hasRunningClient(clientNames: Set<String>) -> Bool {
+        guard let pgid = liveForegroundPID else { return false }
+        return SessionConnectionProbe.clientIsRunning(pgid: pgid, clientNames: clientNames)
+    }
+
+    /// Writes text to the session, and only to a session. Every caller that
+    /// sends on the user's behalf goes through here rather than reaching for
+    /// the bridge, so the gate can't be forgotten.
+    @discardableResult
+    func sendUserInput(_ text: String, appendReturn: Bool = false) -> Bool {
+        guard forwardsUserInput, let bridge else { return false }
+        bridge.sendText(text)
+        if appendReturn { bridge.sendReturnKey() }
         return true
     }
 
-    /// Space, Return, or keypad Enter with no meaningful modifiers held.
-    nonisolated static func isReconnectKey(
+    /// True once the host shell has turned the terminal's echo off, which is
+    /// the last thing its startup does — so it doubles as "ready to be typed
+    /// into".
+    ///
+    /// Without this, a command typed while the login shell is still sourcing
+    /// the user's profile is echoed by the line discipline, printing the whole
+    /// ssh invocation on screen before the shell ever reads it.
+    var hostShellHasQuietedTerminal: Bool {
+        guard let surface else { return false }
+        let name = ghostty_surface_tty_name(surface)
+        defer { ghostty_string_free(name) }
+        guard let ptr = name.ptr, name.len > 0 else { return false }
+        return SessionConnectionProbe.echoDisabled(ttyPath: String(cString: ptr))
+    }
+
+    /// True while the tab's host shell is still running, so the next session can
+    /// be typed into the screen this one leaves behind.
+    var hasLiveHostShell: Bool {
+        guard let surface else { return false }
+        return !ghostty_surface_process_exited(surface)
+    }
+
+    /// Consumes Space/Return (reconnect) and Escape (stop retrying) whenever no
+    /// session owns the terminal, letting the owner decide whether the key
+    /// applies right now. While a session is live every key belongs to it — an
+    /// in-flight connect may be sitting at a host-key or password prompt, where
+    /// Escape is the user's answer and not ours to take.
+    func handleDeadSessionKey(_ event: NSEvent) -> Bool {
+        guard let onDeadSessionKey, !forwardsUserInput,
+              let key = Self.deadSessionKey(
+                  keyCode: event.keyCode,
+                  modifiers: event.modifierFlags
+              )
+        else { return false }
+        return onDeadSessionKey(key)
+    }
+
+    /// Whether user input may reach the terminal. Every path that writes to the
+    /// pty on the user's behalf — keys, IME, paste, Services, middle-click —
+    /// must check this, or that input runs in Quay's host shell instead of the
+    /// session. Defaults to `true` so a surface with no owner wired up behaves
+    /// like a plain terminal.
+    ///
+    /// The owner answers by asking the kernel *now* rather than from a polled
+    /// flag: a session that exited since the last poll would otherwise leave
+    /// this open for the rest of the interval.
+    var forwardsUserInput: Bool {
+        // Decided once per key event: the answer is a syscall, and one
+        // keystroke otherwise asks four times (the dead-session check, keyDown,
+        // insertText, keyUp). Memoising per event also keeps those four
+        // consistent — a session dying mid-stack would otherwise decline the
+        // key *and* swallow it.
+        if let inputGateForCurrentEvent { return inputGateForCurrentEvent }
+        return hasLiveHostShell && sessionOwnsTerminal()
+    }
+
+    /// Set for the duration of one key event. See `forwardsUserInput`.
+    var inputGateForCurrentEvent: Bool?
+
+    /// Space, Return, keypad Enter or Escape with no meaningful modifiers held.
+    nonisolated static func deadSessionKey(
         keyCode: UInt16,
         modifiers: NSEvent.ModifierFlags
-    ) -> Bool {
+    ) -> DeadSessionKey? {
         let ignored: NSEvent.ModifierFlags = [.capsLock, .function, .numericPad]
         let held = modifiers.intersection(.deviceIndependentFlagsMask).subtracting(ignored)
-        guard held.isEmpty else { return false }
+        guard held.isEmpty else { return nil }
         switch keyCode {
-        case 36, 49, 76: return true  // return, space, keypad enter
-        default: return false
+        case 36, 49, 76: return .reconnect  // return, space, keypad enter
+        case 53: return .cancel  // escape
+        default: return nil
         }
     }
 
@@ -258,6 +361,9 @@ final class GhosttySurfaceView: NSView {
     }
 
     override func otherMouseDown(with event: NSEvent) {
+        // Ghostty starts a clipboard paste on middle-click, which would land in
+        // the host shell between sessions.
+        guard forwardsUserInput else { return }
         sendMousePos(event)
         sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_MIDDLE)
     }
@@ -344,7 +450,7 @@ final class GhosttySurfaceView: NSView {
     }
 
     func injectPasteText(_ text: String) {
-        guard let surface, !text.isEmpty else { return }
+        guard forwardsUserInput, let surface, !text.isEmpty else { return }
         text.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(strlen(ptr)))
         }

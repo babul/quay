@@ -323,3 +323,154 @@ struct SSHCommandBuilderTests {
         #expect(cmd.command.hasSuffix(" sftp://h"))
     }
 }
+
+/// The tab's pty runs a host shell for its whole life and sessions are typed
+/// into it — that is what lets a reconnect continue on the same screen. These
+/// pin the two strings that make it work.
+@Suite("Session host shell")
+struct SessionHostShellTests {
+    @Test("The host shell loads the user's environment, then hands over quietly")
+    func hostShellCommand() {
+        let command = SessionBootstrap.hostShellCommand()
+        // A login shell first: a launchd-started app otherwise lacks
+        // SSH_AUTH_SOCK and PATH.
+        #expect(command.contains(" -l -c "))
+        // Then a bare shell with no visible prompt and no startup file.
+        #expect(command.contains("PS1="))
+        // Echo off and the line editor disabled, so Quay's typed command never
+        // reaches the screen — the session announces itself instead.
+        #expect(command.contains("stty -echo"))
+        #expect(command.contains("+o emacs"))
+        // The prompt clears the modes a dead remote left behind — without the
+        // bracketed-paste reset, the next command Quay types arrives wrapped in
+        // ESC[200~ and the shell runs "00~/usr/bin/ssh".
+        #expect(SessionBootstrap.hostShellPrompt.contains("\u{1B}[?2004l"))
+        // Never the alt-screen reset: it restores a saved cursor, which sends
+        // the cursor home and makes the next session overwrite the scrollback.
+        #expect(!SessionBootstrap.hostShellPrompt.contains("1049"))
+        #expect(command.contains("?2004l"))
+        #expect(command.contains("ENV="))
+        #expect(command.contains("/bin/sh -i"))
+    }
+
+    @Test("A session with no per-attempt environment is typed bare")
+    func plainCommandLine() {
+        let cmd = SSHCommand(command: "/usr/bin/ssh host", environment: ["TERM": "xterm-256color"])
+        // TERM is set on the host shell once, so it never appears on screen.
+        #expect(SessionBootstrap.sessionCommandLine(cmd) == "/usr/bin/ssh host")
+    }
+
+    @Test("Per-attempt askpass plumbing is inlined, since the socket changes each try")
+    func commandLineInlinesAskpass() {
+        let cmd = SSHCommand(
+            command: "/usr/bin/ssh host",
+            environment: [
+                "TERM": "xterm-256color",
+                "SSH_ASKPASS": "/tmp/quay askpass.sock",
+                "SSH_ASKPASS_REQUIRE": "force",
+            ]
+        )
+        #expect(
+            SessionBootstrap.sessionCommandLine(cmd)
+                == "env SSH_ASKPASS='/tmp/quay askpass.sock' SSH_ASKPASS_REQUIRE='force' /usr/bin/ssh host"
+        )
+    }
+
+    @Test("Each session kind knows which client to look for in the pty")
+    func clientNames() {
+        #expect(SessionBootstrap.clientNames(for: .ssh, sftpClient: .macOSOpenSSH) == ["ssh"])
+        #expect(SessionBootstrap.clientNames(for: .sftp, sftpClient: .macOSOpenSSH).contains("sftp"))
+        #expect(SessionBootstrap.clientNames(for: .sftp, sftpClient: .lftp).contains("lftp"))
+    }
+
+    @Test("A session announces itself in place of the command it runs")
+    func announcesSession() {
+        let line = SessionBootstrap.announced(
+            "/usr/bin/ssh host",
+            marker: "→ ssh babul@host  (attempt 2)"
+        )
+        // %s, not interpolation: a target containing % would otherwise be read
+        // as a format specifier.
+        #expect(line.hasPrefix("printf '\\033[2m%s\\033[0m\\n' "))
+        #expect(line.contains("'→ ssh babul@host  (attempt 2)'"))
+        #expect(line.hasSuffix("; /usr/bin/ssh host"))
+    }
+
+    /// ssh takes the first value of a repeated `-o`, so a per-profile override
+    /// only works if it is emitted ahead of Quay's defaults.
+    @Test("A per-profile option overrides Quay's default of the same key")
+    func extraOptionsWinOverDefaults() {
+        var target = SSHTarget(hostname: "host", auth: .sshAgent)
+        target.extraOptions = ["ConnectTimeout": "60"]
+        let command = SSHCommandBuilder.build(target).command
+
+        let mine = try? #require(command.range(of: "ConnectTimeout=60"))
+        let theirs = try? #require(command.range(of: "ConnectTimeout=\(SSHCommandBuilder.connectTimeoutSeconds)"))
+        #expect(mine!.lowerBound < theirs!.lowerBound)
+    }
+
+    @MainActor
+    @Test("The session watch's connected-assumption follows the connect timeout")
+    func assumeConnectedFollowsTimeout() {
+        #expect(
+            TerminalTabItem.assumeConnectedAfter
+                > TimeInterval(SSHCommandBuilder.connectTimeoutSeconds)
+        )
+    }
+
+    @Test("The marker is timestamped, and names the attempt only when retrying")
+    func markerFormat() {
+        let when = Date(timeIntervalSince1970: 1_773_380_712)  // 2026-03-13 12:25:12 UTC
+        let first = SessionBootstrap.sessionMarker(target: "ssh babul@host", attempt: 0, at: when)
+
+        #expect(first.hasPrefix("→ "))
+        #expect(first.hasSuffix("  ssh babul@host"))
+        // yyyy-MM-dd HH:mm:ss, so it sorts and greps.
+        let stamp = first.dropFirst(2).prefix(19)
+        #expect(stamp.count == 19)
+        #expect(stamp.contains("-") && stamp.contains(":"))
+    }
+
+    @Test("A retry marker reports the backoff it waited out")
+    func markerReportsBackoff() {
+        let when = Date(timeIntervalSince1970: 1_773_380_712)
+        let retry = SessionBootstrap.sessionMarker(
+            target: "ssh babul@host",
+            attempt: 5,
+            backoff: 15,
+            at: when
+        )
+        #expect(retry.hasSuffix("  ssh babul@host  (attempt 5 · waited 15s)"))
+
+        // A retry that skipped the wait (Space, Cmd-R) claims no wait.
+        let immediate = SessionBootstrap.sessionMarker(
+            target: "ssh babul@host",
+            attempt: 2,
+            backoff: 0,
+            at: when
+        )
+        #expect(immediate.hasSuffix("  ssh babul@host  (attempt 2)"))
+    }
+
+    @Test("An alias profile's marker names the alias, which is what runs")
+    func aliasMarkerNamesTheAlias() {
+        let alias = SSHTarget(
+            hostname: "prod-bastion",
+            username: "ignored",
+            auth: .sshConfigAlias(alias: "prod-bastion")
+        )
+        // The command is `ssh prod-bastion`; announcing ignored@prod-bastion
+        // would name something the command never mentions.
+        #expect(SessionBootstrap.displayTarget(for: alias, kind: .ssh) == "ssh prod-bastion")
+    }
+
+    @Test("The marker names the client and target, with or without a username")
+    func displayTarget() {
+        let withUser = SSHTarget(hostname: "host", username: "babul", auth: .sshAgent)
+        #expect(SessionBootstrap.displayTarget(for: withUser, kind: .ssh) == "ssh babul@host")
+        #expect(SessionBootstrap.displayTarget(for: withUser, kind: .sftp) == "sftp babul@host")
+
+        let noUser = SSHTarget(hostname: "host", auth: .sshAgent)
+        #expect(SessionBootstrap.displayTarget(for: noUser, kind: .ssh) == "ssh host")
+    }
+}

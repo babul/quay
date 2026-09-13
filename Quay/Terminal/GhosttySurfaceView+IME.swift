@@ -4,7 +4,17 @@ import GhosttyKit
 
 extension GhosttySurfaceView {
     override func keyDown(with event: NSEvent) {
-        if handleReconnectKey(event) { return }
+        let forwards = forwardsUserInput
+        inputGateForCurrentEvent = forwards
+        defer { inputGateForCurrentEvent = nil }
+
+        // Between sessions the pty belongs to Quay's host shell: the key is
+        // ours to act on (reconnect, stop retrying) or to swallow — never to
+        // run locally.
+        guard forwards else {
+            _ = handleDeadSessionKey(event)
+            return
+        }
 
         let phase = KeyInputPhase(event: event, hadMarkedText: markedText.length > 0)
         keyTextAccumulator = []
@@ -21,12 +31,12 @@ extension GhosttySurfaceView {
     }
 
     override func keyUp(with event: NSEvent) {
-        guard let surface else { return }
+        guard forwardsUserInput, let surface else { return }
         _ = ghostty_surface_key(surface, event.ghosttyKeyEvent(GHOSTTY_ACTION_RELEASE))
     }
 
     override func flagsChanged(with event: NSEvent) {
-        guard markedText.length == 0, let surface else { return }
+        guard forwardsUserInput, markedText.length == 0, let surface else { return }
         let action: ghostty_input_action_e = ghosttyMods(event.modifierFlags).rawValue == 0
             ? GHOSTTY_ACTION_RELEASE
             : GHOSTTY_ACTION_PRESS
@@ -178,7 +188,8 @@ extension GhosttySurfaceView: @preconcurrency NSTextInputClient {
 
     func insertText(_ string: Any, replacementRange: NSRange) {
         _ = replacementRange
-        guard NSApp.currentEvent != nil,
+        guard forwardsUserInput,
+              NSApp.currentEvent != nil,
               let text = Self.plainText(from: string)
         else { return }
 

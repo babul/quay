@@ -285,7 +285,11 @@ private extension GhosttyRuntime {
         let stateAddress = UInt(bitPattern: requestState)
         return MainActor.assumeIsolated {
             guard let bridge = bridge(forUserdataAddress: userdataAddress),
-                  let surface = bridge.view?.surface,
+                  let view = bridge.view,
+                  // Belt and braces for every paste route into the pty —
+                  // middle-click included, which never touches injectPasteText.
+                  view.forwardsUserInput,
+                  let surface = view.surface,
                   let string = NSPasteboard.general.string(forType: .string),
                   !string.isEmpty
             else { return false }

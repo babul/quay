@@ -15,12 +15,15 @@ enum SnippetActions {
         into tab: TerminalTabItem?,
         appendReturn: Bool? = nil
     ) async {
-        guard let bridge = tab?.surfaceView?.bridge else { return }
+        // Between sessions the pty belongs to Quay's host shell — a snippet
+        // pasted there would run on this machine, not the remote one.
+        guard let tab, let view = tab.surfaceView, view.forwardsUserInput else { return }
         guard let text = await resolveBody(snippet) else { return }
-        bridge.sendText(text)
-        if appendReturn ?? snippet.appendsReturn {
-            bridge.sendReturnKey()
-        }
+        // Re-checked after the await, and against the same surface: resolving a
+        // secured snippet can sit on Touch ID for seconds, and the session may
+        // have dropped meanwhile. `sendUserInput` re-checks the gate itself.
+        guard tab.surfaceView === view else { return }
+        view.sendUserInput(text, appendReturn: appendReturn ?? snippet.appendsReturn)
     }
 
     /// Copies the snippet body to the macOS clipboard.

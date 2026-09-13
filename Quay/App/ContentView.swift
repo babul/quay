@@ -331,6 +331,7 @@ struct ContentView: View {
             )
             if let tab = tabManager.selectedTab {
                 statusOverlay(for: tab)
+                    .animation(.easeInOut(duration: 0.18), value: tab.phase)
             }
         }
         .background(terminalBackgroundColor)
@@ -365,12 +366,39 @@ struct ContentView: View {
         case .idle:
             terminalBackgroundColor
         case .starting:
-            terminalBackgroundColor
-                .overlay { ProgressView("Connecting…") }
+            // Deliberately not an opaque cover: ssh may need the screen for a
+            // host-key prompt or a banner while this is still up.
+            connectingPill(verb: "Connecting", host: tab.profile.hostname)
         case .running:
             EmptyView()
+        case .reconnecting(let attempt):
+            connectingPill(
+                verb: "Reconnecting",
+                host: tab.profile.hostname,
+                detail: "attempt \(attempt)"
+            )
+        case .waitingToRetry(let attempt):
+            // Nothing is running here, so the spinner would be a lie — count
+            // down to the next attempt instead. Escape is only ours while no
+            // child process is alive, which is exactly this phase.
+            connectingPill(
+                verb: "Reconnecting",
+                host: tab.profile.hostname,
+                // The countdown replaces the detail here, so the attempt number
+                // is carried in it rather than passed and dropped.
+                detail: "attempt \(attempt)",
+                nextAttemptAt: tab.nextRetryAt
+            )
+            .background { keyboardFallbacks(for: tab) }
         case .disconnected:
-            reconnectHint
+            StatusPill {
+                Image(systemName: "bolt.horizontal.circle")
+                    .foregroundStyle(.red)
+                Text("Disconnected")
+                Text(Self.reconnectKeyHint)
+                    .foregroundStyle(.secondary)
+            }
+            .background { keyboardFallbacks(for: tab) }
         case .failed(let message):
             terminalBackgroundColor
                 .overlay {
@@ -400,28 +428,103 @@ struct ContentView: View {
     }
 
     /// Shared by the disconnected footer and the failure card so both advertise
-    /// the same keys `GhosttySurfaceView.isReconnectKey` actually accepts.
+    /// the same keys `GhosttySurfaceView.deadSessionKey` actually accepts.
     private static let reconnectKeyHint = "Press Space or Return to reconnect"
 
-    /// A dead surface keeps its last output on screen, so the hint is a
-    /// non-interactive footer: clicks fall through to the surface, which stays
-    /// first responder and receives the keys advertised here.
-    private var reconnectHint: some View {
-        VStack {
-            Spacer()
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.horizontal.circle")
-                    .foregroundStyle(.red)
-                Text("Disconnected")
-                Text(Self.reconnectKeyHint)
+    @ViewBuilder
+    private func connectingPill(
+        verb: String,
+        host: String,
+        detail: String? = nil,
+        nextAttemptAt: Date? = nil
+    ) -> some View {
+        // A deadline to count down to is exactly the waiting-between-attempts
+        // case; everything else is an attempt in flight.
+        let attempting = nextAttemptAt == nil
+        return StatusPill(pulsing: attempting) {
+            if attempting {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: "clock")
                     .foregroundStyle(.secondary)
             }
-            .font(.callout)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.bar, in: Capsule())
-            .overlay(Capsule().strokeBorder(.separator))
-            .padding(.bottom, 16)
+            Text("\(verb) to \(host)…")
+            if let nextAttemptAt {
+                // Ticks in the view, so counting down costs the model nothing.
+                // Anchored to the deadline, not `.now`, so re-evaluating the
+                // pill can't make the countdown repeat or skip a second.
+                TimelineView(.periodic(from: nextAttemptAt, by: 1)) { context in
+                    Text(Self.countdown(to: nextAttemptAt, now: context.date, detail: detail))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            } else if let detail {
+                Text(detail)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// The pills advertise Space/Return and Escape, which the surface handles.
+    /// When the host shell has died there is no surface, so the same keys are
+    /// carried here instead — otherwise the hint names keys that do nothing.
+    @ViewBuilder
+    private func keyboardFallbacks(for tab: TerminalTabItem) -> some View {
+        if tab.surfaceView == nil {
+            ZStack {
+                Button("Reconnect") { tab.reconnect() }
+                    .keyboardShortcut(.defaultAction)
+                Button("Reconnect") { tab.reconnect() }
+                    .keyboardShortcut(.space, modifiers: [])
+                Button("Stop reconnecting") { tab.disconnect() }
+                    .keyboardShortcut(.escape, modifiers: [])
+            }
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Clamped at zero: the last tick before an attempt fires should read "now",
+    /// never a negative countdown.
+    static func countdown(to deadline: Date, now: Date, detail: String? = nil) -> String {
+        let remaining = Int(deadline.timeIntervalSince(now).rounded(.up))
+        let when = remaining > 0 ? "next try in \(remaining)s" : "next try now"
+        guard let detail else { return "\(when) · Esc to stop" }
+        return "\(detail) · \(when) · Esc to stop"
+    }
+}
+
+/// Session status as a footer over the live surface. Non-interactive by design:
+/// clicks fall through, so the surface keeps first responder and receives the
+/// keys the pill advertises, and terminal output stays legible underneath.
+private struct StatusPill<Content: View>: View {
+    /// Breathes while a connection attempt is actually in flight.
+    var pulsing: Bool = false
+    @ViewBuilder var content: Content
+
+    @State private var breathedIn = false
+
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 6) { content }
+                .font(.callout)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.bar, in: Capsule())
+                .overlay(Capsule().strokeBorder(.separator))
+                .opacity(pulsing && breathedIn ? 0.72 : 1)
+                .animation(
+                    pulsing
+                        ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true)
+                        : nil,
+                    value: breathedIn
+                )
+                .transition(.opacity)
+                .padding(.bottom, 16)
+                .onAppear { if pulsing { breathedIn = true } }
         }
         .allowsHitTesting(false)
     }

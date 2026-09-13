@@ -156,19 +156,18 @@ private struct TabButton: View {
     }
 
     private var canDisconnect: Bool {
-        switch phase {
-        case .running, .starting:
-            return true
-        case .idle, .disconnected, .failed:
-            return false
-        }
+        // Disconnect is also how the user calls off a retry cycle.
+        if case .waitingToRetry = phase { return true }
+        return phase.hasLiveSession
     }
 
     @ViewBuilder
     private var phaseDot: some View {
         let color: Color = switch phase {
         case .idle:             .clear
-        case .starting:         .yellow
+        case .starting,
+             .reconnecting,
+             .waitingToRetry:   .yellow
         case .running:          .green
         case .disconnected,
              .failed:           .red

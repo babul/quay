@@ -36,13 +36,8 @@ final class TerminalTabManager {
         confirmActiveSessions: Bool
     ) -> Bool {
         guard confirmActiveSessions else { return false }
-
-        switch phase {
-        case .starting, .running:
-            return true
-        case .idle, .disconnected, .failed:
-            return false
-        }
+        // Closing only costs the user something while a child process is alive.
+        return phase.hasLiveSession
     }
 
     func tabsRequiringCloseConfirmation(confirmActiveSessions: Bool) -> [TerminalTabItem] {
