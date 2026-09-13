@@ -92,7 +92,7 @@ final class SidebarHoverController {
         }
     }
 
-    /// ⌘B: if sidebar is open, close and unpin; if closed, open and pin.
+    /// ⌘S: if sidebar is open, close and unpin; if closed, open and pin.
     func manualToggle() {
         guard !tabsEmpty else { return }
         cancelTasks()

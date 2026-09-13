@@ -217,8 +217,12 @@ struct SnippetEditor: View {
 
         ToolbarItem(placement: .confirmationAction) {
             if hasPendingChanges {
+                // ⌘Return, not ⌘S: the View menu binds ⌘S to the hosts sidebar
+                // toggle app-wide. A window-local shortcut does win while this
+                // window is key, but only while this button exists — so ⌘S would
+                // save with unsaved edits and toggle a sidebar without them.
                 Button("Save") { save() }
-                    .keyboardShortcut("s", modifiers: .command)
+                    .keyboardShortcut(.return, modifiers: .command)
             }
         }
     }

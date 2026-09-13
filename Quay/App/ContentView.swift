@@ -90,6 +90,9 @@ struct ContentView: View {
     }
 
     private func onToggleSidebar() {
+        // ⌘S can arrive while a secondary window is key, so raise the window
+        // that owns the sidebar — as the snippets toggle already does.
+        mainWindow?.makeKeyAndOrderFront(nil)
         if autoHideSidebar {
             hoverController.manualToggle()
         } else {

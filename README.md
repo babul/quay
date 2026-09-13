@@ -91,7 +91,8 @@ Press **⌘L** to focus the search field and filter connections by name — resu
 | **⌘1**…**⌘9** | Switch to tab 1–9 |
 | **⌘L** | Focus sidebar search |
 | **⌘⇧L** | Focus snippets search |
-| **⌘B** | Toggle hosts sidebar |
+| **⌘S** | Toggle hosts sidebar |
+| **⌘B** | Toggle snippets sidebar |
 | **⌘⇧R** | Reload Ghostty config |
 
 ## Terminal configuration

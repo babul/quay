@@ -52,12 +52,12 @@ struct QuayApp: App {
                 Button("Toggle Hosts Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
                 }
-                .keyboardShortcut("b", modifiers: [.command])
+                .keyboardShortcut("s", modifiers: [.command])
                 Toggle("Auto-hide Hosts Sidebar", isOn: $autoHideSidebar)
                 Button("Toggle Snippets Sidebar") {
                     NotificationCenter.default.post(name: .toggleSnippetsSidebar, object: nil)
                 }
-                .labelStyle(.titleOnly)
+                .keyboardShortcut("b", modifiers: [.command])
                 Divider()
             }
             CommandMenu("Find") {

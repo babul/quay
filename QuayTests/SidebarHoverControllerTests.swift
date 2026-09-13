@@ -95,7 +95,7 @@ struct SidebarHoverControllerTests {
         #expect(ctrl.isVisible)
     }
 
-    // MARK: Pin (⌘B)
+    // MARK: Pin (⌘S)
 
     @Test("manualToggle when hidden: sidebar shows and is pinned")
     func pinShow() async {

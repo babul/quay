@@ -732,9 +732,9 @@ extension Notification.Name {
     static let focusSearch = Notification.Name("io.github.babul.quay.focusSearch")
     /// Posted by the ⌘⇧L menu command to open the snippets sidebar and focus its search field.
     static let focusSearchSnippets = Notification.Name("io.github.babul.quay.focusSearchSnippets")
-    /// Posted by the ⌘B menu command to show or hide the hosts sidebar.
+    /// Posted by the ⌘S menu command to show or hide the hosts sidebar.
     static let toggleSidebar = Notification.Name("io.github.babul.quay.toggleSidebar")
-    /// Posted by the View menu to show or hide the snippets sidebar.
+    /// Posted by the ⌘B menu command to show or hide the snippets sidebar.
     static let toggleSnippetsSidebar = Notification.Name("io.github.babul.quay.toggleSnippetsSidebar")
     /// Posted by a tab when its first remote title arrives (SSH is connected and at shell prompt).
     static let connectionConnected = Notification.Name("io.github.babul.quay.connectionConnected")
