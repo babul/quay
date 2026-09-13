@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Quay is a native macOS SSH connection manager (macOS 15+, Apple Silicon) built on top of `libghostty` — the core of the Ghostty terminal — without shipping Ghostty's full UI. Think Tabby-style connection manager UX on a Ghostty-speed terminal engine.
 
+A tab is not always ssh. `TerminalSessionKind` is `.ssh` or `.sftp`, and an sftp
+tab runs one of three clients (`SFTPClient`: macOS built-in `sftp`, Homebrew
+OpenSSH `sftp`, or `lftp`) chosen by the user in Settings. Both enums live in
+`Quay/PTY/SSHCommandBuilder.swift`. The kind decides the command line; the
+*client* is what the session machinery has to care about, because the three
+behave differently once connected — see "Client behaviour lives with the
+client" below.
+
 ## Build commands
 
 **First-time setup** (requires Xcode 16+, `zig` 0.16.x, `xcodegen`):
@@ -82,10 +90,58 @@ Three consequences worth knowing before changing anything here:
   Use `sendUserInput(_:appendReturn:)` rather than reaching for the bridge.
 - **The host shell's `PS1` is load-bearing.** It prints nothing visible; it
   resets terminal modes a dead remote left behind. Without the bracketed-paste
-  reset the next typed command arrives wrapped in `ESC[200~`. Never add
-  `ESC[?1049l` to it — that restores a saved cursor and clobbers scrollback.
-  `stty -echo` in the shell command is likewise load-bearing: it hides the typed
-  command *and* is how the tab detects the shell is ready (`tcgetattr` ECHO).
+  reset (`ESC[?2004l`) the next typed command arrives wrapped in `ESC[200~` and
+  the shell runs `00~/usr/bin/ssh`. Leaving the alt screen must use
+  **`ESC[?1047l`, never `ESC[?1049l`** — 1049 restores a *saved cursor*, which
+  sends the cursor home and overwrites the scrollback this design exists to
+  keep; 1047 only acts when a full-screen program actually died in there.
+- **`stty` is load-bearing twice over.** `stty -echo` in the shell command hides
+  Quay's typed command *and* is how the tab detects the shell is ready
+  (`tcgetattr` ECHO). Each session's command line then re-enables echo for the
+  session — sftp and lftp show nothing as you type without it — and quiets it
+  again afterwards.
+
+### The host shell is a stopgap, and these are its consequences
+libghostty cannot respawn a surface's command, so sessions are *typed into a
+tty*. That makes the pty a command channel, and most of the machinery around it
+is compensation for that one fact:
+
+- the shell must be the pty's foreground process group before anything is typed,
+  or a local program that grabbed the terminal eats every command;
+- a session ending needs two consecutive polls to agree, because the typed line
+  is a *list* (`stty echo; …; <client>; stty sane -echo`) and the foreground
+  group legitimately flickers between its items;
+- the tty's input queue is flushed when a session ends, since bytes written for
+  a dead session are otherwise read and run by the host shell — that is how a
+  login script's keystrokes once started a *local* `htop`;
+- login-script steps and snippets go through `sendAutomatedInput`, which
+  requires an established session: a step's value may be a resolved secret.
+
+A bundled supervisor helper — the `QuayAskpass`/`AskpassServer` pattern applied
+to spawning, a process that accepts "spawn this" over a socket and cannot be fed
+keystrokes — removes all four by construction. Prefer that over adding a fifth
+compensation here.
+
+### Client behaviour lives with the client
+`SFTPClient.outlivesTransport` is the flag for "this client keeps its prompt
+when the connection drops, and opens one lazily" — true for lftp, false for
+OpenSSH's `sftp`, which connects eagerly and exits with its transport. It
+decides whether a running client counts as connected and whether the host is
+probed when the transport goes missing (`HostReachability`). Client quirks
+belong there, not keyed on `TerminalSessionKind`.
+
+### Reachability probes the socket's peer, never the profile's hostname
+`HostReachability` is destructive — a negative answer tears the session down —
+so it is only ever pointed at an address a session was actually seen connected
+to, read from the client's own socket (`SessionConnectionProbe.Peer`, remembered
+as `lastKnownPeer`). `ConnectionProfile.hostname` is not that address: it is an
+ssh_config alias for alias profiles, and `HostName`, `Port`, `ProxyJump`, and
+`ProxyCommand` can rewrite where ssh dials for any profile. Probing it reports a
+healthy session dead. Two guards follow from the same fact — a probe is slow and
+its answer can be stale: "unreachable" must be confirmed twice
+(`reachabilityConfirmations`, since a host refusing *new* connections while
+serving existing ones looks identical to a dead one), and the evidence that
+prompted the check is rechecked between rounds.
 
 ### Persistence (`Quay/Persistence/`)
 SwiftData `ModelContainer` stored at `~/Library/Application Support/<bundleID>/Quay.store`. CloudKit sync is intentionally disabled for v0.1. Settings export/import uses AES-GCM-256 encryption with PBKDF2-HMAC-SHA256 key derivation (`SettingsBundle.swift`). SSH credentials and key passphrases are exported only as their reference URIs. Locked login-script step values are resolved to plaintext inside the bundle so it's portable to a new machine; the bundle password is what protects them.
@@ -103,6 +159,7 @@ SwiftData `ModelContainer` stored at `~/Library/Application Support/<bundleID>/Q
 | `Quay/Secrets/AskpassServer.swift` | Unix domain socket secret delivery to SSH_ASKPASS |
 | `Quay/Terminal/SessionConnectionProbe.swift` | libproc probe: what the pty's foreground process group is doing |
 | `Quay/Tabs/SessionBootstrap.swift` | Host-shell command, typed session command line, session marker |
+| `Quay/PTY/SSHCommandBuilder.swift` | Builds every session command line; owns `TerminalSessionKind` and `SFTPClient` |
 
 ## Conventions
 
