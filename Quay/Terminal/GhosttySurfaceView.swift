@@ -52,6 +52,13 @@ final class GhosttySurfaceView: NSView {
     /// pass input to a host shell.
     var sessionOwnsTerminal: () -> Bool = { false }
 
+    /// Whether the session is fully established, as opposed to merely having a
+    /// live client. Input Quay sends *on the user's behalf* — login script
+    /// steps, snippets — requires this: during a connect or a teardown those
+    /// bytes are read by the host shell and run on this machine, and a login
+    /// step's value may be a resolved secret. Defaults closed.
+    var sessionIsEstablished: () -> Bool = { false }
+
     // IME state — owned here; modified by GhosttySurfaceView+IME.
     var markedText = NSMutableAttributedString()
     var keyTextAccumulator: [String]?
@@ -166,16 +173,21 @@ final class GhosttySurfaceView: NSView {
         return pid > 0 ? pid : nil
     }
 
-    /// Hangs up the session client, leaving the host shell — and with it the
+    /// Signals the session client, leaving the host shell — and with it the
     /// screen — alone. Signalling the foreground pid blindly would kill the
     /// shell whenever no session is running.
-    func disconnectSessionClient(clientNames: Set<String>) {
-        guard let pid = liveForegroundPID else { return }
-        for member in SessionConnectionProbe.sessionProcesses(pgid: pid)
-        where clientNames.contains(SessionConnectionProbe.processName(of: member) ?? "") {
-            _ = Darwin.kill(member, SIGHUP)
+    @discardableResult
+    func sessionClientPIDs(clientNames: Set<String>) -> [pid_t] {
+        guard let pgid = liveForegroundPID else { return [] }
+        return SessionConnectionProbe.sessionProcesses(pgid: pgid).filter {
+            clientNames.contains(SessionConnectionProbe.processName(of: $0) ?? "")
         }
     }
+
+    func signal(pids: [pid_t], signal: Int32) {
+        for pid in pids { _ = Darwin.kill(pid, signal) }
+    }
+
 
     /// What the pty's foreground process group is doing. See
     /// `SessionConnectionProbe` for why the screen can't answer this.
@@ -201,6 +213,17 @@ final class GhosttySurfaceView: NSView {
         return true
     }
 
+    /// Writes text Quay is sending on the user's behalf. Requires an
+    /// established session, not just a live client — see `sessionIsEstablished`.
+    /// The rule lives here rather than at each caller so it cannot be dropped
+    /// by a refactor; the consequence of dropping it is a secret typed into a
+    /// local shell.
+    @discardableResult
+    func sendAutomatedInput(_ text: String, appendReturn: Bool = false) -> Bool {
+        guard sessionIsEstablished() else { return false }
+        return sendUserInput(text, appendReturn: appendReturn)
+    }
+
     /// True once the host shell has turned the terminal's echo off, which is
     /// the last thing its startup does — so it doubles as "ready to be typed
     /// into".
@@ -209,11 +232,21 @@ final class GhosttySurfaceView: NSView {
     /// the user's profile is echoed by the line discipline, printing the whole
     /// ssh invocation on screen before the shell ever reads it.
     var hostShellHasQuietedTerminal: Bool {
-        guard let surface else { return false }
+        withTTYPath { SessionConnectionProbe.echoDisabled(ttyPath: $0) } ?? false
+    }
+
+    /// Throws away input typed for a session that has gone, so the host shell
+    /// never reads it — see `SessionConnectionProbe.flushInput`.
+    func flushPendingInput() {
+        withTTYPath { SessionConnectionProbe.flushInput(ttyPath: $0) }
+    }
+
+    private func withTTYPath<T>(_ body: (String) -> T) -> T? {
+        guard let surface else { return nil }
         let name = ghostty_surface_tty_name(surface)
         defer { ghostty_string_free(name) }
-        guard let ptr = name.ptr, name.len > 0 else { return false }
-        return SessionConnectionProbe.echoDisabled(ttyPath: String(cString: ptr))
+        guard let ptr = name.ptr, name.len > 0 else { return nil }
+        return body(String(cString: ptr))
     }
 
     /// True while the tab's host shell is still running, so the next session can

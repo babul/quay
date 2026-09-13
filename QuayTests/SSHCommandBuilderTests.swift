@@ -345,8 +345,10 @@ struct SessionHostShellTests {
         // bracketed-paste reset, the next command Quay types arrives wrapped in
         // ESC[200~ and the shell runs "00~/usr/bin/ssh".
         #expect(SessionBootstrap.hostShellPrompt.contains("\u{1B}[?2004l"))
-        // Never the alt-screen reset: it restores a saved cursor, which sends
-        // the cursor home and makes the next session overwrite the scrollback.
+        // Leaves the alt screen a full-screen program died in...
+        #expect(SessionBootstrap.hostShellPrompt.contains("\u{1B}[?1047l"))
+        // ...but never via 1049, which restores a saved cursor and so makes the
+        // next session overwrite the scrollback.
         #expect(!SessionBootstrap.hostShellPrompt.contains("1049"))
         #expect(command.contains("?2004l"))
         #expect(command.contains("ENV="))
@@ -376,6 +378,21 @@ struct SessionHostShellTests {
         )
     }
 
+    /// An sftp client prints its own prompt and owns its transport — lftp
+    /// doesn't open one until the first command — so waiting for a socket
+    /// reports "connecting" over a prompt the user is already typing into.
+    @Test("An sftp session counts as connected once its client is running")
+    func sftpIsConnectedWhenClientRuns() throws {
+        let profile = ConnectionProfile(name: "p", hostname: "h", username: "u")
+        let sftp = try SessionBootstrap.start(for: profile, kind: .sftp)
+        let ssh = try SessionBootstrap.start(for: profile, kind: .ssh)
+
+        #expect(sftp.connectedWhenClientRuns)
+        // ssh shows nothing until its connection is up, so its TCP state stays
+        // the honest signal.
+        #expect(!ssh.connectedWhenClientRuns)
+    }
+
     @Test("Each session kind knows which client to look for in the pty")
     func clientNames() {
         #expect(SessionBootstrap.clientNames(for: .ssh, sftpClient: .macOSOpenSSH) == ["ssh"])
@@ -391,9 +408,14 @@ struct SessionHostShellTests {
         )
         // %s, not interpolation: a target containing % would otherwise be read
         // as a format specifier.
-        #expect(line.hasPrefix("printf '\\033[2m%s\\033[0m\\n' "))
+        #expect(line.contains("printf '\\033[2m%s\\033[0m\\n' "))
         #expect(line.contains("'→ ssh babul@host  (attempt 2)'"))
-        #expect(line.hasSuffix("; /usr/bin/ssh host"))
+        #expect(line.contains("; /usr/bin/ssh host; "))
+        // Echo is on for the session — a local client like sftp or lftp shows
+        // nothing as you type without it — and off again afterwards, so the
+        // next command Quay types stays hidden.
+        #expect(line.hasPrefix("stty echo; "))
+        #expect(line.hasSuffix("; stty sane -echo"))
     }
 
     /// ssh takes the first value of a repeated `-o`, so a per-profile override

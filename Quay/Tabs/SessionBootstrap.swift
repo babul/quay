@@ -37,6 +37,14 @@ enum SessionBootstrap {
         var clientNames: Set<String>
         /// Short human name for the session, e.g. `ssh babul@host`.
         var displayTarget: String
+        /// Whether the client running is itself proof enough of a session.
+        ///
+        /// True only for a client that owns its transport and connects lazily
+        /// (see `SFTPClient.outlivesTransport`): waiting for a socket would
+        /// report "connecting" over a prompt the user is already typing into.
+        /// ssh — and OpenSSH's `sftp`, which connects eagerly — show nothing
+        /// until the connection is up, so their TCP state is the honest signal.
+        var connectedWhenClientRuns: Bool
     }
 
     /// Build the host-shell config, an optional `AskpassServer`, and the command
@@ -96,7 +104,8 @@ enum SessionBootstrap {
             askpass: askpass,
             commandLine: sessionCommandLine(cmd),
             clientNames: clientNames(for: kind, sftpClient: sftpClient),
-            displayTarget: displayTarget(for: target, kind: kind)
+            displayTarget: displayTarget(for: target, kind: kind),
+            connectedWhenClientRuns: kind == .sftp && sftpClient.outlivesTransport
         )
     }
 
@@ -153,16 +162,26 @@ enum SessionBootstrap {
         return formatter
     }()
 
-    /// Prefix a command with a dim one-liner naming the session.
+    /// Wrap a session's command line: announce it, and hand the terminal back
+    /// to it in a state it can work in.
     ///
-    /// The host shell's echo is off, so without this the screen would give no
-    /// sign that a session started — which matters most on a retry, where the
-    /// only other clue is the status pill.
+    /// The host shell keeps echo off so Quay's own typed line stays off the
+    /// screen — but the session needs it back. ssh doesn't care (it takes the
+    /// tty raw and the remote echoes), yet a *local* interactive client does:
+    /// with echo off, sftp and lftp run what you type while showing nothing,
+    /// which reads as a terminal that has stopped accepting keys.
+    ///
+    /// `stty sane -echo` afterwards restores the quiet state for the next typed
+    /// command, and repairs a tty left raw by a client that was killed rather
+    /// than allowed to exit.
     ///
     /// `printf '%s'` rather than interpolating: a target containing `%` would
     /// otherwise be read as a format specifier.
     static func announced(_ commandLine: String, marker: String) -> String {
-        "printf '\\033[2m%s\\033[0m\\n' \(shellSingleQuote(marker)); \(commandLine)"
+        "stty echo; "
+            + "printf '\\033[2m%s\\033[0m\\n' \(shellSingleQuote(marker)); "
+            + "\(commandLine); "
+            + "stty sane -echo"
     }
 
     /// The host shell's prompt: invisible, and it puts the terminal back to a
@@ -176,11 +195,14 @@ enum SessionBootstrap {
     /// The same goes for an editor killed mid-session leaving mouse reporting
     /// on.
     ///
-    /// Deliberately absent: leaving the alternate screen (`ESC[?1049l`).
-    /// It *restores a saved cursor*, so on a terminal that was never in the alt
-    /// screen it sends the cursor home and the next session overwrites the
-    /// scrollback from the top. Only modes with no cursor or screen side
-    /// effects belong here.
+    /// The alt-screen reset is `1047`, never `1049`. Both return to the primary
+    /// screen, but `1049` *restores a saved cursor* — on a terminal that was
+    /// never in the alt screen that sends the cursor home and the next session
+    /// overwrites the scrollback this whole design exists to keep. `1047` only
+    /// touches the cursor when the screen actually changed, so it is a no-op
+    /// unless a full-screen program (htop, vim) died in there — in which case
+    /// its frozen display is exactly what needs clearing before the reconnect
+    /// markers can be seen.
     ///
     /// Mouse input is reset here for a second reason: wheel and motion events
     /// are forwarded to the pty without the input gate, so a session that died
@@ -192,6 +214,7 @@ enum SessionBootstrap {
     /// zero-width bytes when it places the cursor.
     static let hostShellPrompt =
         "\\["
+        + "\u{1B}[?1047l"   // leave the alternate screen, cursor untouched
         + "\u{1B}[?2004l"   // bracketed paste off
         + "\u{1B}[?1000l\u{1B}[?1002l\u{1B}[?1003l\u{1B}[?1006l"  // mouse reporting off
         + "\u{1B}[?1007l"  // wheel scrolls, rather than sending arrow keys

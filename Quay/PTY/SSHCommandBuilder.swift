@@ -30,6 +30,15 @@ enum SFTPClient: String, CaseIterable, Identifiable, Sendable {
     case homebrewOpenSSH
     case lftp
 
+    /// Whether this client keeps its prompt when the transport drops, and
+    /// opens one only when a command needs it.
+    ///
+    /// lftp does both: it connects lazily and survives a dead host, so its
+    /// prompt — not a socket — is what "connected" means, and noticing an
+    /// outage takes asking the host. OpenSSH's `sftp` does neither: it connects
+    /// eagerly and exits when the connection ends, like ssh.
+    var outlivesTransport: Bool { self == .lftp }
+
     static let defaultsKey = "sftp.client"
 
     static var preferred: Self {

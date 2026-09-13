@@ -23,7 +23,7 @@ enum SnippetActions {
         // secured snippet can sit on Touch ID for seconds, and the session may
         // have dropped meanwhile. `sendUserInput` re-checks the gate itself.
         guard tab.surfaceView === view else { return }
-        view.sendUserInput(text, appendReturn: appendReturn ?? snippet.appendsReturn)
+        view.sendAutomatedInput(text, appendReturn: appendReturn ?? snippet.appendsReturn)
     }
 
     /// Copies the snippet body to the macOS clipboard.

@@ -129,7 +129,8 @@ struct SessionRetryTests {
             #expect(
                 TerminalTabItem.isReadyForCommand(
                     .init(names: [name], state: .noClient),
-                    echoDisabled: true
+                    echoDisabled: true,
+                    shellIsForeground: true
                 ),
                 "a host shell named \(name) should be typed into"
             )
@@ -139,7 +140,11 @@ struct SessionRetryTests {
     @Test("Nothing in the foreground group yet means not ready")
     func notReadyWhileGroupIsEmpty() {
         #expect(
-            !TerminalTabItem.isReadyForCommand(.init(names: [], state: .noClient), echoDisabled: true)
+            !TerminalTabItem.isReadyForCommand(
+                .init(names: [], state: .noClient),
+                echoDisabled: true,
+                shellIsForeground: true
+            )
         )
     }
 
@@ -151,7 +156,8 @@ struct SessionRetryTests {
         #expect(
             !TerminalTabItem.isReadyForCommand(
                 .init(names: ["bash"], state: .noClient),
-                echoDisabled: false
+                echoDisabled: false,
+                shellIsForeground: true
             )
         )
         #expect(poll(.init(names: ["bash"], state: .noClient), pending: true, echoDisabled: false)
@@ -175,14 +181,52 @@ struct SessionRetryTests {
         #expect(
             !TerminalTabItem.isReadyForCommand(
                 .init(names: ["ssh"], state: .connecting),
-                echoDisabled: true
+                echoDisabled: true,
+                shellIsForeground: true
             )
         )
         #expect(
             !TerminalTabItem.isReadyForCommand(
                 .init(names: ["ssh"], state: .connected),
-                echoDisabled: true
+                echoDisabled: true,
+                shellIsForeground: true
             )
+        )
+    }
+
+    /// lftp ignores SIGHUP by design — it backgrounds itself to finish
+    /// transfers — so a disconnect that only hangs up leaves a live session
+    /// behind a "press Space to reconnect" pill.
+    @Test("Disconnect escalates from a polite hangup to a kill")
+    func disconnectEscalates() {
+        #expect(TerminalTabItem.hangupSignal == SIGHUP)
+        #expect(TerminalTabItem.escalationSignals.contains(SIGTERM))
+        // SIGKILL cannot be caught, so the sequence always terminates.
+        #expect(TerminalTabItem.escalationSignals.last == SIGKILL)
+        #expect(TerminalTabItem.disconnectEscalationDelay > 0)
+    }
+
+    /// The grace exists so a slow host shell still gets its command typed. If
+    /// the attempt could fail first, a shell slower than that bound would fail
+    /// every attempt instead of connecting with an echoed line.
+    @Test("The shell may take longer to quiet than the grace, and still connect")
+    func shellBoundsAreOrdered() {
+        #expect(TerminalTabItem.hostShellStartTimeout > TerminalTabItem.hostShellQuietGrace)
+        #expect(
+            poll(
+                .init(names: ["bash"], state: .noClient),
+                pending: true,
+                echoDisabled: false,
+                sinceAttemptStart: TerminalTabItem.hostShellQuietGrace + 0.5
+            ) == .typeCommand
+        )
+        #expect(
+            poll(
+                .init(names: ["bash"], state: .noClient),
+                pending: true,
+                echoDisabled: false,
+                sinceAttemptStart: TerminalTabItem.hostShellStartTimeout + 0.5
+            ) == .typeCommand
         )
     }
 
@@ -192,6 +236,8 @@ struct SessionRetryTests {
         _ snapshot: SessionConnectionProbe.Foreground,
         pending: Bool = false,
         echoDisabled: Bool = true,
+        shellIsForeground: Bool = true,
+        noClientStreak: Int = TerminalTabItem.sessionEndConfirmations,
         sinceAttemptStart: TimeInterval = 0,
         sinceCommand: TimeInterval? = nil,
         phase: TerminalTabItem.Phase = .running
@@ -200,10 +246,24 @@ struct SessionRetryTests {
             snapshot: snapshot,
             hasPendingCommand: pending,
             echoDisabled: echoDisabled,
+            shellIsForeground: shellIsForeground,
+            noClientStreak: noClientStreak,
             secondsSinceAttemptStart: sinceAttemptStart,
             secondsSinceCommand: sinceCommand,
             phase: phase
         )
+    }
+
+    /// Disconnect, then Space before the old client has finished dying: the
+    /// client still in the terminal is the previous session, and marking the
+    /// tab connected to it would also replay the login script into a session
+    /// being torn down.
+    @Test("A client still running before this attempt has typed is not adopted")
+    func doesNotAdoptTheDyingClient() {
+        #expect(poll(.init(names: ["ssh"], state: .connected), pending: true) == .wait)
+        #expect(poll(.init(names: ["ssh"], state: .connecting), pending: true) == .wait)
+        // Once the command is out, the client that appears is this attempt's.
+        #expect(poll(.init(names: ["ssh"], state: .connected), pending: false) == .connected)
     }
 
     @Test("A waiting command is typed as soon as the host shell owns the pty")
@@ -229,6 +289,51 @@ struct SessionRetryTests {
         #expect(
             poll(.init(names: ["bash"], state: .noClient), phase: .reconnecting(attempt: 2))
                 == .sessionEnded
+        )
+    }
+
+    /// Between the items of the host shell's command list the foreground group
+    /// belongs to `stty` or `printf`. Calling that a disconnect puts a live
+    /// session behind a "press Space to reconnect" pill.
+    @Test("One poll without the client is not a session ending")
+    func singleMissIsNotAnEnding() {
+        #expect(
+            poll(.init(names: ["stty"], state: .noClient), noClientStreak: 1, phase: .running)
+                == .wait
+        )
+        #expect(
+            poll(.init(names: ["bash"], state: .noClient), noClientStreak: 2, phase: .running)
+                == .sessionEnded
+        )
+    }
+
+    /// A local program can end up owning the tab's terminal — a login script's
+    /// keystrokes landing in the host shell as the session dies will start one.
+    /// Typing the next command into *that* feeds it keystrokes, so every
+    /// attempt times out against it and the tab never reconnects.
+    @Test("A foreign process on the terminal is waited out, not typed into")
+    func foreignProcessIsNotTypedInto() {
+        #expect(
+            poll(
+                .init(names: ["htop"], state: .noClient),
+                pending: true,
+                shellIsForeground: false
+            ) == .wait
+        )
+        // Even long past the point where a missing shell would fail the attempt:
+        // failing repeatedly against a program that will never answer is worse
+        // than waiting for the prompt to come back.
+        #expect(
+            poll(
+                .init(names: ["htop"], state: .noClient),
+                pending: true,
+                shellIsForeground: false,
+                sinceAttemptStart: TerminalTabItem.clientStartTimeout + 30
+            ) == .wait
+        )
+        // The same snapshot, with the shell back at its prompt, is typed into.
+        #expect(
+            poll(.init(names: ["bash"], state: .noClient), pending: true) == .typeCommand
         )
     }
 
@@ -261,7 +366,7 @@ struct SessionRetryTests {
             poll(
                 .init(names: [], state: .noClient),
                 pending: true,
-                sinceAttemptStart: TerminalTabItem.clientStartTimeout + 1
+                sinceAttemptStart: TerminalTabItem.hostShellStartTimeout + 1
             ) == .sessionEnded
         )
     }

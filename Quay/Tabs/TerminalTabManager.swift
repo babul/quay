@@ -73,6 +73,27 @@ final class TerminalTabManager {
         return openNewTab(for: profile)
     }
 
+    /// Tabs that a drop on `hostname` is evidence about: every other live
+    /// session to the same host.
+    static func tabsSharingHost(
+        _ hostname: String,
+        excluding tabID: UUID,
+        in tabs: [TerminalTabItem]
+    ) -> [TerminalTabItem] {
+        tabs.filter { $0.id != tabID && $0.profile.hostname == hostname && $0.phase.hasLiveSession }
+    }
+
+    /// One session dropping usually means the host went away, and the other
+    /// tabs connected to it are dead too — an sftp client like lftp keeps its
+    /// prompt and would otherwise sit there looking connected for a minute.
+    /// Each one checks the host for itself, so a session that merely ended on
+    /// its own is never mistaken for an outage.
+    func hostMayBeUnreachable(_ hostname: String, reportedBy tabID: UUID) {
+        for tab in Self.tabsSharingHost(hostname, excluding: tabID, in: tabs) {
+            tab.verifyHostReachable()
+        }
+    }
+
     /// Open a new tab for `profile` and immediately connect.
     @discardableResult
     func openNewTab(
@@ -85,6 +106,10 @@ final class TerminalTabManager {
             kind: kind,
             localDirectoryOverride: localDirectoryOverride
         )
+        let reporterID = item.id
+        item.onSessionLost = { [weak self] hostname in
+            self?.hostMayBeUnreachable(hostname, reportedBy: reporterID)
+        }
         tabs.append(item)
         select(item)
         connectTab(item)

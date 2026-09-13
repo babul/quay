@@ -1,3 +1,4 @@
+import Foundation
 import Darwin
 import Testing
 @testable import Quay
@@ -84,17 +85,24 @@ struct SessionConnectionProbeTests {
         }
     }
 
-    @Test("An established connection owned by this process is seen")
+    @Test("An established connection owned by this process is seen, with its far end")
     func seesEstablishedConnection() throws {
         let pair = try #require(LoopbackPair(), "could not open a loopback connection")
         _ = pair  // held open for the duration of the check
-        #expect(SessionConnectionProbe.hasEstablishedTCP(pid: getpid()))
+        // The address the session actually reached is what a later reachability
+        // check has to probe — the profile's hostname can be an ssh_config
+        // alias, or rewritten by HostName/Port/ProxyJump before ssh dials. Both
+        // ends of the pair belong to this process, so which one answers first
+        // is not fixed; that it is a real endpoint is the point.
+        let peer = try #require(SessionConnectionProbe.establishedPeer(pid: getpid()))
+        #expect(peer.host == "127.0.0.1")
+        #expect(peer.port > 0)
     }
 
     @Test("A process that owns no sockets at all reports no connection")
     func ignoresProcessWithoutSockets() {
         // pid 0 (the kernel) is never a session process and exposes no fds.
-        #expect(!SessionConnectionProbe.hasEstablishedTCP(pid: 0))
+        #expect(SessionConnectionProbe.establishedPeer(pid: 0) == nil)
     }
 
     @Test("Session lookup finds this process by its own process group")
@@ -148,5 +156,89 @@ struct SessionConnectionProbeTests {
         // assert only that a readable non-tty device answers false rather than
         // crashing or reporting ready.
         #expect(!SessionConnectionProbe.echoDisabled(ttyPath: "/dev/null"))
+    }
+
+    /// lftp opens no socket itself — it spawns `ssh` in its own session and
+    /// lets that hold the connection. A session like that read as "connecting"
+    /// for as long as it ran.
+    @Test("A client whose transport runs in a helper child counts as connected")
+    func findsTransportHelperChild() throws {
+        let listener = socket(AF_INET, SOCK_STREAM, 0)
+        try #require(listener >= 0)
+        defer { close(listener) }
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(listener, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        try #require(bound == 0)
+        try #require(Darwin.listen(listener, 1) == 0)
+
+        var named = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let gotName = withUnsafeMutablePointer(to: &named) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(listener, $0, &length) }
+        }
+        try #require(gotName == 0)
+        let port = UInt16(bigEndian: named.sin_port)
+
+        // The helper: a child of this process, holding the connection.
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: "/usr/bin/nc")
+        helper.arguments = ["127.0.0.1", String(port)]
+        try #require(throws: Never.self) { try helper.run() }
+        defer { helper.terminate() }
+
+        var readable = fd_set()
+        var timeout = timeval(tv_sec: 5, tv_usec: 0)
+        __darwin_fd_set(listener, &readable)
+        try #require(select(listener + 1, &readable, nil, nil, &timeout) > 0)
+        let accepted = accept(listener, nil, nil)
+        try #require(accepted >= 0)
+        defer { close(accepted) }
+
+        // The helper's far end is the listener above — which is the address a
+        // reachability check on an lftp-style session has to probe, since the
+        // client itself never holds the socket.
+        let peer = SessionConnectionProbe.establishedHelperPeer(of: [getpid()])
+        #expect(peer?.host == "127.0.0.1")
+        #expect(peer?.port == Int(port))
+    }
+
+    @Test("A process with no children holding sockets is not mistaken for connected")
+    func ignoresUnrelatedProcesses() {
+        // pid 1 is not this test's client, and nothing it owns should answer.
+        #expect(SessionConnectionProbe.establishedHelperPeer(of: []) == nil)
+    }
+
+    /// Writing to a pty is asynchronous, so keystrokes meant for a remote
+    /// session can still be unread when it dies — and the host shell then reads
+    /// and *runs* them. That is how a login script's `htop` ended up owning a
+    /// tab locally.
+    @Test("Input typed for a dead session is discarded, not left for the shell")
+    func flushDiscardsUnreadInput() throws {
+        var primary: Int32 = 0
+        var replica: Int32 = 0
+        try #require(openpty(&primary, &replica, nil, nil, nil) == 0)
+        defer { close(primary); close(replica) }
+
+        let path = String(cString: try #require(ptsname(primary)))
+        _ = fcntl(replica, F_SETFL, fcntl(replica, F_GETFL, 0) | O_NONBLOCK)
+
+        // Something typed for the session that is about to die.
+        let pending = "htop\n"
+        _ = pending.withCString { write(primary, $0, strlen($0)) }
+        usleep(50_000)
+
+        SessionConnectionProbe.flushInput(ttyPath: path)
+
+        var buffer = [CChar](repeating: 0, count: 64)
+        let read = Darwin.read(replica, &buffer, buffer.count)
+        // Nothing left for the shell to run: -1/EAGAIN on an empty queue.
+        #expect(read <= 0)
     }
 }
