@@ -139,6 +139,7 @@ targets:
       - sdk: UserNotifications.framework
       - sdk: OSLog.framework
       - sdk: Carbon.framework
+      - sdk: GameController.framework
     scheme:
       testTargets:
         - QuayTests
