@@ -614,7 +614,7 @@ be exercised, say that rather than implying it passed.
   outside the markers is hand-written and never touched by the compiler.
 - `shared-*.md` fragments are copies of the silo guidelines in `oss-platform/shared/guidelines/`,
   which are filled in from the shared guidelines in `~/.agents/shared-guidelines/`. Change a shared
-  rule there and run the `guideline-sync` skill; never edit a repo's copy. Rules specific to one
+  rule there and run the `silo-guideline-sync` skill; never edit a repo's copy. Rules specific to one
   repo go in that repo's own numbered fragments, which may add to a shared rule but must not
   contradict it.
 - A rule belongs in the shared set only if it holds in every repo without naming a file, command
@@ -632,4 +632,4 @@ be exercised, say that rather than implying it passed.
 - Where a repo uses a formatter, `AGENTS.md` is excluded from it (for Prettier, in
   `.prettierignore`), because reformatting the block breaks its hash. Do not add a `CLAUDE.md`
   that duplicates it.
-<!-- cribsheet:end sha=9ea1388663c7 -->
+<!-- cribsheet:end sha=692770e4f793 -->

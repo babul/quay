@@ -15,7 +15,7 @@
   outside the markers is hand-written and never touched by the compiler.
 - `shared-*.md` fragments are copies of the silo guidelines in `oss-platform/shared/guidelines/`,
   which are filled in from the shared guidelines in `~/.agents/shared-guidelines/`. Change a shared
-  rule there and run the `guideline-sync` skill; never edit a repo's copy. Rules specific to one
+  rule there and run the `silo-guideline-sync` skill; never edit a repo's copy. Rules specific to one
   repo go in that repo's own numbered fragments, which may add to a shared rule but must not
   contradict it.
 - A rule belongs in the shared set only if it holds in every repo without naming a file, command
