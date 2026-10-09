@@ -629,6 +629,7 @@ be exercised, say that rather than implying it passed.
   2, cribsheet prints how the block differs from the fragments. Move the hand edit into the right
   fragment and recompile: once the block matches, cribsheet keeps its content and updates the `sha`.
   `--force` discards the edit; use it only when that is the intent.
-- `AGENTS.md` is excluded from formatters (`.prettierignore`), because reformatting the block
-  breaks its hash. Do not add a `CLAUDE.md` that duplicates it.
-<!-- cribsheet:end sha=48e9d7103667 -->
+- Where a repo uses a formatter, `AGENTS.md` is excluded from it (for Prettier, in
+  `.prettierignore`), because reformatting the block breaks its hash. Do not add a `CLAUDE.md`
+  that duplicates it.
+<!-- cribsheet:end sha=58b1136858d4 -->
