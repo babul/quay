@@ -1,4 +1,4 @@
-<!-- Managed in oss-platform: shared/guidelines/10-tracking-work.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/10-tracking-work.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Tracking work in Shortcut
 

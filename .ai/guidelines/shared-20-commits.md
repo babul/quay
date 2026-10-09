@@ -1,4 +1,4 @@
-<!-- Managed in oss-platform: shared/guidelines/20-commits.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/20-commits.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Commits
 

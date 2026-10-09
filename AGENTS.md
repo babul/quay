@@ -223,7 +223,7 @@ The shared **Tracking work in Shortcut** and **Commits** rules apply. Quay's spe
 
 === .ai/guidelines/shared-10-tracking-work.md ===
 
-<!-- Managed in oss-platform: shared/guidelines/10-tracking-work.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/10-tracking-work.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Tracking work in Shortcut
 
@@ -308,7 +308,7 @@ VCS link is the only legitimate way work lands on a story.
 
 === .ai/guidelines/shared-20-commits.md ===
 
-<!-- Managed in oss-platform: shared/guidelines/20-commits.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/20-commits.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Commits
 
@@ -366,7 +366,7 @@ Shortcut team** uses conventional commits everywhere, with no story tag.
 
 === .ai/guidelines/shared-30-branches-and-prs.md ===
 
-<!-- Managed in oss-platform: shared/guidelines/30-branches-and-prs.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/30-branches-and-prs.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Branches and merging
 
@@ -403,7 +403,7 @@ every commit, so a pull request adds ceremony and no reviewer.
 
 === .ai/guidelines/shared-40-reviewing.md ===
 
-<!-- Managed in oss-platform: shared/guidelines/40-reviewing.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/40-reviewing.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Reviewing changes
 
@@ -513,7 +513,7 @@ Fix or explicitly justify every finding, re-review what you changed, then commit
 
 === .ai/guidelines/shared-50-tests.md ===
 
-<!-- Managed in oss-platform: shared/guidelines/50-tests.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/50-tests.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Tests that earn their place
 
@@ -543,7 +543,7 @@ Fix or explicitly justify every finding, re-review what you changed, then commit
 
 === .ai/guidelines/shared-60-verification.md ===
 
-<!-- Managed in oss-platform: shared/guidelines/60-verification.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/60-verification.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Verifying changes
 
@@ -576,7 +576,7 @@ be exercised, say that rather than implying it passed.
 
 === .ai/guidelines/shared-70-data-privacy.md ===
 
-<!-- Managed in oss-platform: shared/guidelines/70-data-privacy.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/70-data-privacy.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## Data privacy and the threat model
 
@@ -597,7 +597,7 @@ be exercised, say that rather than implying it passed.
 
 === .ai/guidelines/shared-90-agent-files.md ===
 
-<!-- Managed in oss-platform: shared/guidelines/90-agent-files.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/90-agent-files.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## How this AGENTS.md is built
 
@@ -632,4 +632,4 @@ be exercised, say that rather than implying it passed.
 - Where a repo uses a formatter, `AGENTS.md` is excluded from it (for Prettier, in
   `.prettierignore`), because reformatting the block breaks its hash. Do not add a `CLAUDE.md`
   that duplicates it.
-<!-- cribsheet:end sha=58b1136858d4 -->
+<!-- cribsheet:end sha=9ea1388663c7 -->

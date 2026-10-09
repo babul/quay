@@ -1,4 +1,4 @@
-<!-- Managed in oss-platform: shared/guidelines/90-agent-files.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh oss-platform; edits here are overwritten. -->
+<!-- Managed in oss-platform: shared/guidelines/90-agent-files.md. Edit it there and run ~/.agents/shared-guidelines/sync-guidelines.sh ~/Sandbox/oss-platform; edits here are overwritten. -->
 
 ## How this AGENTS.md is built
 
