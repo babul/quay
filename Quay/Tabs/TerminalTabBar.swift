@@ -106,7 +106,9 @@ private struct TabButton: View {
         .padding(.leading, 10)
         .padding(.trailing, 2)
         .padding(.vertical, 5)
-        .background(tabBackground)
+        // A plain colour background extends into the safe area by default,
+        // which under the hidden title bar tints the strip above the tab.
+        .background(tabBackground, ignoresSafeAreaEdges: [])
         .contextMenu {
             Button(action: onReconnect) {
                 Label("Reconnect Tab", systemImage: "arrow.clockwise.circle")
