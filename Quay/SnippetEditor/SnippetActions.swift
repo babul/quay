@@ -21,8 +21,16 @@ enum SnippetActions {
         // Re-checked after the await, and against the same surface: resolving a
         // secured snippet can sit on Touch ID for seconds, and the session may
         // have dropped meanwhile. `sendUserInput` re-checks the gate itself.
-        guard tab.surfaceView === view else { return }
-        view.sendAutomatedInput(text, appendReturn: appendReturn ?? snippet.appendsReturn)
+        guard tab.surfaceView === view,
+              view.sendAutomatedInput(text, appendReturn: appendReturn ?? snippet.appendsReturn)
+        else { return }
+        // The send started in the sidebar or the snippet editor window; hand
+        // the keyboard back to the session it went to — unless the user has
+        // switched tabs during Touch ID, in which case that surface is hidden
+        // and the host view would take focus straight back.
+        guard TerminalTabManager.shared.selectedTab === tab else { return }
+        view.window?.makeKeyAndOrderFront(nil)
+        view.window?.makeFirstResponder(view)
     }
 
     /// Copies the snippet body to the macOS clipboard.
