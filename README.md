@@ -12,6 +12,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/babul/quay/releases/latest"><img src="https://img.shields.io/github/v/release/babul/quay" alt="Latest release"></a>
+  <a href="https://github.com/babul/quay/releases"><img src="https://img.shields.io/github/downloads/babul/quay/total" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/macOS-15%2B-blue?logo=apple" alt="macOS 15+">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/babul/quay" alt="MIT license"></a>
+</p>
+
+<p align="center">
   <img src="screenshot.png" width="1280" alt="Quay — SSH connection manager with sidebar groups and tabbed terminals">
 </p>
 
@@ -27,9 +34,20 @@
 
 If you're managing remote hosts and don't want to pay a monthly fee for it, Quay is worth a look.
 
+### Compared to other SSH clients
+
+If you've used Termius, Tabby or Royal TSX, this is where Quay sits:
+
+| | Quay | Termius | Tabby | Royal TSX |
+|---|---|---|---|---|
+| **Price** | Free | Free Starter plan; paid plans from $10/month, billed annually | Free | Free Lite tier (up to 10 connections); €49 one-time license |
+| **Open source** | Yes (MIT) | No | Yes (MIT) | No |
+
+<sub>Competitor details checked against their own sites on 10 October 2026; check them for current pricing.</sub>
+
 ## Install
 
-1. Download the latest **Quay.dmg** from [Releases](https://github.com/babul/quay/releases/latest).
+1. Download the latest **Quay DMG** from [Releases](https://github.com/babul/quay/releases/latest).
 2. Drag **Quay** to `/Applications`.
 3. Launch. Future updates arrive automatically via Sparkle.
 
@@ -40,6 +58,8 @@ If you're managing remote hosts and don't want to pay a monthly fee for it, Quay
 ## Features
 
 - **Multi-tab SSH sessions** (one per tab)
+- **Reconnect without losing your screen** (a dropped session retries on its own with backoff and continues on the same screen, so the output you were reading survives a reboot of the remote host)
+- **Snippets** (a sidebar of reusable commands, pasted into the current tab with a double-click; a snippet can be locked into macOS Keychain)
 - **Login scripts** (run commands after the shell opens; step values can be locked into macOS Keychain so no password ever touches the on-disk store)
 - **SFTP** (easy file transfer with macOS built-in sftp, OpenSSH, or lftp)
 - **`~/.ssh/config` integration** — your existing config hosts appear in the sidebar automatically, no re-entry
@@ -200,7 +220,7 @@ Bundles can be encrypted with a password (AES-256) on export. The export sheet r
 ### Setup
 
 ```sh
-git clone --recurse-submodules <this-repo> quay
+git clone --recurse-submodules https://github.com/babul/quay.git
 cd quay
 ./scripts/bootstrap.sh
 open Quay.xcodeproj
@@ -221,15 +241,7 @@ Then ⌘R inside Xcode launches the app.
 xcodebuild -project Quay.xcodeproj -scheme Quay -configuration Debug -destination 'platform=macOS' test
 ```
 
-Currently 130+ tests across 7 suites:
-
-- `SSHCommandBuilder` — argv assembly, shell quoting, askpass env wiring
-- `Persistence` — SwiftData round-trips, auth reconstruction, login-script step locked/unlocked states
-- `SecretReference` — URI parsing, login-script step URI format
-- `KeychainStore write / delete` — upsert, idempotent update, delete-non-existent tolerance
-- `AskpassServer + helper` — actually invokes the bundled `quay-askpass` binary against a server with a fake resolver and asserts on stdout
-- `FuzzySearch` — sidebar search ranking
-- `Smoke`
+The suite uses Swift Testing and covers command-line assembly for every client, persistence round-trips, secret references and Keychain writes, the bundled helpers run as real binaries (askpass against a test server, the supervisor on a real pty), session retry and connection probing, `~/.ssh/config` parsing, settings export/import, and sidebar search.
 
 ### Layout
 
@@ -239,23 +251,29 @@ Quay/             App target sources
   Models/         SwiftData @Model classes
   Persistence/    ModelContainer setup
   Sidebar/        SidebarView + FuzzySearch
+  SnippetSidebar/ Snippets panel
+  SnippetEditor/  Snippet editor window
+  SSHConfig/      ~/.ssh/config host discovery
   ProfileEditor/  ConnectionEditor
   Tabs/           TerminalTabManager, TerminalTabItem, TerminalTabBar, SessionBootstrap
   Terminal/       GhosttyRuntime, GhosttySurfaceView + extensions, GhosttySurfaceBridge
   PTY/            SSHCommandBuilder
+  Supervisor/     SupervisorClient + wire protocol shared with quay-supervisor
   Secrets/        SecretReference, KeychainStore, AskpassServer, …
 QuayAskpass/      SSH_ASKPASS helper CLI (bundled inside the .app)
+QuaySupervisor/   Per-tab helper that spawns each session (bundled inside the .app)
 QuayTests/        Swift Testing suite
 Frameworks/       Built libghostty xcframework (gitignored)
 vendor/ghostty/   Pinned Ghostty source (git submodule)
-scripts/          build-ghostty.sh, bootstrap.sh, release.sh
-docs/             ghostty-integration.md, secrets-architecture.md, notarization.md, sparkle-updates.md
+scripts/          bootstrap.sh, build-ghostty.sh, release.sh, notarize.sh, …
+docs/             Design notes (see below)
 ```
 
 ### Design notes
 
 - [`docs/ghostty-integration.md`](docs/ghostty-integration.md) — how libghostty is built, pinned, and embedded; how to bump the pin.
 - [`docs/secrets-architecture.md`](docs/secrets-architecture.md) — the askpass IPC, the URI scheme, the zeroing contract, and the threat model.
+- [`docs/session-supervision.md`](docs/session-supervision.md) — why sessions run under a per-tab supervisor, and how reconnects keep the screen.
 - [`docs/notarization.md`](docs/notarization.md) — Developer ID signing and notarytool flow.
 - [`docs/sparkle-updates.md`](docs/sparkle-updates.md) — release pipeline, EdDSA keys, and appcast format.
 - [`SECURITY.md`](SECURITY.md) — vulnerability reporting, in-scope components, and how to reach maintainers privately.
