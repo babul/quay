@@ -36,6 +36,9 @@ struct QuayApp: App {
                     ])
                 }
             }
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesMenuItem(model: updater)
+            }
             CommandGroup(replacing: .newItem) {
                 TabFileCommands()
             }
@@ -90,8 +93,6 @@ struct QuayApp: App {
                 }
             }
             CommandGroup(replacing: .help) {
-                CheckForUpdatesMenuItem(model: updater)
-                Divider()
                 Button("Quay on GitHub") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/babul/quay")!)
                 }
