@@ -12,7 +12,7 @@ We do the same: `vendor/ghostty` is a git submodule pinned to a known-good SHA, 
 
 | Tool | Version | Why |
 |---|---|---|
-| Zig | **0.16.x** (`brew install zig`) | Ghostty declares `minimum_zig_version = "0.16.0"`. Both older and newer series fail at compile time. |
+| Zig | **0.16.x** (`brew install zig@0.16`) | Ghostty declares `minimum_zig_version = "0.16.0"`. Both older and newer series fail at compile time. |
 | Xcode | 16+ | Swift 6, Swift Testing, `bundle.unit-test` target type. |
 
 `scripts/build-ghostty.sh` holds the required series in a single `ZIG_SERIES` variable. It prefers a keg-only `zig@$ZIG_SERIES` under `/opt/homebrew` or `/usr/local`, falls back to `zig` on `$PATH`, and version-checks whichever it picks. When upstream moves to a new Zig series, change `ZIG_SERIES` and this table.
