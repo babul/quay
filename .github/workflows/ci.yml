@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, chore/sc-17541-ci-workflow]
+    paths-ignore: ["docs/**", "**.md"]
+  pull_request:
+    paths-ignore: ["docs/**", "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same ref makes the running build pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      # Pinned rather than the image default, which moves under us.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          # vendor/ghostty/build.zig.zon minimum_zig_version
+          version: 0.16.0
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      # build-ghostty.sh keys its own cache on the same two inputs.
+      - name: Compute libghostty cache key
+        id: ghostty-key
+        run: |
+          ghostty_sha=$(git rev-parse HEAD:vendor/ghostty)
+          script_sha=$(shasum scripts/build-ghostty.sh | awk '{print $1}')
+          echo "key=ghosttykit-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${ghostty_sha}-${script_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore GhosttyKit.xcframework
+        id: ghostty-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            Frameworks/GhosttyKit.xcframework
+            .build-ghostty.cache
+          key: ${{ steps.ghostty-key.outputs.key }}
+
+      # Only a cold libghostty build compiles Metal shaders.
+      - name: Install Metal Toolchain
+        if: steps.ghostty-cache.outputs.cache-hit != 'true'
+        run: xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+
+      - name: Build libghostty
+        run: scripts/build-ghostty.sh
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Ad-hoc signing: the runner has no account for the project's team.
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild -project Quay.xcodeproj -scheme Quay -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            test
