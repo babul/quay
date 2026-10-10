@@ -8,6 +8,27 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.7.0</title>
+            <pubDate>Sat, 10 Oct 2026 08:06:17 +0000</pubDate>
+            <sparkle:version>16</sparkle:version>
+            <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>Terminals now have a scrollbar. It follows your Ghostty <code>scrollbar</code> setting, matches a light or dark terminal background, and appears when you hover over the right edge if your Mac is set to always show scroll bars.</li>
+  <li>Terminal ▸ Scroll to Top (⌘↑) and Scroll to Bottom (⌘↓) jump to either end of the scrollback.</li>
+  <li>When you&#x27;ve scrolled up, a ↓ button appears at the bottom-right of the terminal; click it to jump back to the latest output.</li>
+  <li>After you send a snippet from the sidebar, its context menu or the snippet editor, the keyboard goes back to the terminal, so you can keep typing without clicking first.</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.6.0...v0.7.0</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.7.0/Quay-0.7.0.dmg"
+                       sparkle:edSignature="jh52bAXznGlQkRjd5jY9UOKU7CT42LMZ/kQgpqhHT18Vh2enp66utfs/voA5OdG89D+hOtlJR1XRfhz5iumtBA=="
+                       length="10602780"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.6.0</title>
             <pubDate>Sun, 13 Sep 2026 11:08:12 +0000</pubDate>
             <sparkle:version>15</sparkle:version>
