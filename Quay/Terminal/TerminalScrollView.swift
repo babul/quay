@@ -176,8 +176,7 @@ final class TerminalScrollView: NSView {
 
     private var geometry: TerminalScrollGeometry? {
         guard let state = surfaceView.bridge?.state, let scrollbar = state.scrollbar else { return nil }
-        // libghostty reports cell size in pixels.
-        let cellHeight = surfaceView.convertFromBacking(state.cellSize).height
+        let cellHeight = state.cellSize.height
         guard cellHeight > 0 else { return nil }
         return TerminalScrollGeometry(
             scrollbar: scrollbar,

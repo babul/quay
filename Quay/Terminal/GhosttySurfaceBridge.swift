@@ -138,8 +138,11 @@ final class GhosttySurfaceBridge {
             return true
 
         case GHOSTTY_ACTION_CELL_SIZE:
+            // libghostty reports backing pixels; everything that reads it
+            // works in points.
             let cs = action.action.cell_size
-            state.cellSize = CGSize(width: CGFloat(cs.width), height: CGFloat(cs.height))
+            let pixels = CGSize(width: CGFloat(cs.width), height: CGFloat(cs.height))
+            state.cellSize = view?.convertFromBacking(pixels) ?? pixels
             return true
 
         case GHOSTTY_ACTION_SCROLLBAR:
