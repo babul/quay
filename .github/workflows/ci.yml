@@ -47,7 +47,7 @@ jobs:
 
       - name: Restore GhosttyKit.xcframework
         id: ghostty-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             Frameworks/GhosttyKit.xcframework
@@ -62,14 +62,27 @@ jobs:
       - name: Build libghostty
         run: scripts/build-ghostty.sh
 
+      # Saved here rather than at job end, so a failing test run does not throw
+      # away a 10-minute cold build.
+      - name: Save GhosttyKit.xcframework
+        if: steps.ghostty-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            Frameworks/GhosttyKit.xcframework
+            .build-ghostty.cache
+          key: ${{ steps.ghostty-key.outputs.key }}
+
       - name: Generate Xcode project
         run: xcodegen generate
 
       # Ad-hoc signing: the runner has no account for the project's team.
+      # Package macros (TCA and friends) need a trust prompt nobody can click.
       - name: Test
         run: |
           set -o pipefail
           xcodebuild -project Quay.xcodeproj -scheme Quay -configuration Debug \
             -destination 'platform=macOS' \
+            -skipMacroValidation \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
             test
