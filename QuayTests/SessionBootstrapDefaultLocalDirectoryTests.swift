@@ -2,68 +2,47 @@ import Testing
 import Foundation
 @testable import Quay
 
+/// Passes the stored value and a stand-in for `~/Downloads` directly: the
+/// shared defaults hold the developer's own choice and are written by the
+/// settings-bundle tests running alongside, and a fresh machine may have no
+/// Downloads folder.
 @Suite("SessionBootstrap.defaultLocalDirectory")
 struct SessionBootstrapDefaultLocalDirectoryTests {
+    /// Any directory that always exists and isn't the stored one in these tests.
+    private let downloads = "/"
 
-    // Restore UserDefaults after each test using withKnownIssue isn't needed —
-    // we save/restore the key around each test manually.
-    private let key = AppDefaultsKeys.sftpDefaultLocalDirectory
-    private let defaults = UserDefaults.standard
-
-    private func withStoredValue(_ value: String?, _ body: () -> Void) {
-        let previous = defaults.string(forKey: key)
-        if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
-        defer {
-            if let previous { defaults.set(previous, forKey: key) } else { defaults.removeObject(forKey: key) }
-        }
-        body()
+    private func resolved(stored: String?) -> String? {
+        SessionBootstrap.defaultLocalDirectory(stored: stored, downloads: downloads)
     }
 
     @Test("valid stored directory wins over Downloads")
     func validStoredDirectory() {
         let tmpDir = FileManager.default.temporaryDirectory.path
-        withStoredValue(tmpDir) {
-            #expect(SessionBootstrap.defaultLocalDirectory() == tmpDir)
-        }
+        #expect(resolved(stored: tmpDir) == tmpDir)
     }
 
-    @Test("empty stored value falls back to ~/Downloads")
+    @Test("empty stored value falls back to Downloads")
     func emptyStoredValue() {
-        withStoredValue("") {
-            let downloads = FileManager.default
-                .urls(for: .downloadsDirectory, in: .userDomainMask)
-                .first?.path
-            #expect(SessionBootstrap.defaultLocalDirectory() == downloads)
-        }
+        #expect(resolved(stored: "") == downloads)
     }
 
     @Test("whitespace-only stored value treated as empty")
     func whitespaceStoredValue() {
-        withStoredValue("   \t  ") {
-            let downloads = FileManager.default
-                .urls(for: .downloadsDirectory, in: .userDomainMask)
-                .first?.path
-            #expect(SessionBootstrap.defaultLocalDirectory() == downloads)
-        }
+        #expect(resolved(stored: "   \t  ") == downloads)
     }
 
-    @Test("non-existent stored path falls back to ~/Downloads")
+    @Test("non-existent stored path falls back to Downloads")
     func nonExistentStoredPath() {
-        withStoredValue("/nonexistent/path/that/will/never/exist") {
-            let downloads = FileManager.default
-                .urls(for: .downloadsDirectory, in: .userDomainMask)
-                .first?.path
-            #expect(SessionBootstrap.defaultLocalDirectory() == downloads)
-        }
+        #expect(resolved(stored: "/nonexistent/path/that/will/never/exist") == downloads)
     }
 
-    @Test("no stored value at all falls back to ~/Downloads")
+    @Test("no stored value at all falls back to Downloads")
     func noStoredValue() {
-        withStoredValue(nil) {
-            let downloads = FileManager.default
-                .urls(for: .downloadsDirectory, in: .userDomainMask)
-                .first?.path
-            #expect(SessionBootstrap.defaultLocalDirectory() == downloads)
-        }
+        #expect(resolved(stored: nil) == downloads)
+    }
+
+    @Test("no stored value and no Downloads gives no directory")
+    func noDownloads() {
+        #expect(SessionBootstrap.defaultLocalDirectory(stored: nil, downloads: "/nonexistent-downloads") == nil)
     }
 }

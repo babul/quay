@@ -366,10 +366,11 @@ struct SessionSupervisorTests {
         let session = try SessionBootstrap.start(
             for: profile,
             kind: .sftp,
-            localDirectoryOverride: NSTemporaryDirectory()
+            localDirectoryOverride: NSTemporaryDirectory(),
+            sftpClient: .macOSOpenSSH
         )
         #expect(session.spawn.workingDirectory == SessionBootstrap.normalizedLocalDirectory(NSTemporaryDirectory()))
-        #expect(session.spawn.argv.first == SFTPClient.preferred.binaryPath)
+        #expect(session.spawn.argv.first == SFTPClient.macOSOpenSSH.binaryPath)
         #expect(session.spawn.environment["TERM"] == "xterm-256color")
         // The marker is the tab's to add: it knows the attempt number.
         #expect(session.spawn.announce == nil)

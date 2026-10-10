@@ -202,14 +202,15 @@ enum SessionBootstrap {
         return trimmed
     }
 
-    static func defaultLocalDirectory() -> String? {
-        if let stored = UserDefaults.standard.string(forKey: AppDefaultsKeys.sftpDefaultLocalDirectory),
-           let normalized = normalizedLocalDirectory(stored) {
-            return normalized
-        }
-        let downloads = FileManager.default
+    /// The stored default, else Downloads, else `nil`. Both inputs are
+    /// parameters so tests need neither the shared defaults nor a real
+    /// `~/Downloads`.
+    static func defaultLocalDirectory(
+        stored: String? = UserDefaults.standard.string(forKey: AppDefaultsKeys.sftpDefaultLocalDirectory),
+        downloads: String? = FileManager.default
             .urls(for: .downloadsDirectory, in: .userDomainMask)
             .first?.path
-        return normalizedLocalDirectory(downloads)
+    ) -> String? {
+        normalizedLocalDirectory(stored) ?? normalizedLocalDirectory(downloads)
     }
 }
