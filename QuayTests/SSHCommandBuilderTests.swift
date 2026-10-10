@@ -383,18 +383,22 @@ struct SessionSupervisorTests {
         #expect(session.spawn.argv.first == SSHCommandBuilder.sshBinary)
     }
 
-    /// An sftp client prints its own prompt and owns its transport — lftp
-    /// doesn't open one until the first command — so waiting for a socket
-    /// reports "connecting" over a prompt the user is already typing into.
-    @Test("An sftp session counts as connected once its client is running")
-    func sftpIsConnectedWhenClientRuns() throws {
+    /// lftp prints its own prompt and doesn't open a transport until the first
+    /// command, so waiting for a socket would report "connecting" over a prompt
+    /// the user is already typing into. OpenSSH's sftp connects eagerly, so its
+    /// TCP state is the honest signal, as for ssh.
+    ///
+    /// Takes the client explicitly: `SFTPClient.preferred` is the test host's
+    /// saved setting, which differs between machines.
+    @Test("An sftp session counts as connected once its client is running, if it outlives its transport",
+          arguments: SFTPClient.allCases)
+    func sftpIsConnectedWhenClientRuns(client: SFTPClient) throws {
         let profile = ConnectionProfile(name: "p", hostname: "h", username: "u")
-        let sftp = try SessionBootstrap.start(for: profile, kind: .sftp)
-        let ssh = try SessionBootstrap.start(for: profile, kind: .ssh)
+        let sftp = try SessionBootstrap.start(for: profile, kind: .sftp, sftpClient: client)
+        let ssh = try SessionBootstrap.start(for: profile, kind: .ssh, sftpClient: client)
 
-        #expect(sftp.connectedWhenClientRuns)
-        // ssh shows nothing until its connection is up, so its TCP state stays
-        // the honest signal.
+        #expect(sftp.connectedWhenClientRuns == (client == .lftp))
+        // ssh shows nothing until its connection is up, whatever the sftp client.
         #expect(!ssh.connectedWhenClientRuns)
     }
 

@@ -50,7 +50,8 @@ enum SessionBootstrap {
     static func start(
         for profile: ConnectionProfile,
         kind: TerminalSessionKind = .ssh,
-        localDirectoryOverride: String? = nil
+        localDirectoryOverride: String? = nil,
+        sftpClient: SFTPClient = .preferred
     ) throws -> Session {
         guard let target = profile.sshTarget else {
             throw StartError.incompleteProfile
@@ -58,7 +59,6 @@ enum SessionBootstrap {
 
         var askpass: AskpassServer?
         var askpassEnv: SSHCommandBuilder.AskpassEnv?
-        let sftpClient = SFTPClient.preferred
 
         if let secretURI = secretRef(for: target) {
             guard let helperPath = bundledExecutable(named: askpassName) else {
