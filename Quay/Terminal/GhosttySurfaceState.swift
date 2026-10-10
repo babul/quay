@@ -2,6 +2,17 @@ import AppKit
 import GhosttyKit
 import Observation
 
+/// `ghostty_config_get` for a Swift key. `value` must be the type Ghostty
+/// stores for that key: the C API takes a `void*` and cannot check it, and a
+/// mismatch reads garbage rather than failing.
+func ghosttyConfigGet<T>(_ config: ghostty_config_t, _ key: String, into value: inout T) -> Bool {
+    key.withCString { keyPtr in
+        withUnsafeMutablePointer(to: &value) { valuePtr in
+            ghostty_config_get(config, valuePtr, keyPtr, UInt(strlen(keyPtr)))
+        }
+    }
+}
+
 enum GhosttyResolvedAppearance {
     static let fallbackBackgroundColor = NSColor.windowBackgroundColor
     static let fallbackBackgroundOpacity = 1.0
@@ -10,11 +21,9 @@ enum GhosttyResolvedAppearance {
         guard let config else { return fallbackBackgroundColor }
 
         var color = ghostty_config_color_s()
-        let key = "background"
-        let ok = key.withCString { ptr in
-            ghostty_config_get(config, &color, ptr, UInt(strlen(ptr)))
+        guard ghosttyConfigGet(config, "background", into: &color) else {
+            return fallbackBackgroundColor
         }
-        guard ok else { return fallbackBackgroundColor }
 
         return NSColor(
             srgbRed: CGFloat(color.r) / 255.0,
@@ -28,10 +37,7 @@ enum GhosttyResolvedAppearance {
         guard let config else { return fallbackBackgroundOpacity }
 
         var opacity = fallbackBackgroundOpacity
-        let key = "background-opacity"
-        _ = key.withCString { ptr in
-            ghostty_config_get(config, &opacity, ptr, UInt(strlen(ptr)))
-        }
+        _ = ghosttyConfigGet(config, "background-opacity", into: &opacity)
         return min(1.0, max(0.0, opacity))
     }
 

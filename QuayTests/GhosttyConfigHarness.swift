@@ -145,13 +145,13 @@ final class GhosttyConfigHarness {
 enum GhosttyConfigReader {
     static func string(_ config: ghostty_config_t, _ key: String) -> String? {
         var value: UnsafePointer<Int8>?
-        guard get(config, key, &value), let value else { return nil }
+        guard ghosttyConfigGet(config, key, into: &value), let value else { return nil }
         return String(cString: value)
     }
 
     static func double(_ config: ghostty_config_t, _ key: String) -> Double? {
         var value: Double = 0
-        guard get(config, key, &value) else { return nil }
+        guard ghosttyConfigGet(config, key, into: &value) else { return nil }
         return value
     }
 
@@ -159,25 +159,25 @@ enum GhosttyConfigReader {
     /// reinterprets the bits and yields garbage rather than failing.
     static func float(_ config: ghostty_config_t, _ key: String) -> Float? {
         var value: Float = 0
-        guard get(config, key, &value) else { return nil }
+        guard ghosttyConfigGet(config, key, into: &value) else { return nil }
         return value
     }
 
     static func uint32(_ config: ghostty_config_t, _ key: String) -> UInt32? {
         var value: UInt32 = 0
-        guard get(config, key, &value) else { return nil }
+        guard ghosttyConfigGet(config, key, into: &value) else { return nil }
         return value
     }
 
     static func bool(_ config: ghostty_config_t, _ key: String) -> Bool? {
         var value = false
-        guard get(config, key, &value) else { return nil }
+        guard ghosttyConfigGet(config, key, into: &value) else { return nil }
         return value
     }
 
     static func backgroundHex(_ config: ghostty_config_t) -> String {
         var color = ghostty_config_color_s()
-        guard get(config, "background", &color) else { return "none" }
+        guard ghosttyConfigGet(config, "background", into: &color) else { return "none" }
         return String(format: "#%02X%02X%02X", color.r, color.g, color.b)
     }
 
@@ -185,16 +185,6 @@ enum GhosttyConfigReader {
         (0..<ghostty_config_diagnostics_count(config)).map { index in
             let diagnostic = ghostty_config_get_diagnostic(config, index)
             return diagnostic.message.map(String.init(cString:)) ?? "<no message>"
-        }
-    }
-
-    private static func get(
-        _ config: ghostty_config_t,
-        _ key: String,
-        _ out: UnsafeMutableRawPointer
-    ) -> Bool {
-        key.withCString { ptr in
-            ghostty_config_get(config, out, ptr, UInt(strlen(ptr)))
         }
     }
 }

@@ -215,11 +215,7 @@ final class TerminalScrollView: NSView {
     nonisolated static func showsScrollbar(_ config: ghostty_config_t?) -> Bool {
         guard let config else { return true }
         var value: UnsafePointer<CChar>?
-        let key = "scrollbar"
-        let ok = key.withCString { ptr in
-            ghostty_config_get(config, &value, ptr, UInt(strlen(ptr)))
-        }
-        guard ok, let value else { return true }
+        guard ghosttyConfigGet(config, "scrollbar", into: &value), let value else { return true }
         return String(cString: value) != "never"
     }
 }
