@@ -15,6 +15,10 @@ extension TerminalScrollbar {
     init(_ c: ghostty_action_scrollbar_s) {
         self.init(total: c.total, offset: c.offset, len: c.len)
     }
+
+    var isAtTop: Bool { offset == 0 }
+
+    var isAtBottom: Bool { offset + len >= total }
 }
 
 /// Converts between terminal rows (counted down from the top of scrollback)

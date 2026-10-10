@@ -124,6 +124,11 @@ final class TerminalTabItem: Identifiable {
     /// supervisor dies or the tab closes.
     private(set) var surfaceView: GhosttySurfaceView?
 
+    /// The surface's observable state, held here because `surfaceView.bridge`
+    /// is a plain property: a view that reads through it before the bridge
+    /// exists would never see the bridge arrive, and stays stale.
+    private(set) var surfaceState: GhosttySurfaceState?
+
     /// `AskpassServer` owned for the tab's lifetime, stopped only on tab close.
     private var askpassServer: AskpassServer?
     /// The tab's end of its `quay-supervisor`, for the surface's lifetime.
@@ -454,6 +459,7 @@ final class TerminalTabItem: Identifiable {
         }
         view.onBridgeCreated = { [weak self] bridge in
             guard let self else { return }
+            self.surfaceState = bridge.state
             bridge.onCloseRequest = { [weak self] in
                 self?.supervisorEnded()
             }
@@ -520,6 +526,7 @@ final class TerminalTabItem: Identifiable {
         livePID = nil
         attemptPID = nil
         surfaceView = nil
+        surfaceState = nil
     }
 
     /// The pty's own child is gone, so the screen can't be reused: the next
@@ -845,6 +852,25 @@ final class TerminalTabItem: Identifiable {
 
     var currentWorkingDirectory: String? {
         surfaceView?.bridge?.state.pwd?.path
+    }
+
+    // MARK: Scrollback
+
+    /// `nil` until the surface reports a scrollback position.
+    var scrollbar: TerminalScrollbar? {
+        surfaceState?.scrollbar
+    }
+
+    func scrollToTop() {
+        _ = surfaceView?.performBindingAction("scroll_to_top")
+    }
+
+    /// Also hands the keyboard back to the terminal, since the jump-to-bottom
+    /// button takes focus when clicked.
+    func scrollToBottom() {
+        guard let view = surfaceView else { return }
+        _ = view.performBindingAction("scroll_to_bottom")
+        view.window?.makeFirstResponder(view)
     }
 
     func updateFromTerminalTitle(_ terminalTitle: String) {

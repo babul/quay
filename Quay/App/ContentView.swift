@@ -9,6 +9,7 @@ struct ContentView: View {
 
     let store: StoreOf<AppFeature>
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppDefaultsKeys.autoHideSidebar) private var autoHideSidebar = true
     @State private var selectedConnectionID: UUID?
     @SceneStorage("rightSidebarOpen") private var rightSidebarOpen = false
@@ -335,8 +336,16 @@ struct ContentView: View {
             if let tab = tabManager.selectedTab {
                 statusOverlay(for: tab)
                     .animation(.easeInOut(duration: 0.18), value: tab.phase)
+                if showsJumpToBottom(tab) {
+                    JumpToBottomButton { tab.scrollToBottom() }
+                        .transition(.opacity)
+                }
             }
         }
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.15),
+            value: tabManager.selectedTab.map(showsJumpToBottom)
+        )
         .background(terminalBackgroundColor)
         .background(
             TerminalWindowBackgroundSync(
@@ -344,6 +353,10 @@ struct ContentView: View {
                 opacity: selectedTerminalBackgroundOpacity
             )
         )
+    }
+
+    private func showsJumpToBottom(_ tab: TerminalTabItem) -> Bool {
+        tab.scrollbar.map { !$0.isAtBottom } ?? false
     }
 
     private var selectedTerminalBackgroundColor: NSColor {
@@ -497,6 +510,36 @@ struct ContentView: View {
         let when = remaining > 0 ? "next try in \(remaining)s" : "next try now"
         guard let detail else { return "\(when) · Esc to stop" }
         return "\(detail) · \(when) · Esc to stop"
+    }
+}
+
+/// Shown while the bottom of the scrollback is off screen.
+private struct JumpToBottomButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button(action: action) {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .background(.bar, in: Circle())
+                        .overlay(Circle().strokeBorder(.separator))
+                        // 44pt target around the 36pt disc.
+                        .padding(4)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Scroll to Bottom (⌘↓)")
+                .accessibilityLabel("Scroll to Bottom")
+                // Clear of the overlay scroller.
+                .padding(.trailing, 20)
+                .padding(.bottom, 12)
+            }
+        }
     }
 }
 

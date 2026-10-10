@@ -49,6 +49,29 @@ struct TerminalScrollGeometryTests {
     }
 }
 
+@Suite("Terminal scrollbar position")
+struct TerminalScrollbarPositionTests {
+    @Test("At the bottom when the last visible row is the last row", arguments: [
+        (TerminalScrollbar(total: 124, offset: 100, len: 24), true),
+        (TerminalScrollbar(total: 124, offset: 99, len: 24), false),
+        (TerminalScrollbar(total: 124, offset: 0, len: 24), false),
+        // Less than a screenful: there is nothing below to scroll to.
+        (TerminalScrollbar(total: 10, offset: 0, len: 24), true),
+    ])
+    func atBottom(scrollbar: TerminalScrollbar, expected: Bool) {
+        #expect(scrollbar.isAtBottom == expected)
+    }
+
+    @Test("At the top only at the first row of scrollback", arguments: [
+        (TerminalScrollbar(total: 124, offset: 0, len: 24), true),
+        (TerminalScrollbar(total: 124, offset: 1, len: 24), false),
+        (TerminalScrollbar(total: 124, offset: 100, len: 24), false),
+    ])
+    func atTop(scrollbar: TerminalScrollbar, expected: Bool) {
+        #expect(scrollbar.isAtTop == expected)
+    }
+}
+
 @Suite("Terminal scrollbar config")
 @MainActor
 struct TerminalScrollbarConfigTests {

@@ -71,6 +71,8 @@ struct QuayApp: App {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
             CommandMenu("Terminal") {
+                TerminalScrollCommands()
+                Divider()
                 Button("Open Ghostty Config") {
                     NSWorkspace.shared.open(GhosttyRuntime.userConfigURL())
                 }
@@ -161,6 +163,27 @@ private struct TabFileCommands: View {
         }
         .keyboardShortcut("w", modifiers: .command)
         .disabled(tabManager.selectedTab == nil)
+    }
+}
+
+/// Ghostty's own ⌘Home/⌘End do the same, but laptops have no Home or End key.
+private struct TerminalScrollCommands: View {
+    @State private var tabManager = TerminalTabManager.shared
+
+    var body: some View {
+        let scrollbar = tabManager.selectedTab?.scrollbar
+
+        Button("Scroll to Top") {
+            tabManager.selectedTab?.scrollToTop()
+        }
+        .keyboardShortcut(.upArrow, modifiers: .command)
+        .disabled(scrollbar?.isAtTop ?? true)
+
+        Button("Scroll to Bottom") {
+            tabManager.selectedTab?.scrollToBottom()
+        }
+        .keyboardShortcut(.downArrow, modifiers: .command)
+        .disabled(scrollbar?.isAtBottom ?? true)
     }
 }
 
