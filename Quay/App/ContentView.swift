@@ -574,26 +574,30 @@ private struct TerminalSurfaceHostsView: NSViewRepresentable {
             .color(backgroundColor, with: backgroundOpacity)
             .cgColor
 
-        let existing = container.subviews.compactMap { $0 as? GhosttySurfaceView }
-        let existingIDs = Set(existing.map { ObjectIdentifier($0) })
+        let existing = container.subviews.compactMap { $0 as? TerminalScrollView }
+        let existingIDs = Set(existing.map { ObjectIdentifier($0.surfaceView) })
 
         for tab in tabs {
             guard let sv = tab.surfaceView,
                   !existingIDs.contains(ObjectIdentifier(sv)) else { continue }
-            sv.frame = container.bounds
-            sv.autoresizingMask = [.width, .height]
-            container.addSubview(sv)
+            let host = TerminalScrollView(surfaceView: sv)
+            host.frame = container.bounds
+            host.autoresizingMask = [.width, .height]
+            container.addSubview(host)
         }
 
         let activeIDs = Set(tabs.compactMap { $0.surfaceView }.map { ObjectIdentifier($0) })
-        for sv in existing where !activeIDs.contains(ObjectIdentifier(sv)) {
-            sv.removeFromSuperview()
+        for host in existing where !activeIDs.contains(ObjectIdentifier(host.surfaceView)) {
+            host.removeFromSuperview()
         }
 
         let selectedSurface = tabs.first(where: { $0.id == selectedTabID })?.surfaceView
-        for sv in container.subviews { sv.isHidden = false }
-        if let selectedSurface, container.subviews.last !== selectedSurface {
-            container.addSubview(selectedSurface, positioned: .above, relativeTo: nil)
+        let selectedHost = selectedSurface.flatMap { surface in
+            container.subviews.first { ($0 as? TerminalScrollView)?.surfaceView === surface }
+        }
+        for host in container.subviews { host.isHidden = false }
+        if let selectedHost, container.subviews.last !== selectedHost {
+            container.addSubview(selectedHost, positioned: .above, relativeTo: nil)
         }
 
         if let selectedSurface, container.window?.firstResponder !== selectedSurface {

@@ -90,6 +90,10 @@ final class GhosttySurfaceState {
     /// Cell size in points (needed for `firstRect(forCharacterRange:)` in the IME path).
     var cellSize: CGSize = CGSize(width: 8, height: 16)
 
+    /// Scrollback position from GHOSTTY_ACTION_SCROLLBAR. `nil` until the
+    /// surface first reports one.
+    var scrollbar: TerminalScrollbar?
+
     /// Resolved Ghostty terminal background used by host AppKit/SwiftUI chrome.
     var backgroundColor: NSColor = GhosttyResolvedAppearance.fallbackBackgroundColor
 

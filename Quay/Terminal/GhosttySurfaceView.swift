@@ -31,6 +31,10 @@ final class GhosttySurfaceView: NSView {
     /// `onCloseRequest`/`onChildExited` without a timing dependency.
     var onBridgeCreated: ((GhosttySurfaceBridge) -> Void)?
 
+    /// Called after libghostty reports a new scrollback position, which the
+    /// bridge has already stored in `bridge.state.scrollbar`.
+    var onScrollbarChange: (() -> Void)?
+
     /// Keys the surface answers on its owner's behalf once its child process
     /// has exited, instead of forwarding them to the (gone) terminal.
     enum DeadSessionKey {

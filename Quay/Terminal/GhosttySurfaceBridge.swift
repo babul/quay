@@ -142,6 +142,11 @@ final class GhosttySurfaceBridge {
             state.cellSize = CGSize(width: CGFloat(cs.width), height: CGFloat(cs.height))
             return true
 
+        case GHOSTTY_ACTION_SCROLLBAR:
+            state.scrollbar = TerminalScrollbar(action.action.scrollbar)
+            view?.onScrollbarChange?()
+            return true
+
         case GHOSTTY_ACTION_COLOR_CHANGE:
             let change = action.action.color_change
             if change.kind == GHOSTTY_ACTION_COLOR_KIND_BACKGROUND {
