@@ -8,6 +8,26 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.7.1</title>
+            <pubDate>Sat, 10 Oct 2026 08:30:51 +0000</pubDate>
+            <sparkle:version>17</sparkle:version>
+            <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>The selected tab&#x27;s highlight no longer spills into the title bar above it.</li>
+  <li>Check for Updates… is now in the Quay menu, right below About Quay, instead of the Help menu.</li>
+  <li>With Japanese, Chinese and other input methods that show a candidate window, the window now has the right size on Retina displays.</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.7.0...v0.7.1</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.7.1/Quay-0.7.1.dmg"
+                       sparkle:edSignature="dhw+AfDJk9hHt/Tg1Z0qzSKvb5R9KSqx+JZ556zQRsUVXjgflRL1OCcdvL+eqXpO/YU8Fa0hHyi67EQkUIh8Cg=="
+                       length="10604020"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.7.0</title>
             <pubDate>Sat, 10 Oct 2026 08:06:17 +0000</pubDate>
             <sparkle:version>16</sparkle:version>
