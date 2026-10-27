@@ -8,6 +8,26 @@
         <description>Quay update feed</description>
         <language>en</language>
         <item>
+            <title>Version 0.8.0</title>
+            <pubDate>Tue, 27 Oct 2026 20:27:07 +0000</pubDate>
+            <sparkle:version>18</sparkle:version>
+            <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>code{background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px;}ul,ol{padding-left:1.2em;}</style>
+<h2>What&#x27;s Changed</h2>
+<ul>
+  <li>Quay now runs on Ghostty 1.4.0&#x27;s terminal engine.</li>
+  <li>When a program on the server asks to read or change your clipboard, and your Ghostty config sets <code>clipboard-read</code> or <code>clipboard-write</code> to <code>ask</code>, Quay now asks you: Deny, Allow Once, or Allow for This Tab. Before, a read under <code>ask</code> (Ghostty&#x27;s default) was left unanswered. The prompt never shows what&#x27;s on your clipboard, and Return always means Deny, so a prompt that appears while you&#x27;re typing can&#x27;t be accepted by accident.</li>
+  <li>Pasting text that could run commands, such as several lines into a shell, now asks Paste or Cancel and shows the text. Before, such a paste silently did nothing. <code>clipboard-paste-protection = false</code> in your Ghostty config turns the check off.</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/babul/quay/compare/v0.7.1...v0.8.0</p>
+            ]]></description>
+            <enclosure url="https://github.com/babul/quay/releases/download/v0.8.0/Quay-0.8.0.dmg"
+                       sparkle:edSignature="MCHkKT6wHivYztv/3byWQw7mx0iZKouWiDEjICZ/hdsgH0nYEFWWmg6e6bsng7WisS62BNh9W17Kr/h6pTkuDw=="
+                       length="10713442"
+                       type="application/x-apple-diskimage" />
+        </item>
+        <item>
             <title>Version 0.7.1</title>
             <pubDate>Sat, 10 Oct 2026 08:30:51 +0000</pubDate>
             <sparkle:version>17</sparkle:version>
