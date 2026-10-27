@@ -460,6 +460,7 @@ final class TerminalTabItem: Identifiable {
         view.onBridgeCreated = { [weak self] bridge in
             guard let self else { return }
             self.surfaceState = bridge.state
+            bridge.tabTitle = { [weak self] in self?.displayTitle ?? "" }
             bridge.onCloseRequest = { [weak self] in
                 self?.supervisorEnded()
             }

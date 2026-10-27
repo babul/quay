@@ -52,7 +52,7 @@ resources_staged() {
 # Pin the Zig series Ghostty declares in build.zig.zon (minimum_zig_version).
 # A newer or older series fails at compile time, so resolve deliberately: a
 # keg-only zig@<series> first, then whatever `zig` is on PATH if it matches.
-ZIG_SERIES="0.16"
+ZIG_SERIES="0.17"
 ZIG_INSTALL_HINT="brew install zig@$ZIG_SERIES"
 
 ZIG=""

@@ -18,6 +18,30 @@ final class GhosttySurfaceBridge {
     var onCloseRequest: (() -> Void)?
     var onChildExited: ((UInt32) -> Void)?
     var onProgressReport: ((Double?) -> Void)?
+    /// Names the tab in prompts; the terminal title is set by the remote.
+    var tabTitle: (() -> String)?
+
+    /// Clipboard access the user allowed for the rest of this tab's life.
+    var clipboardGrants: Set<ClipboardConfirmation.Kind> = []
+
+    /// libghostty request states waiting on a clipboard prompt.
+    var pendingClipboardRequests: Set<UInt> = []
+
+    /// Clipboard prompts this tab has on screen.
+    var clipboardPrompts: [NSAlert] = []
+
+    /// Called before the surface goes. libghostty frees a request's state
+    /// only on its completion or deny, so every pending one is denied; and
+    /// the tab's prompts are closed, since nothing is left to answer them for.
+    func endClipboardRequests(on surface: ghostty_surface_t) {
+        for address in pendingClipboardRequests {
+            ghostty_surface_deny_clipboard_request(surface, UnsafeMutableRawPointer(bitPattern: address))
+        }
+        pendingClipboardRequests.removeAll()
+        for alert in clipboardPrompts {
+            alert.window.sheetParent?.endSheet(alert.window)
+        }
+    }
 
     init(config: ghostty_config_t? = nil) {
         self.state = GhosttySurfaceState()

@@ -12,14 +12,14 @@ We do the same: `vendor/ghostty` is a git submodule pinned to a known-good SHA, 
 
 | Tool | Version | Why |
 |---|---|---|
-| Zig | **0.16.x** (`brew install zig@0.16`) | Ghostty declares `minimum_zig_version = "0.16.0"`. Both older and newer series fail at compile time. |
+| Zig | **0.17.x** (`brew install zig`; `zig@0.17` is an alias for it) | Ghostty declares `minimum_zig_version = "0.17.0"`. Both older and newer series fail at compile time. |
 | Xcode | 16+ | Swift 6, Swift Testing, `bundle.unit-test` target type. |
 
 `scripts/build-ghostty.sh` holds the required series in a single `ZIG_SERIES` variable. It prefers a keg-only `zig@$ZIG_SERIES` under `/opt/homebrew` or `/usr/local`, falls back to `zig` on `$PATH`, and version-checks whichever it picks. When upstream moves to a new Zig series, change `ZIG_SERIES` and this table.
 
 ## Current pin
 
-`vendor/ghostty` → `6c30dc1bfff7e22a9198931411ae862a6bb6277b` (Ghostty `1.3.2-dev`, Aug 2026)
+`vendor/ghostty` → `83fb95624b0439ee660c2679b43b38c8b63769cd` (Ghostty `v1.4.0`, Oct 2026)
 
 ## Build invocation
 
@@ -83,6 +83,27 @@ The rules that follow, both implemented in `GhosttyRuntime.reloadConfig(soft:)`:
 `ghostty_app_update_config` delivers that `config_change` action re-entrantly, before it returns. Since Quay's handler swaps `GhosttyRuntime.config` out from under the call, `updateAppConfig()` keeps the pointer it passed alive until libghostty is done with it.
 
 To verify appearance behavior without launching the app, link `libghostty-internal.a` into a small C harness, replay the same call sequence, and read `background` back with `ghostty_config_get` after each step. That is how this was diagnosed; reasoning about the replay semantics from the outside is unreliable.
+
+## Clipboard — plain text only, policy from Ghostty's config
+
+The clipboard callbacks live in `GhosttyRuntime.swift`, and the prompt in `GhosttyClipboard.swift`. Quay serves one representation, `text/plain`, from `NSPasteboard.general`; it reads nothing else a program asks for and lists only that type. `supports_selection_clipboard` is false, so libghostty never asks for the selection or primary clipboard.
+
+**Whether to ask is Ghostty's decision, not Quay's.** `clipboard-read`, `clipboard-write` (`ask`, `allow` or `deny`) and `clipboard-paste-protection` come from the inherited config (see "Config inheritance" above), so Quay has no setting of its own for them. When that policy says to ask, libghostty tells Quay through two routes: `confirm_read_clipboard_cb` for an unsafe paste, a read and a kitty write, but the `confirm` flag of `write_clipboard_cb` for an OSC 52 write, which never reaches the confirm callback. Both routes show the same sheet on the tab's window:
+
+| Request | Buttons (Return is the first) |
+|---|---|
+| Unsafe paste (a line break or control characters, outside bracketed paste) | Cancel, Paste — with a preview of the text |
+| A program reading the clipboard (OSC 52, kitty) | Deny, Allow Once, Allow for This Tab — the clipboard itself is not shown |
+| A program writing the clipboard (OSC 52, kitty) | Deny, Allow Once, Allow for This Tab — with a preview of the text |
+
+- **Return always refuses.** A program can raise the prompt while the user is typing into the terminal.
+- **"Allow for This Tab" lasts until the tab closes.** It is held on `GhosttySurfaceBridge.clipboardGrants`, separately for reads and writes, and survives reconnects within the tab. It is never stored per host: a profile's hostname is often an ssh_config alias, not an identity. libghostty's own `remember` flag only covers kitty requests that carry a password, so Quay passes it through but does not rely on it.
+- **A paste gets no "always" button.** `clipboard-paste-protection = false` is the standing answer for that.
+- **The program name in a prompt is the program's own claim,** and is shown as such. It and the previewed text come from the remote, so control and format characters (bidi overrides among them) are shown as U+FFFD rather than allowed to rearrange the prompt.
+
+Every read request that is started must end in `ghostty_surface_complete_clipboard_request` or `ghostty_surface_deny_clipboard_request`; one left unanswered leaves the program waiting on a reply. A tab that is not forwarding input denies the read. A request waiting on a prompt is held in `GhosttySurfaceBridge.pendingClipboardRequests`: libghostty frees a request's state only on its completion or deny, so `GhosttySurfaceView` denies every pending one before freeing the surface and closes the tab's open prompts (`GhosttySurfaceBridge.clipboardPrompts`). On a deny, libghostty answers an OSC 52 read with empty contents and a kitty read with `EPERM`. The confirmation's contents are only borrowed for the callback, so Quay copies them before showing the prompt and completes with that copy, never re-reading the clipboard.
+
+Clipboard contents carry an explicit `len` and are not null-terminated, so read them by length, never with `String(cString:)`.
 
 ## Swift import path
 

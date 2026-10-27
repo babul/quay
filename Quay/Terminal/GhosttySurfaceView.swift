@@ -84,7 +84,10 @@ final class GhosttySurfaceView: NSView {
         for obs in windowObservers { NotificationCenter.default.removeObserver(obs) }
         NSCursor.setHiddenUntilMouseMoves(false)
         if let bridge { runtime.unregisterSurface(bridge) }
-        if let surface { ghostty_surface_free(surface) }
+        if let surface {
+            bridge?.endClipboardRequests(on: surface)
+            ghostty_surface_free(surface)
+        }
     }
 
     override func viewDidMoveToWindow() {

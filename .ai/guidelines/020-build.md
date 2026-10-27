@@ -1,6 +1,6 @@
 ## Build commands
 
-**First-time setup** (requires Xcode 16+, `zig` 0.16.x, `xcodegen`):
+**First-time setup** (requires Xcode 16+, `zig` 0.17.x, `xcodegen`):
 ```sh
 ./scripts/bootstrap.sh
 open Quay.xcodeproj

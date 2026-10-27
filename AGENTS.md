@@ -24,7 +24,7 @@ client" below.
 
 ## Build commands
 
-**First-time setup** (requires Xcode 16+, `zig` 0.16.x, `xcodegen`):
+**First-time setup** (requires Xcode 16+, `zig` 0.17.x, `xcodegen`):
 ```sh
 ./scripts/bootstrap.sh
 open Quay.xcodeproj
@@ -298,4 +298,4 @@ A story owns **only its own commits, branches and PRs**. They attach to it only 
   rather than quietly deleting it, because it stays in git history.
 - **Never print a credential file** (`.env`, `~/.npmrc`, keychains) to inspect it. Read only the key
   you need, and mask the value.
-<!-- cribsheet:end sha=71e7d2d1aefc -->
+<!-- cribsheet:end sha=6c3128c15ff7 -->

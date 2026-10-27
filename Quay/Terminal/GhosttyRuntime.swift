@@ -276,54 +276,210 @@ private extension GhosttyRuntime {
         }
     }
 
+    /// Quay serves plain text only: `text/plain` is the one representation
+    /// it reads and the one type it lists.
     static let readClipboardCallback: @convention(c) (
         UnsafeMutableRawPointer?,
         ghostty_clipboard_e,
-        UnsafeMutableRawPointer?
-    ) -> Bool = { userdata, _, requestState in
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UnsafePointer<CChar>?>?,
+        Int,
+        Bool
+    ) -> ghostty_clipboard_read_result_e = { userdata, _, requestState, mimes, mimeCount, list in
         let userdataAddress = UInt(bitPattern: userdata)
         let stateAddress = UInt(bitPattern: requestState)
+        let wantsText = ClipboardContent.mimes(of: mimes, count: mimeCount).contains(ClipboardContent.plainTextMIME)
         return MainActor.assumeIsolated {
-            guard let bridge = bridge(forUserdataAddress: userdataAddress),
-                  let view = bridge.view,
-                  // Belt and braces for every paste route into the pty —
-                  // middle-click included, which never touches injectPasteText.
-                  view.forwardsUserInput,
-                  let surface = view.surface,
-                  let string = NSPasteboard.general.string(forType: .string),
-                  !string.isEmpty
-            else { return false }
+            guard let view = bridge(forUserdataAddress: userdataAddress)?.view,
+                  let surface = view.surface
+            else { return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED }
 
             let state = UnsafeMutableRawPointer(bitPattern: stateAddress)
-            string.withCString { ptr in
-                ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
+            // Belt and braces for every paste route into the pty —
+            // middle-click included, which never touches injectPasteText.
+            guard view.forwardsUserInput else {
+                ghostty_surface_deny_clipboard_request(surface, state)
+                return GHOSTTY_CLIPBOARD_READ_STARTED
             }
-            return true
+            guard wantsText || list,
+                  let string = NSPasteboard.general.string(forType: .string),
+                  !string.isEmpty
+            else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+
+            completeClipboardRequest(
+                surface,
+                contents: wantsText ? [ClipboardContent(mime: ClipboardContent.plainTextMIME, data: Data(string.utf8))] : [],
+                available: list ? [ClipboardContent.plainTextMIME] : [],
+                state: state
+            )
+            return GHOSTTY_CLIPBOARD_READ_STARTED
         }
     }
 
+    /// Copies everything into C memory for the duration of the call: a
+    /// confirmed completion can arrive long after the callback that offered
+    /// the contents, whose memory was only borrowed.
+    static func completeClipboardRequest(
+        _ surface: ghostty_surface_t,
+        contents: [ClipboardContent],
+        available: [String],
+        state: UnsafeMutableRawPointer?,
+        confirmed: Bool = false,
+        remember: Bool = false
+    ) {
+        var strings: [UnsafeMutablePointer<CChar>?] = []
+        var buffers: [UnsafeMutableRawPointer] = []
+        defer {
+            strings.forEach { free($0) }
+            buffers.forEach { $0.deallocate() }
+        }
+        func cString(_ string: String) -> UnsafePointer<CChar>? {
+            let copy = strdup(string)
+            strings.append(copy)
+            return UnsafePointer(copy)
+        }
+        let cContents = contents.map { content in
+            let buffer = UnsafeMutableRawPointer.allocate(byteCount: max(content.data.count, 1), alignment: 1)
+            buffers.append(buffer)
+            content.data.copyBytes(to: buffer.assumingMemoryBound(to: UInt8.self), count: content.data.count)
+            return ghostty_clipboard_content_s(
+                mime: cString(content.mime),
+                data: UnsafePointer(buffer.assumingMemoryBound(to: CChar.self)),
+                len: content.data.count
+            )
+        }
+        let cAvailable = available.map(cString)
+        cContents.withUnsafeBufferPointer { contents in
+            cAvailable.withUnsafeBufferPointer { available in
+                var completion = ghostty_clipboard_complete_s(
+                    contents: contents.baseAddress,
+                    contents_len: contents.count,
+                    available: available.baseAddress,
+                    available_len: available.count,
+                    confirmed: confirmed,
+                    remember: remember
+                )
+                ghostty_surface_complete_clipboard_request(surface, &completion, state)
+            }
+        }
+    }
+
+    /// Reached only when libghostty's policy wants the user asked: an unsafe
+    /// paste, or a program using the clipboard under `clipboard-read = ask`.
+    /// Every request ends in a completion or a deny; one left unanswered
+    /// leaves the program waiting on a reply, and its state is never freed.
     static let confirmReadClipboardCallback: @convention(c) (
         UnsafeMutableRawPointer?,
-        UnsafePointer<CChar>?,
+        UnsafePointer<ghostty_clipboard_confirm_s>?,
         UnsafeMutableRawPointer?,
         ghostty_clipboard_request_e
-    ) -> Void = { _, _, _, _ in }
+    ) -> Void = { userdata, confirm, requestState, request in
+        let userdataAddress = UInt(bitPattern: userdata)
+        let stateAddress = UInt(bitPattern: requestState)
+        let contents = ClipboardContent.copies(of: confirm?.pointee.contents, count: confirm?.pointee.contents_len ?? 0)
+        let available = ClipboardContent.mimes(of: confirm?.pointee.available, count: confirm?.pointee.available_len ?? 0)
+        let programName = confirm?.pointee.name.map { String(cString: $0) }
+        let canRemember = confirm?.pointee.can_remember ?? false
+        MainActor.assumeIsolated {
+            guard let bridge = bridge(forUserdataAddress: userdataAddress),
+                  let view = bridge.view,
+                  let surface = view.surface
+            else { return }
+            let state = UnsafeMutableRawPointer(bitPattern: stateAddress)
+            guard let confirmation = ClipboardConfirmation(
+                request: request,
+                tabTitle: bridge.tabTitle?() ?? "",
+                programName: programName,
+                text: contents.lazy.compactMap(\.plainText).first
+            ), let window = view.window else {
+                ghostty_surface_deny_clipboard_request(surface, state)
+                return
+            }
 
+            // Held until answered, so a tab closed under the prompt denies it
+            // (GhosttySurfaceView.deinit) and the late answer is ignored.
+            bridge.pendingClipboardRequests.insert(stateAddress)
+            decide(confirmation, for: bridge, on: window) { decision in
+                guard bridge.pendingClipboardRequests.remove(stateAddress) != nil,
+                      let surface = bridge.view?.surface
+                else { return }
+                let state = UnsafeMutableRawPointer(bitPattern: stateAddress)
+                guard decision != .deny else {
+                    ghostty_surface_deny_clipboard_request(surface, state)
+                    return
+                }
+                completeClipboardRequest(
+                    surface,
+                    contents: contents,
+                    available: available,
+                    state: state,
+                    confirmed: true,
+                    remember: decision == .allowForTab && canRemember
+                )
+            }
+        }
+    }
+
+    /// Asks unless the tab already holds a grant for this kind of request,
+    /// and records the grant when the user gives one.
+    static func decide(
+        _ confirmation: ClipboardConfirmation,
+        for bridge: GhosttySurfaceBridge,
+        on window: NSWindow,
+        then act: @escaping @MainActor (ClipboardConfirmation.Decision) -> Void
+    ) {
+        guard !bridge.clipboardGrants.contains(confirmation.kind) else { return act(.allowOnce) }
+        bridge.clipboardPrompts.append(confirmation.present(on: window) { decision, alert in
+            bridge.clipboardPrompts.removeAll { $0 === alert }
+            // A prompt still queued when its tab closed outlives the tab, and
+            // must not act for it.
+            guard bridge.view?.surface != nil else { return }
+            if decision == .allowForTab { bridge.clipboardGrants.insert(confirmation.kind) }
+            act(decision)
+        })
+    }
+
+    /// `confirm` is libghostty asking for an OSC 52 write under
+    /// `clipboard-write = ask`; that write never reaches
+    /// `confirm_read_clipboard_cb`, so it is asked here.
     static let writeClipboardCallback: @convention(c) (
         UnsafeMutableRawPointer?,
         ghostty_clipboard_e,
         UnsafePointer<ghostty_clipboard_content_s>?,
         Int,
         Bool
-    ) -> Void = { _, _, content, count, _ in
-        guard let content, count > 0 else { return }
-        let text = firstPlainText(in: content, count: count)
+    ) -> Void = { userdata, _, content, count, confirm in
+        let userdataAddress = UInt(bitPattern: userdata)
+        let text = ClipboardContent.copies(of: content, count: count).lazy.compactMap(\.plainText).first
         guard let text, !text.isEmpty else { return }
-        DispatchQueue.main.async {
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
+        MainActor.assumeIsolated {
+            // Resolved now: userdata is unretained, so turning it back into a
+            // bridge after the hop could read a tab that has since closed.
+            let bridge = bridge(forUserdataAddress: userdataAddress)
+            DispatchQueue.main.async { [weak bridge] in
+                MainActor.assumeIsolated {
+                    guard confirm else { return setPasteboard(text) }
+                    guard let bridge,
+                          let window = bridge.view?.window,
+                          let confirmation = ClipboardConfirmation(
+                              request: GHOSTTY_CLIPBOARD_REQUEST_OSC_52_WRITE,
+                              tabTitle: bridge.tabTitle?() ?? "",
+                              programName: nil,
+                              text: text
+                          )
+                    else { return }
+                    decide(confirmation, for: bridge, on: window) { decision in
+                        if decision != .deny { setPasteboard(text) }
+                    }
+                }
+            }
         }
+    }
+
+    static func setPasteboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     static let closeSurfaceCallback: @convention(c) (UnsafeMutableRawPointer?, Bool) -> Void = { userdata, _ in
@@ -361,18 +517,5 @@ private extension GhosttyRuntime {
     static func bridge(forUserdataAddress address: UInt) -> GhosttySurfaceBridge? {
         guard let userdata = UnsafeMutableRawPointer(bitPattern: address) else { return nil }
         return bridge(forUserdata: userdata)
-    }
-
-    static func firstPlainText(
-        in content: UnsafePointer<ghostty_clipboard_content_s>,
-        count: Int
-    ) -> String? {
-        for index in 0..<count {
-            let item = content[index]
-            guard let mime = item.mime, let data = item.data else { continue }
-            guard String(cString: mime) == "text/plain" else { continue }
-            return String(cString: data)
-        }
-        return nil
     }
 }
