@@ -401,10 +401,13 @@ private extension GhosttyRuntime {
             bridge.pendingClipboardRequests.insert(stateAddress)
             decide(confirmation, for: bridge, on: window) { decision in
                 guard bridge.pendingClipboardRequests.remove(stateAddress) != nil,
-                      let surface = bridge.view?.surface
+                      let view = bridge.view,
+                      let surface = view.surface
                 else { return }
                 let state = UnsafeMutableRawPointer(bitPattern: stateAddress)
-                guard decision != .deny else {
+                // The session may have ended while the prompt was up; the
+                // read callback's gate holds at the answer too.
+                guard decision != .deny, view.forwardsUserInput else {
                     ghostty_surface_deny_clipboard_request(surface, state)
                     return
                 }
